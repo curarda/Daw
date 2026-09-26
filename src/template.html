@@ -14,6 +14,7 @@
     <button id="btnStop" title="Başa sar">■</button>
     <span id="posReadout" class="mono">1 · 1</span>
     <button id="btnAB" class="ab" title="Orijinal / düzeltilmiş vokal">A/B: Düzeltilmiş</button>
+    <span id="pianoBadge" class="tag" title="Oynatma ve mix'te kullanılan piyano">Piyano: yükleniyor…</span>
   </div>
   <div class="group">
     <button id="btnTest" class="accent">Test melodisi üret</button>
@@ -31,12 +32,16 @@
     <details class="step" open>
       <summary><b>1</b> Proje ayarı</summary>
       <div class="grid2">
-        <label>BPM <small>(vuruş; 6/8'de ♩.)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
+        <label>BPM <small id="bpmUnit">(♩ = çeyrek nota)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
         <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>6/8</option></select></label>
         <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
-        <button id="btnLatencyGuess" title="Ses kartının bildirdiği giriş+çıkış gecikmesi">Tahmin et</button>
+        <div class="row" style="margin:0">
+          <button id="btnLatencyCal" title="8 click çalar; her click'te el çırpın">Kalibre et</button>
+          <button id="btnLatencyGuess" title="Ses kartının bildirdiği çıkış gecikmesi (kaba tahmin)">Tahmin</button>
+        </div>
       </div>
-      <p class="hint">Gecikme telafisi yalnızca kayıtlara uygulanır: kayıt bu kadar ms öne çekilir.</p>
+      <p class="hint">Gecikme telafisi yalnızca kayıtlara uygulanır: kayıt bu kadar ms öne çekilir. <b>Kalibre et</b>: kulaklıkla 8 click dinleyin, her click'te mikrofona yakın el çırpın; click–alkış ofsetlerinin medyanı kaydedilir.</p>
+      <div id="latencyInfo" class="hint"></div>
     </details>
 
     <details class="step" open>
@@ -77,6 +82,16 @@
     </details>
 
     <details class="step" open>
+      <summary><b>3b</b> Etiket düzeltme</summary>
+      <p class="hint">Ses değişmez, yalnızca analizdeki nota değişir. Pitch detection yanlış algıladığında kullanın. Etiketler <b>4. adımdaki ton önerisine</b> ve akor bulmaya girer; ses düzeltmeleri (autotune, manuel kaydırma) ton önerisine girmez.</p>
+      <div class="row">
+        <button id="btnModeLabel">Etiket düzeltme modunu aç</button>
+        <button id="btnClearLabels">Etiketleri sıfırla</button>
+      </div>
+      <p class="hint">Modda notayı yukarı/aşağı sürükleyin ya da seçip <kbd>↑</kbd>/<kbd>↓</kbd>.</p>
+    </details>
+
+    <details class="step" open>
       <summary><b>4</b> Bölümler ve ton</summary>
       <p class="hint">Zaman çizelgesindeki <b>bölüm şeridinde</b> sürükleyerek ölçü aralığı seçin ya da buradan ekleyin.</p>
       <div class="row">
@@ -90,13 +105,9 @@
     </details>
 
     <details class="step" open>
-      <summary><b>5</b> Nota düzeltme</summary>
-      <div class="modes" role="radiogroup" aria-label="Fare düzenleme modu">
-        <label><input type="radio" name="editMode" value="select" checked> Seç</label>
-        <label><input type="radio" name="editMode" value="label"> a) Etiket düzelt</label>
-        <label><input type="radio" name="editMode" value="sound"> b) Ses düzelt (manuel)</label>
-      </div>
-      <p class="hint"><b>Etiket</b>: ses değişmez, analizdeki nota değişir. <b>Ses</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
+      <summary><b>5</b> Ses düzeltme</summary>
+      <p class="hint">Sesin kendisi kaydırılır (TD-PSOLA). <b>Manuel</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
+      <button id="btnModeSound">Manuel ses düzeltme modunu aç</button>
       <fieldset>
         <legend>Otomatik (autotune) — bölüm scale'ine göre</legend>
         <label>Miktar <output id="outAmount">100%</output><input type="range" id="inAmount" min="0" max="100" value="100"></label>
@@ -110,7 +121,6 @@
       </fieldset>
       <div class="row">
         <button id="btnClearManual">Manuel düzeltmeleri sil</button>
-        <button id="btnClearLabels">Etiketleri sıfırla</button>
       </div>
       <div id="renderInfo" class="hint"></div>
     </details>
@@ -118,7 +128,11 @@
     <details class="step" open>
       <summary><b>6–7</b> Akor bulma ve düzenleme</summary>
       <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
-      <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
+      <div class="grid2">
+        <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
+        <label title="Bu kadar ölçüde bir ev akoru duyulmalı; dolunca ev akoru %X şartı olmadan aday olur. 0 = kapalı">Ev akoru her M ölçüde<input type="number" id="inHomeEvery" min="0" max="16" value="2"></label>
+      </div>
+      <label title="7, 9/2, 11/4, 6 renk notalarının kök/3/5'e göre eksik puanı. 0 = ceza yok">Renk notası cezası <output id="outColorPen">0</output><input type="range" id="inColorPen" min="0" max="0.5" step="0.05" value="0"></label>
       <p class="hint">Akora tıklayın: en iyi 3 aday, melodi notalarının akordaki rolü, elle yazma ve kilitleme.</p>
       <button id="btnUnlockChords">Tüm akor kilitlerini kaldır</button>
     </details>
@@ -157,9 +171,13 @@
 
   <section id="work">
     <div id="tlTools">
+      <div class="seg" role="radiogroup" aria-label="Fare düzenleme modu">
+        <label><input type="radio" name="editMode" value="select" checked><span>Seç</span></label>
+        <label><input type="radio" name="editMode" value="label"><span>Etiket düzelt</span></label>
+        <label><input type="radio" name="editMode" value="sound"><span>Ses düzelt</span></label>
+      </div>
       <label>Yakınlaş <input type="range" id="inZoom" min="12" max="160" value="44"></label>
       <span class="legend"><i class="lg in"></i>scale içi <i class="lg out"></i>scale dışı <i class="lg raw"></i>ham perde <i class="lg cor"></i>düzeltilmiş perde</span>
-      <span id="modeBadge" class="badge">Mod: Seç</span>
     </div>
     <div id="tlScroll"><div id="tlInner"><canvas id="tl"></canvas></div></div>
     <div id="inspector"><p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p></div>

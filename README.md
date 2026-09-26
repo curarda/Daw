@@ -6,15 +6,15 @@ Tarayıcıda çalışan, **tek dosyalık** (`index.html`) mini DAW. Tek sesli vo
 
 | Adım | Ne yapar |
 |---|---|
-| 1. Proje ayarı | BPM (vuruş temposu; 6/8'de noktalı çeyrek), ölçü 4/4 · 3/4 · 6/8, kayıt gecikmesi telafisi (ms) |
+| 1. Proje ayarı | BPM (4/4 ve 3/4'te ♩, 6/8'de ♩. sayılır; alanın yanında yazar), ölçü 4/4 · 3/4 · 6/8, kayıt gecikmesi telafisi (ms). **Kalibre et**: 8 click çalar, her click'te el çırparsınız; click–alkış ofsetlerinin medyanı gecikme olarak kaydedilir |
 | 2. Kayıt / yükleme | 1 ölçü count-in + metronom. Click yalnızca çıkışa gider, kayıt zincirine bağlı değildir (kulaklık kullanın). WAV/MP3 yükleme: ilk ses başlangıcı 1. ölçüye ya da en yakın vuruşa hizalanır, ofset elle de ayarlanır |
 | 3. Pitch detection | pYIN benzeri: FFT'li YIN + Beta(2,18) eşik dağılımı + Viterbi. Nota olayları: başlangıç, süre, cent hassasiyetinde perde, en yakın nota. Vibrato/kaymalarda çekirdek bölgenin medyanı; sessizlik ve nefes atılır. Piano-roll + ince ham perde eğrisi |
-| 4. Bölümler ve ton | Bölüm şeridinde sürükleyerek ölçü aralığı seçilir. Her bölüm için merkez nota + 10 mod. Öneri: süre ve vuruş ağırlıklı histogramdan en olası 3 aday; aynı notalı modlar ayrı aday, ayırt edici ipucu olarak "son ağırlıklı nota". Onaylanmamış öneriler geçici olarak kullanılır ve "öneri" diye işaretlenir; son karar kullanıcıda |
-| 5a. Etiket düzeltme | Ses değişmez, yalnızca analizdeki nota değişir |
-| 5b. Ses düzeltme | Autotune (miktar, retune hızı, vibratoyu koru, kromatik geçiş notalarına dokunma) veya notayı sürükleyerek manuel (yarım ses; Shift ile cent). Manuel düzeltilen nota kilitlenir. Düzeltilmiş vokal ayrı izde render edilir; A/B düğmesi |
-| 6. Akor bulma | Ağırlıklar: 1. vuruş ×3, diğer güçlü vuruş ×2, vuruştan uzun ×2, kısa geçiş ×0.5. Diatonik triad + maj7/m7/sus2/sus4/add9. Yarım ses sürtünmesine büyük ceza, maj7 istisnası, sus2 önerisi, diminished düşük öncelik, Frig'de ev akoru asla majör değil. Değişim politikası: (a) sürtünme, (b) ≥ %X daha iyi, (c) N ölçü aynı akor; bölüm sonunda ev akoruna dönüş, bölüm geçişinde ortak nota tercihi |
+| 3b. Etiket düzeltme | Ses değişmez, yalnızca analizdeki nota değişir. Ton önerisinden **önce** yapılabilir ve histograma girer |
+| 4. Bölümler ve ton | Bölüm şeridinde sürükleyerek ölçü aralığı seçilir. Her bölüm için merkez nota + 10 mod. Öneri: süre ve vuruş ağırlıklı histogramdan en olası 3 aday. Histogram etiket düzeltmelerini kullanır, **ses düzeltmelerini (autotune, manuel kaydırma) kullanmaz** — autotune seçili scale'e çektiği için histogram o scale'i kendi kendine doğrulamasın. Aynı notalı modlar ayrı aday, ayırt edici ipucu olarak "son ağırlıklı nota". Onaylanmamış öneriler geçici olarak kullanılır ve "öneri" diye işaretlenir; son karar kullanıcıda |
+| 5. Ses düzeltme | Autotune (miktar, retune hızı, vibratoyu koru, kromatik geçiş notalarına dokunma) veya notayı sürükleyerek manuel (yarım ses; Shift ile cent). Manuel düzeltilen nota kilitlenir. Düzeltilmiş vokal ayrı izde render edilir; A/B düğmesi |
+| 6. Akor bulma | Ağırlıklar: 1. vuruş ×3, diğer güçlü vuruş ×2, vuruştan uzun ×2, kısa geçiş ×0.5. Diatonik triad + maj7/m7/sus2/sus4/add9. Yarım ses sürtünmesine büyük ceza, maj7 istisnası, sus2 önerisi, diminished düşük öncelik, Frig'de ev akoru asla majör değil. Değişim politikası: (a) sürtünme, (b) ≥ %X daha iyi, (c) N ölçü aynı akor, (d) **ev akoru en az her M ölçüde bir** (varsayılan 2; M dolunca ev akoru %X şartı olmadan aday olur, sürtünmüyorsa gelir); bölüm sonunda ev akoruna dönüş, bölüm geçişinde ortak nota tercihi. **Renk notası cezası** (7, 9/2, 11/4, 6'ya kök/3/5'e göre eksik puan) ayarlanabilir, varsayılan 0 |
 | 7. Akor düzenleme | Akora tıkla → en iyi 3 aday + melodi notalarının rolü (kök/3/5/7/9); seç + kilitle ya da elle yaz (`F#m7/A` gibi) |
-| 8. Piyano | Tone.js Sampler (Salamander). Bas kökte başlar, basamaklı hareket için çevrim; pedal bas seçeneği. Akorlar vokal aralığının altında, ortak notalar yerinde kalır. Vokal/piyano için ses seviyesi, mute, solo |
+| 8. Piyano | Tone.js Sampler (Salamander). Hangi piyanonun çaldığı (Salamander / yedek sentez) üst çubukta görünür. Bas kökte başlar, basamaklı hareket için çevrim; pedal bas seçeneği. Akorlar vokal aralığının altında, ortak notalar yerinde kalır. Vokal/piyano için ses seviyesi, mute, solo |
 | 9. Dışa aktarım | MIDI (tempo, ölçü, bölüm işaretleri, melodi + piyano izi, akor adları), akor şeması (.txt), düzeltilmiş vokal WAV, vokal + piyano mix WAV, proje JSON (ayarlar, bölümler, düzeltmeler, kilitler, istenirse gömülü orijinal ses) |
 
 Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kilitler ayrı kayıtlar olarak tutulur, her değişiklikte sonraki adımlar yeniden hesaplanır.
@@ -44,12 +44,13 @@ npm run test:ui      # arayüz: Chromium'da uçtan uca (sahte mikrofonla kayıt 
 
 `Test melodisi üret` düğmesi (ve testler) sentetik bir vokal üretir: 4/4, 120 BPM. Verse (4 ölçü) C# Frig'de her ölçüde C#–D gidip gelir; nakarat (4 ölçü) B Dorian'da B'de biter. 2. ölçünün ilk D'si bilerek 40 cent pes. Vibrato, başta kayma (scoop), portamento ve bir nefes sesi içerir. Beklenen ve doğrulanan sonuçlar:
 
-- 4. adım: verse için **C# Frig**, nakarat için **B Dorian** ilk aday (son ağırlıklı notalar C# ve B)
+- 3b/4. adım: verse için **C# Frig**, nakarat için **B Dorian** ilk aday (son ağırlıklı notalar C# ve B); bir D'yi E olarak etiketlemek verse histogramını değiştirir, autotune ve manuel ses kaydırma değiştirmez
 - 5. adım: pes nota −40c algılanır, autotune +40c kaydırır, render sonrası yeniden analizde ±2c
-- 6. adım: `| C#m | Dmaj7 | C#m | Dmaj7 C#m |` · `| Bm | Eadd9 | F#m7 | Bm |`
+- 6. adım (M = 2, renk cezası 0): `| C#m | Dmaj7 | C#m | Dmaj7 C#m |` · `| Bm | Eadd9 | Bm/D | Bm |`. M = 0 ile verse 3. ölçüde Dmaj7 cezasız devam eder
+- 1. adım: kalibrasyon, alkış ofsetlerinin medyanını kaydeder (Node'da sentetik alkışlarla, Chromium'da sahte mikrofona verilen alkış dosyasıyla test edilir)
 
 ## Sınırlar
 
 - Tek sesli (monofonik) vokal içindir.
-- Kayıt gecikmesini tarayıcı kesin bildirmez; "Tahmin et" düğmesi çıkış gecikmesini verir. En doğru yol, click'e karşı el çırpıp ofseti ölçmektir.
+- Kayıt gecikmesini tarayıcı kesin bildirmez; "Tahmin" düğmesi yalnızca çıkış gecikmesini verir. "Kalibre et" gerçek gidiş-dönüş gecikmesini (artı el çırpma zamanlamanızı) ölçer; 8 click'ten en az 4 alkış algılanmazsa değer değiştirilmez.
 - Mikrofon, güvenli bağlam ister (`https://`, `localhost` veya Chrome'da `file://`).

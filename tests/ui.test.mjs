@@ -1,9 +1,9 @@
 // Tarayıcı testi (Playwright + Chromium): test melodisiyle arayüz akışının tamamı.
 // Kullanım: TONE_JS=/yol/Tone.js node tests/ui.test.mjs
 //  - Tone.js CDN isteği yerel kopyaya yönlendirilir (TONE_JS verilmezse CDN'e gider).
-//  - Kayıt, Chromium'un sahte mikrofonu ile test edilir.
+//  - Kayıt ve gecikme kalibrasyonu, Chromium'un sahte mikrofonuna verilen alkış dosyasıyla test edilir.
 import { chromium } from 'playwright';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -13,8 +13,24 @@ const indexUrl = pathToFileURL(path.join(here, '..', 'index.html')).href;
 const toneLocal = process.env.TONE_JS;
 const shotDir = process.env.SHOT_DIR;
 
+// çekirdek (dosya üretimi için)
+const html = readFileSync(path.join(here, '..', 'index.html'), 'utf8');
+const sb = {};
+new Function('globalThis', 'module', /<script id="core">([\s\S]*?)<\/script>/.exec(html)[1])(sb, undefined);
+const Core = sb.Core;
+// sahte mikrofon: her 0,5 s'de bir alkış (döngüde çalar)
+const clapPath = path.join(here, '..', '.tmp-claps.wav');
+{
+  const sr = 48000, x = new Float32Array(sr * 8);
+  let r = 3;
+  for (let c = 0.25; c < 8; c += 0.5) {
+    const s0 = Math.round(c * sr);
+    for (let k = 0; k < 0.03 * sr; k++) { r = (r * 1103515245 + 12345) & 0x7fffffff; x[s0 + k] = (r / 0x7fffffff * 2 - 1) * 0.7 * Math.exp(-k / (0.006 * sr)); }
+  }
+  writeFileSync(clapPath, Buffer.from(Core.encodeWav([x], sr)));
+}
 const browser = await chromium.launch({
-  args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required'],
+  args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required', `--use-file-for-fake-audio-capture=${clapPath}`],
 });
 const context = await browser.newContext({ viewport: { width: 1500, height: 950 }, acceptDownloads: true, permissions: ['microphone'] });
 const page = await context.newPage();
@@ -38,10 +54,25 @@ async function download(btn) {
   return { name: dl.suggestedFilename(), data: readFileSync(p) };
 }
 
+const noteGeo = (i) => S(`(() => {
+  const d = window.__daw.d, n = d.notes[${i}], sc = document.querySelector('#tlScroll');
+  const H = sc.clientHeight; let lo = Infinity, hi = -Infinity;
+  for (const k of d.notes) { lo = Math.min(lo, k.effMidi, k.median); hi = Math.max(hi, k.effMidi, k.median); }
+  lo = Math.floor(lo) - 3; hi = Math.ceil(hi) + 3; if (hi - lo < 18) { const c = (lo + hi) / 2; lo = Math.floor(c - 9); hi = lo + 18; }
+  const rowH = (H - 84) / (hi - lo + 1);
+  return { x: 46 + (n.q0 + 0.3) * window.__daw.view.pxPerQ - sc.scrollLeft, y: 84 + (hi - n.effMidi + 0.5) * rowH, rowH };
+})()`);
+
 let projFile;
 try {
   await page.goto(indexUrl);
-  await step('sayfa yüklendi', async () => { await waitStatus(/Hazır/); });
+  await step('sayfa yüklendi; hangi piyanonun çaldığı üst çubukta', async () => {
+    await waitStatus(/Hazır/);
+    await page.waitForFunction(() => /yedek|Salamander/.test(document.querySelector('#pianoBadge').textContent), null, { timeout: 30000 });
+    const b = await page.textContent('#pianoBadge');
+    assert.equal(b, 'Piyano: yedek sentez');
+    return b;
+  });
 
   await step('test melodisi → pitch detection', async () => {
     await page.click('#btnTest');
@@ -49,6 +80,23 @@ try {
     const n = await S(() => window.__daw.d.notes.length);
     assert.equal(n, 24);
     return `${n} nota`;
+  });
+
+  await step('3b) etiket düzeltme ton önerisinden önce yapılır ve histograma girer', async () => {
+    const box0 = await page.locator('#tl').boundingBox();
+    await page.click('#btnModeLabel');
+    assert.equal(await page.isChecked('input[name=editMode][value=label]'), true);
+    const h0 = await S(() => Array.from(window.__daw.d.keyInfo[window.__daw.d.sections[0].id].hist));
+    const geo = await noteGeo(5);
+    await page.mouse.click(box0.x + geo.x, box0.y + geo.y);
+    await page.keyboard.press('ArrowUp'); await page.keyboard.press('ArrowUp');
+    const r = await S(() => { const d = window.__daw.d; return { lbl: d.notes[5].label, h: Array.from(d.keyInfo[d.sections[0].id].hist) }; });
+    assert.equal(r.lbl, 64);
+    assert.ok(r.h[4] > 0 && h0[4] === 0 && r.h[2] < h0[2]);
+    await page.click('#btnClearLabels');
+    assert.equal(await S(() => window.__daw.d.notes[5].label), null);
+    await page.click('.seg input[value=select] + span');
+    return `D4 → E4 etiketi: verse histogramında E %${Math.round(r.h[4] * 100)}; sıfırlandı`;
   });
 
   await step('4) ton önerileri görünüyor ve onaylanıyor', async () => {
@@ -74,11 +122,21 @@ try {
     return `D4 ${r.cents}c → +${Math.round(r.applied)}c kaydırma`;
   });
 
-  await step('6) akorlar: verse C#m / Dmaj7, nakarat sonu Bm', async () => {
-    const ch = await S(() => window.__daw.d.chords.map((c) => window.Core.chordName(c.chord, c.flats)));
-    assert.ok(ch.includes('C#m') && (ch.includes('Dmaj7') || ch.includes('D')));
+  await step('6) akorlar: verse C#m | Dmaj7 | C#m | Dmaj7 C#m, nakarat sonu Bm; M ve renk cezası ayarları', async () => {
+    const names = () => S(() => window.__daw.d.chords.map((c) => window.Core.chordName(c.chord, c.flats)));
+    const ch = await names();
+    assert.deepEqual(ch.slice(0, 5), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7', 'C#m']);
     assert.equal(ch[ch.length - 1], 'Bm');
-    return ch.join(' · ');
+    await page.fill('#inHomeEvery', '0'); await page.dispatchEvent('#inHomeEvery', 'change');
+    const off = await names();
+    assert.equal(off[2], 'Dmaj7');
+    await page.locator('#inColorPen').fill('0.1');
+    const pen = await names();
+    assert.equal(pen[2], 'C#m');
+    await page.locator('#inColorPen').fill('0');
+    await page.fill('#inHomeEvery', '2'); await page.dispatchEvent('#inHomeEvery', 'change');
+    assert.deepEqual(await names(), ch);
+    return `${ch.join(' · ')} | M=0: ${off.slice(0, 4).join(' · ')} | +ceza 0.1: ${pen.slice(0, 4).join(' · ')}`;
   });
 
   const box = await page.locator('#tl').boundingBox();
@@ -104,7 +162,7 @@ try {
   });
 
   await step('5a) etiket düzeltme (sürükle) — ses değişmez', async () => {
-    await page.check('input[name=editMode][value=label]');
+    await page.click('.seg input[value=label] + span');
     const geo = await S(() => {
       const d = window.__daw.d, n = d.notes[12], sc = document.querySelector('#tlScroll');
       const H = sc.clientHeight; let lo = Infinity, hi = -Infinity;
@@ -126,7 +184,7 @@ try {
   });
 
   await step('5b) manuel ses düzeltme (sürükle) → kilitlenir, autotune dokunmaz', async () => {
-    await page.check('input[name=editMode][value=sound]');
+    await page.click('.seg input[value=sound] + span');
     const geo = await S(() => {
       const d = window.__daw.d, n = d.notes[0], sc = document.querySelector('#tlScroll');
       const H = sc.clientHeight; let lo = Infinity, hi = -Infinity;
@@ -149,7 +207,7 @@ try {
     const t2 = await S(() => window.__daw.d.notes[0].corr.target);
     assert.equal(t2, 62.05);
     await page.click('#btnClearManual');
-    await page.check('input[name=editMode][value=select]');
+    await page.click('.seg input[value=select] + span');
     return `C#4 → D4 (+${Math.round(r.ap)}c), Shift+↑ → +5c`;
   });
 
@@ -239,6 +297,26 @@ try {
     return `kayıt ${r.dur.toFixed(1)} s, 1. ölçü ofseti ${r.off.toFixed(3)} s (+20 ms gecikme telafisi)`;
   });
 
+  await step('1) gecikme kalibrasyonu: 8 click, alkış ofsetlerinin medyanı kaydedilir', async () => {
+    await page.click('#btnLatencyCal');
+    await page.waitForFunction(() => /Kayıt gecikmesi|Kalibrasyon başarısız/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+    const r = await S(() => ({ m: window.__dawCal(), lat: window.__daw.proj.settings.latencyMs, info: document.querySelector('#latencyInfo').textContent }));
+    assert.ok(r.m.detected >= 6, r.info);
+    assert.ok(r.m.madMs <= 3, r.info);
+    assert.equal(r.lat, r.m.latencyMs);
+    assert.equal(await page.inputValue('#inLatency'), String(r.m.latencyMs));
+    return r.info;
+  });
+
+  await step('1) BPM alanı 6/8\'de sayılan birimi gösterir', async () => {
+    await page.selectOption('#inMeter', '6/8');
+    const u = await page.textContent('#bpmUnit');
+    assert.match(u, /noktalı çeyrek/);
+    await page.selectOption('#inMeter', '4/4');
+    assert.match(await page.textContent('#bpmUnit'), /çeyrek nota/);
+    return `6/8: ${u}`;
+  });
+
   assert.deepEqual(errors, [], 'tarayıcı hataları');
   console.log(log.join('\n'));
   console.log('\nArayüz testi geçti.');
@@ -249,6 +327,7 @@ try {
   if (shotDir) await page.screenshot({ path: path.join(shotDir, 'fail.png') }).catch(() => {});
   process.exitCode = 1;
 } finally {
-  if (projFile) { const { rmSync } = await import('node:fs'); rmSync(projFile, { force: true }); }
+  if (projFile) rmSync(projFile, { force: true });
+  rmSync(clapPath, { force: true });
   await browser.close();
 }

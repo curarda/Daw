@@ -56,6 +56,17 @@ main { flex: 1; display: flex; min-height: 0; }
 .step summary { cursor: pointer; font-weight: 600; padding: 4px 0; list-style: none; }
 .step summary::-webkit-details-marker { display: none; }
 .step summary b { display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 4px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); margin-right: 6px; font-size: 11px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg label { display: block; margin: 0; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; padding: 4px 10px; cursor: pointer; color: var(--text); font-size: 12px; border-right: 1px solid var(--line); }
+.seg label:last-child span { border-right: 0; }
+.seg input:checked + span { background: var(--accent2); color: #fff; }
+.seg input[value=label]:checked + span { background: var(--warn); color: #000; }
+.seg input[value=sound]:checked + span { background: var(--ok); color: #000; }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+#pianoBadge.ok { color: var(--ok); border-color: var(--ok); }
+#pianoBadge.warn { color: var(--warn); border-color: var(--warn); }
 .modes { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
 .modes label { display: flex; gap: 6px; align-items: center; color: var(--text); font-size: 13px; }
 .modes input { width: auto; margin: 0; }
@@ -132,6 +143,7 @@ main { flex: 1; display: flex; min-height: 0; }
     <button id="btnStop" title="Başa sar">■</button>
     <span id="posReadout" class="mono">1 · 1</span>
     <button id="btnAB" class="ab" title="Orijinal / düzeltilmiş vokal">A/B: Düzeltilmiş</button>
+    <span id="pianoBadge" class="tag" title="Oynatma ve mix'te kullanılan piyano">Piyano: yükleniyor…</span>
   </div>
   <div class="group">
     <button id="btnTest" class="accent">Test melodisi üret</button>
@@ -149,12 +161,16 @@ main { flex: 1; display: flex; min-height: 0; }
     <details class="step" open>
       <summary><b>1</b> Proje ayarı</summary>
       <div class="grid2">
-        <label>BPM <small>(vuruş; 6/8'de ♩.)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
+        <label>BPM <small id="bpmUnit">(♩ = çeyrek nota)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
         <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>6/8</option></select></label>
         <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
-        <button id="btnLatencyGuess" title="Ses kartının bildirdiği giriş+çıkış gecikmesi">Tahmin et</button>
+        <div class="row" style="margin:0">
+          <button id="btnLatencyCal" title="8 click çalar; her click'te el çırpın">Kalibre et</button>
+          <button id="btnLatencyGuess" title="Ses kartının bildirdiği çıkış gecikmesi (kaba tahmin)">Tahmin</button>
+        </div>
       </div>
-      <p class="hint">Gecikme telafisi yalnızca kayıtlara uygulanır: kayıt bu kadar ms öne çekilir.</p>
+      <p class="hint">Gecikme telafisi yalnızca kayıtlara uygulanır: kayıt bu kadar ms öne çekilir. <b>Kalibre et</b>: kulaklıkla 8 click dinleyin, her click'te mikrofona yakın el çırpın; click–alkış ofsetlerinin medyanı kaydedilir.</p>
+      <div id="latencyInfo" class="hint"></div>
     </details>
 
     <details class="step" open>
@@ -195,6 +211,16 @@ main { flex: 1; display: flex; min-height: 0; }
     </details>
 
     <details class="step" open>
+      <summary><b>3b</b> Etiket düzeltme</summary>
+      <p class="hint">Ses değişmez, yalnızca analizdeki nota değişir. Pitch detection yanlış algıladığında kullanın. Etiketler <b>4. adımdaki ton önerisine</b> ve akor bulmaya girer; ses düzeltmeleri (autotune, manuel kaydırma) ton önerisine girmez.</p>
+      <div class="row">
+        <button id="btnModeLabel">Etiket düzeltme modunu aç</button>
+        <button id="btnClearLabels">Etiketleri sıfırla</button>
+      </div>
+      <p class="hint">Modda notayı yukarı/aşağı sürükleyin ya da seçip <kbd>↑</kbd>/<kbd>↓</kbd>.</p>
+    </details>
+
+    <details class="step" open>
       <summary><b>4</b> Bölümler ve ton</summary>
       <p class="hint">Zaman çizelgesindeki <b>bölüm şeridinde</b> sürükleyerek ölçü aralığı seçin ya da buradan ekleyin.</p>
       <div class="row">
@@ -208,13 +234,9 @@ main { flex: 1; display: flex; min-height: 0; }
     </details>
 
     <details class="step" open>
-      <summary><b>5</b> Nota düzeltme</summary>
-      <div class="modes" role="radiogroup" aria-label="Fare düzenleme modu">
-        <label><input type="radio" name="editMode" value="select" checked> Seç</label>
-        <label><input type="radio" name="editMode" value="label"> a) Etiket düzelt</label>
-        <label><input type="radio" name="editMode" value="sound"> b) Ses düzelt (manuel)</label>
-      </div>
-      <p class="hint"><b>Etiket</b>: ses değişmez, analizdeki nota değişir. <b>Ses</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
+      <summary><b>5</b> Ses düzeltme</summary>
+      <p class="hint">Sesin kendisi kaydırılır (TD-PSOLA). <b>Manuel</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
+      <button id="btnModeSound">Manuel ses düzeltme modunu aç</button>
       <fieldset>
         <legend>Otomatik (autotune) — bölüm scale'ine göre</legend>
         <label>Miktar <output id="outAmount">100%</output><input type="range" id="inAmount" min="0" max="100" value="100"></label>
@@ -228,7 +250,6 @@ main { flex: 1; display: flex; min-height: 0; }
       </fieldset>
       <div class="row">
         <button id="btnClearManual">Manuel düzeltmeleri sil</button>
-        <button id="btnClearLabels">Etiketleri sıfırla</button>
       </div>
       <div id="renderInfo" class="hint"></div>
     </details>
@@ -236,7 +257,11 @@ main { flex: 1; display: flex; min-height: 0; }
     <details class="step" open>
       <summary><b>6–7</b> Akor bulma ve düzenleme</summary>
       <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
-      <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
+      <div class="grid2">
+        <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
+        <label title="Bu kadar ölçüde bir ev akoru duyulmalı; dolunca ev akoru %X şartı olmadan aday olur. 0 = kapalı">Ev akoru her M ölçüde<input type="number" id="inHomeEvery" min="0" max="16" value="2"></label>
+      </div>
+      <label title="7, 9/2, 11/4, 6 renk notalarının kök/3/5'e göre eksik puanı. 0 = ceza yok">Renk notası cezası <output id="outColorPen">0</output><input type="range" id="inColorPen" min="0" max="0.5" step="0.05" value="0"></label>
       <p class="hint">Akora tıklayın: en iyi 3 aday, melodi notalarının akordaki rolü, elle yazma ve kilitleme.</p>
       <button id="btnUnlockChords">Tüm akor kilitlerini kaldır</button>
     </details>
@@ -275,9 +300,13 @@ main { flex: 1; display: flex; min-height: 0; }
 
   <section id="work">
     <div id="tlTools">
+      <div class="seg" role="radiogroup" aria-label="Fare düzenleme modu">
+        <label><input type="radio" name="editMode" value="select" checked><span>Seç</span></label>
+        <label><input type="radio" name="editMode" value="label"><span>Etiket düzelt</span></label>
+        <label><input type="radio" name="editMode" value="sound"><span>Ses düzelt</span></label>
+      </div>
       <label>Yakınlaş <input type="range" id="inZoom" min="12" max="160" value="44"></label>
       <span class="legend"><i class="lg in"></i>scale içi <i class="lg out"></i>scale dışı <i class="lg raw"></i>ham perde <i class="lg cor"></i>düzeltilmiş perde</span>
-      <span id="modeBadge" class="badge">Mod: Seç</span>
     </div>
     <div id="tlScroll"><div id="tlInner"><canvas id="tl"></canvas></div></div>
     <div id="inspector"><p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p></div>
@@ -725,14 +754,17 @@ function lastWeightedNote(notes, g) {
   }
   return sorted[sorted.length - 1];
 }
+const keyMidi = (n) => (n.label != null ? n.label : n.detMidi);
 function suggestKeys(notes, g, topK = 3) {
   const h = new Float64Array(12);
   let total = 0;
-  for (const n of notes) { const w = histWeight(n, g); h[mod12(n.detMidi)] += w; total += w; }
+  // perde sınıfı: etiket düzeltmesi varsa etiket, yoksa algılanan en yakın nota.
+  // Ses düzeltmeleri (autotune/manuel) BİLEREK dahil değil — seçili scale'i kendi kendine doğrulamasın.
+  for (const n of notes) { const w = histWeight(n, g); h[mod12(keyMidi(n))] += w; total += w; }
   if (total <= 0) return { candidates: [], hist: h, last: null };
   for (let i = 0; i < 12; i++) h[i] /= total;
   const lastN = lastWeightedNote(notes, g);
-  const lastPc = lastN ? mod12(lastN.detMidi) : null;
+  const lastPc = lastN ? mod12(keyMidi(lastN)) : null;
   const firstStrong = [...notes].sort((p, q) => p.q0 - q.q0).find((n) => metricPos(n.q0, g).down);
   const all = [];
   for (let t = 0; t < 12; t++) {
@@ -747,7 +779,7 @@ function suggestKeys(notes, g, topK = 3) {
       const third = md.steps.includes(3) ? 3 : md.steps.includes(4) ? 4 : null;
       if (third != null) s += 0.1 * h[mod12(t + third)];
       if (lastPc === t) s += 0.25;
-      if (firstStrong && mod12(firstStrong.detMidi) === t) s += 0.05;
+      if (firstStrong && mod12(keyMidi(firstStrong)) === t) s += 0.05;
       s -= (1 - md.prior) * 0.5;
       all.push({ tonic: t, mode, score: s, pcs: [...set].sort((p, q) => p - q) });
     }
@@ -989,8 +1021,9 @@ function roleLabel(interval, q) {
   }
   return '?';
 }
-// triad sesleri tam puan; 7/9/4/6 renk notaları daha az (ağır vuruşta kök/3/5 daha kararlı)
-const ROLE_CREDIT = { 0: 1, 3: 1, 4: 1, 7: 0.9, 6: 0.8, 8: 0.8, 10: 0.7, 11: 0.7, 2: 0.65, 5: 0.65, 9: 0.65, 1: 0.5 };
+const ROLE_CREDIT = { 0: 1, 3: 1, 4: 1, 7: 0.9, 6: 0.8, 8: 0.8, 10: 0.8, 11: 0.8, 2: 0.75, 5: 0.75, 9: 0.75, 1: 0.5 };
+// renk notaları (7, 9/2, 11/4, 6): isteğe bağlı ek ceza (colorPenalty, varsayılan 0)
+const COLOR_IVS = new Set([10, 11, 2, 5, 9]);
 
 // Bölümün modundan diatonik aday akorlar
 function diatonicChords(tonic, mode) {
@@ -1041,7 +1074,7 @@ function slotNotes(notes, q0, q1, g) {
   }
   return out;
 }
-function scoreChord(c, sn) {
+function scoreChord(c, sn, colorPenalty = 0) {
   const pcs = chordPcs(c);
   let s = 0, W = 0, friction = false, frictionW = 0;
   const used = new Set();
@@ -1050,7 +1083,7 @@ function scoreChord(c, sn) {
     W += w;
     const iv = mod12(pc - c.root);
     if (pcs.includes(pc)) {
-      s += w * (ROLE_CREDIT[iv] ?? 0.7);
+      s += w * ((ROLE_CREDIT[iv] ?? 0.7) - (COLOR_IVS.has(iv) ? colorPenalty : 0));
       used.add(iv);
       roles.push({ pc, w, role: roleLabel(iv, c.q), tone: true });
     } else {
@@ -1075,7 +1108,8 @@ function scoreChord(c, sn) {
 }
 const commonTones = (a, b) => (a && b ? chordPcs(a).filter((p) => chordPcs(b).includes(p)).length : 0);
 
-const CHORD_DEFAULTS = { changePct: 25, maxBars: 4 };
+// changePct: X, maxBars: N, homeEvery: M (0 = kapalı), colorPenalty: renk notası cezası
+const CHORD_DEFAULTS = { changePct: 25, maxBars: 4, homeEvery: 2, colorPenalty: 0 };
 // sections: [{startBar,endBar,tonic,mode,...}] (1 tabanlı, dahil), notes: {q0,q1,effMidi,cw}
 function buildChords(notes, sections, g, opts = {}, locks = []) {
   const o = Object.assign({}, CHORD_DEFAULTS, opts);
@@ -1089,7 +1123,10 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
     const cands = diatonicChords(sec.tonic, sec.mode);
     const home = homeChord(sec.tonic, sec.mode);
     const flats = keyUsesFlats(sec.tonic, sec.mode);
-    let cur = null, curBars = 0;
+    let cur = null, curBars = 0, sinceHome = 0;
+    // ev akoru sayılır: tonik kökte ve ev üçlüsünü içeren akor (ör. C#m, C#m7)
+    const homeThird = CHORD_Q[home.q].find((i) => i === 3 || i === 4);
+    const isHome = (c) => !!c && c.root === home.root && (homeThird == null || CHORD_Q[c.q].includes(homeThird));
     for (let bar = sec.startBar; bar <= sec.endBar; bar++) {
       const q0 = (bar - 1) * g.barQ, q1 = q0 + g.barQ;
       const isFirst = bar === sec.startBar, isLast = bar === sec.endBar;
@@ -1097,7 +1134,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const evalAll = (sn, extra) => {
         const Wt = sn.reduce((a, b) => a + b.w, 0);
         return cands.map((c) => {
-          const r = scoreChord(c, sn);
+          const r = scoreChord(c, sn, o.colorPenalty);
           let bonus = 0;
           if (sameChord(c, home)) bonus += 0.06 * Wt;
           if (c.deg === 3 || c.deg === 4) bonus += 0.02 * Wt;
@@ -1106,7 +1143,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         }).sort((p, q) => q.total - p.total);
       };
       const evalOne = (c, sn, extra) => {
-        const r = scoreChord(c, sn);
+        const r = scoreChord(c, sn, o.colorPenalty);
         const Wt = r.W;
         let bonus = sameChord(c, home) ? 0.06 * Wt : 0;
         if (extra) bonus += extra(c, Wt);
@@ -1122,11 +1159,14 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const lastNoSplit = isLast && !g.split;
       const extraBar = isFirst ? firstExtra : lastNoSplit ? homeExtra : null;
       let barChord, barReason = '', barCands = null;
+      // (d) ev akoru en az her M ölçüde bir duyulsun: M dolunca ev akoru eşik beklemeden aday olur
+      let homeDue = o.homeEvery > 0 && !isFirst && sinceHome >= o.homeEvery - 1;
+      const homeReason = `(d) ev akoru ${o.homeEvery} ölçüdür duyulmadı`;
       const lockFull = lockAt(bar, null);
       if (lockFull) {
         barChord = lockFull.chord; barReason = 'kilitli';
       } else if (!bn.length) {
-        barChord = cur || home; barReason = cur ? 'melodi yok — devam' : 'melodi yok — ev akoru';
+        barChord = cur && !homeDue ? cur : home; barReason = cur && !homeDue ? 'melodi yok — devam' : 'melodi yok — ev akoru';
       } else {
         barCands = evalAll(bn, extraBar);
         const best = barCands[0];
@@ -1134,7 +1174,9 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         else {
           const cs = evalOne(cur, bn, extraBar);
           const margin = pct * Math.max(Math.abs(cs.total), 0.25 * cs.W);
-          if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
+          const hs = homeDue && !isHome(cur) ? evalOne(home, bn, extraBar) : null;
+          if (hs && !hs.friction && hs.score > 0) { barChord = home; barReason = homeReason; }
+          else if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
           else if (best.total - cs.total >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = `(b) yeni akor ≥%${o.changePct} daha iyi`; }
           else if (curBars >= o.maxBars) {
             const alt = barCands.find((c) => !sameChord(c.chord, cur) && !c.friction && c.total > 0);
@@ -1158,7 +1200,9 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
             const ex = endHalf ? homeExtra : null;
             const cs = evalOne(hc, hn, ex);
             hc2 = evalAll(hn, ex);
-            if (cs.friction) { chord = hc2[0].chord; reason = '(a) yarım ölçüde sürtünme'; }
+            const hs = homeDue && !isHome(hc) && !isHome(barChord) ? evalOne(home, hn, ex) : null;
+            if (hs && !hs.friction && hs.score > 0) { chord = home; reason = homeReason; homeDue = false; }
+            else if (cs.friction) { chord = hc2[0].chord; reason = '(a) yarım ölçüde sürtünme'; }
             else if (endHalf && !sameChord(hc, home)) {
               const hs = hc2.find((c) => sameChord(c.chord, home));
               if (hs && !hs.friction && hs.total - cs.total >= pct * Math.max(Math.abs(cs.total), 0.25 * cs.W)) { chord = home; reason = 'bölüm sonu — ev akoruna dönüş'; }
@@ -1171,7 +1215,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const pushSlot = (sq0, sq1, chord, reason, locked, sn, cList) => {
         const scored = (cList || evalAll(sn)).slice(0, 12);
         const top = scored.slice(0, 3).map((c) => ({ chord: c.chord, score: c.total, pct: c.W > 0 ? Math.round((100 * c.total) / c.W) : 0, roles: c.roles, friction: c.friction }));
-        const curEval = scoreChord(chord, sn);
+        const curEval = scoreChord(chord, sn, o.colorPenalty);
         const heavy = sn.filter((x) => x.w >= 2);
         const slot = {
           bar, q0: sq0, q1: sq1, half: sq1 - sq0 < g.barQ - 1e-6 ? (sq0 > q0 + 1e-6 ? 1 : 0) : null,
@@ -1195,6 +1239,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         if (sameChord(ch, cur)) curBars += 1; else curBars = 1;
         cur = ch;
       }
+      sinceHome = slots.some((sl) => sl.bar === bar && sl.section === sec.id && isHome(sl.chord)) ? 0 : sinceHome + 1;
     }
     prevChord = cur;
   });
@@ -1674,6 +1719,40 @@ function firstOnset(x, sr) {
   return 0;
 }
 
+// ---------------------------------------------------------------- gecikme kalibrasyonu
+// x: mikrofon kaydı, clickTimes: click'lerin kayıttaki zamanları (s).
+// Her click'in [pre, post] penceresinde alkış başlangıcını bulur; ofsetlerin medyanı = gecikme.
+function measureLatency(x, sr, clickTimes, opts = {}) {
+  const interval = clickTimes.length > 1 ? clickTimes[1] - clickTimes[0] : 1;
+  const pre = opts.pre ?? 0.08, post = opts.post ?? Math.min(0.4, 0.8 * interval - pre);
+  const win = Math.max(1, Math.round(0.0005 * sr));
+  // yüksek geçiren (fark) + 0.5 ms kayan ortalama zarf
+  const e = new Float32Array(x.length);
+  let acc = 0;
+  for (let i = 1; i < x.length; i++) {
+    acc += Math.abs(x[i] - x[i - 1]);
+    if (i >= win) acc -= Math.abs(x[i - win] - x[i - win - 1] || 0);
+    e[i] = acc / win;
+  }
+  const offsets = [];
+  for (const ct of clickTimes) {
+    const a = Math.max(1, Math.round((ct - pre) * sr)), b = Math.min(x.length, Math.round((ct + post) * sr));
+    if (b - a < win * 10) { offsets.push(null); continue; }
+    let peak = 0;
+    for (let i = a; i < b; i++) peak = Math.max(peak, e[i]);
+    const floor = median(e.subarray(a, Math.min(b, a + Math.round(0.03 * sr))).filter((_, k) => k % 8 === 0)) || 0;
+    if (!(peak > 1e-4 && peak > 6 * floor)) { offsets.push(null); continue; }
+    const thr = floor + 0.3 * (peak - floor);
+    let on = null;
+    for (let i = a; i < b; i++) if (e[i] >= thr) { on = i / sr; break; }
+    offsets.push(on == null ? null : on - ct);
+  }
+  const valid = offsets.filter((v) => v != null);
+  const med = valid.length ? median(valid) : NaN;
+  const mad = valid.length ? median(valid.map((v) => Math.abs(v - med))) : NaN;
+  return { offsets, detected: valid.length, latencyMs: Math.round(med * 1000), madMs: Math.round(mad * 1000 * 10) / 10 };
+}
+
 const Core = {
   PC_SHARP, PC_FLAT, MODES, MODE_ORDER, METERS, CHORD_Q, TEST_SCORE,
   PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS,
@@ -1684,7 +1763,7 @@ const Core = {
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
-  bytesToBase64, base64ToBytes, firstOnset,
+  bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = Core;
 root.Core = Core;
@@ -1716,6 +1795,7 @@ const S = {
   drag: null,
 };
 window.__daw = S; // hata ayıklama / testler için
+window.__dawCal = () => Cal.last;
 
 // ---------------------------------------------------------------- durum satırı
 function status(msg, kind) { const s = $('#status'); s.textContent = msg; s.className = kind || ''; s.title = msg; }
@@ -1803,6 +1883,10 @@ const SAL_BASE = 'https://tonejs.github.io/audio/salamander/';
 const SAL_NOTES = ['A0', 'C1', 'D#1', 'F#1', 'A1', 'C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'C7', 'D#7', 'F#7', 'A7', 'C8'];
 const noteToMidi = (n) => { const p = C.parsePc(n); return p.pc + 12 * (parseInt(n.slice(p.len), 10) + 1); };
 let pianoPromise = null;
+function setPianoBadge(text, kind, title) {
+  const b = $('#pianoBadge');
+  b.textContent = text; b.className = 'tag ' + (kind || ''); b.title = title || text;
+}
 function loadPianoSamples() {
   if (pianoPromise) return pianoPromise;
   pianoPromise = (async () => {
@@ -1816,6 +1900,7 @@ function loadPianoSamples() {
         return { name: n, midi: noteToMidi(n), buffer: ab, data: ab.getChannelData(0), sr: ab.sampleRate };
       }));
       $('#pianoInfo').textContent = 'Piyano: Salamander Grand (gerçek örnekler) yüklendi.';
+      setPianoBadge('Piyano: Salamander', 'ok', 'Salamander Grand Piano örnekleri çalıyor');
       return { kind: 'salamander', samples: bufs };
     } catch (e) {
       console.warn('Salamander yüklenemedi, sentetik piyano kullanılıyor:', e);
@@ -1825,6 +1910,7 @@ function loadPianoSamples() {
         return { name: n, midi: m, data, sr, buffer: toAudioBuffer(data, sr) };
       });
       $('#pianoInfo').textContent = 'Salamander örneklerine ulaşılamadı (ağ) — yedek sentetik piyano kullanılıyor.';
+      setPianoBadge('Piyano: yedek sentez', 'warn', 'Salamander yüklenemedi (' + e.message + '); sentetik yedek piyano çalıyor');
       return { kind: 'synth', samples };
     }
   })();
@@ -1998,23 +2084,38 @@ async function makeRecorderNode(ctx, onChunk) {
   node.onaudioprocess = (e) => { e.outputBuffer.getChannelData(0).fill(0); onChunk(Math.round((e.playbackTime - bs / ctx.sampleRate) * ctx.sampleRate), e.inputBuffer.getChannelData(0).slice()); };
   return node;
 }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// mikrofon yakalama (kayıt ve kalibrasyon ortak) — click'ler bu zincire bağlı değil
+async function openCapture() {
+  const ctx = getCtx();
+  await ctx.resume();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  const src = ctx.createMediaStreamSource(stream);
+  const st = { ctx, stream, src, node: null, chunks: [], firstFrame: null };
+  st.node = await makeRecorderNode(ctx, (frame, data) => { if (st.firstFrame == null) st.firstFrame = frame; st.chunks.push(data); });
+  src.connect(st.node);
+  st.node.connect(ctx.destination); // node sessizlik üretir (izleme yok); yalnızca işlemenin sürmesi için
+  return st;
+}
+async function closeCapture(st) {
+  if (st.node.port) st.node.port.postMessage('stop'); else st.node.onaudioprocess = null;
+  await sleep(120);
+  st.src.disconnect(); st.node.disconnect();
+  st.stream.getTracks().forEach((t) => t.stop());
+  const len = st.chunks.reduce((a, c) => a + c.length, 0);
+  const data = new Float32Array(len);
+  let o = 0;
+  for (const c of st.chunks) { data.set(c, o); o += c.length; }
+  return data;
+}
 const Rec = {
   st: null,
   async start() {
-    if (this.st) return;
+    if (this.st || Cal.on) return;
     if (Player.playing) Player.stop();
-    const ctx = getCtx();
-    await ctx.resume();
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
-    } catch (e) { status('Mikrofon izni alınamadı: ' + e.message, 'err'); return; }
-    const src = ctx.createMediaStreamSource(stream);
-    const st = { ctx, stream, src, node: null, chunks: [], firstFrame: null };
-    const node = await makeRecorderNode(ctx, (frame, data) => { if (st.firstFrame == null) st.firstFrame = frame; st.chunks.push(data); });
-    st.node = node;
-    src.connect(node);
-    node.connect(ctx.destination); // node sessizlik üretir (izleme yok); yalnızca işlemenin sürmesi için
+    let st;
+    try { st = await openCapture(); } catch (e) { status('Mikrofon izni alınamadı: ' + e.message, 'err'); return; }
+    const ctx = st.ctx;
     const g = C.makeGrid(S.proj.settings);
     const t0 = ctx.currentTime + 0.3;
     st.barStart = t0 + g.barSec;
@@ -2041,16 +2142,9 @@ const Rec = {
     if (!st) return;
     this.st = null;
     clearInterval(st.timer);
-    if (st.node.port) st.node.port.postMessage('stop'); else st.node.onaudioprocess = null;
-    await new Promise((r) => setTimeout(r, 120));
-    st.src.disconnect(); st.node.disconnect();
-    st.stream.getTracks().forEach((t) => t.stop());
+    const data = await closeCapture(st);
     $('#btnRec').classList.remove('on'); $('#btnRecStop').disabled = true;
-    const len = st.chunks.reduce((a, c) => a + c.length, 0);
-    if (!len) { status('Kayıt boş.', 'err'); return; }
-    const data = new Float32Array(len);
-    let o = 0;
-    for (const c of st.chunks) { data.set(c, o); o += c.length; }
+    if (!data.length) { status('Kayıt boş.', 'err'); return; }
     const sr = st.ctx.sampleRate;
     setAudio(data, sr, 'Kayıt ' + new Date().toLocaleTimeString(), 'record');
     // 1. ölçünün başı kayıttaki hangi saniyeye denk geliyor (gecikme ayrıca eklenir)
@@ -2058,6 +2152,48 @@ const Rec = {
     S.proj.audio.alignMode = 'none';
     syncInputs();
     await analyze();
+  },
+};
+
+// ---------------------------------------------------------------- gecikme kalibrasyonu (8 click + alkış)
+const Cal = {
+  on: false,
+  async run() {
+    if (this.on || Rec.st) return;
+    if (Player.playing) Player.stop();
+    let st;
+    try { st = await openCapture(); } catch (e) { status('Mikrofon izni alınamadı: ' + e.message, 'err'); return; }
+    this.on = true;
+    $('#btnLatencyCal').disabled = true;
+    const ctx = st.ctx, N = 8;
+    const interval = C.clamp(C.makeGrid(S.proj.settings).pulseSec, 0.4, 1.0);
+    const vol = Math.max(0.3, +$('#inClickVol').value);
+    const t0 = ctx.currentTime + 1.0;
+    const clicks = Array.from({ length: N }, (_, i) => t0 + i * interval);
+    clicks.forEach((t, i) => clickAt(ctx, t, i === 0 ? 1760 : 1320, vol));
+    const timer = setInterval(() => {
+      const k = Math.floor((ctx.currentTime - t0) / interval) + 1;
+      status(k < 1 ? 'Kalibrasyon: hazır olun — her click\'te el çırpın' : `Kalibrasyon: click ${Math.min(k, N)}/${N} — el çırpın`, 'busy');
+    }, 60);
+    await sleep((t0 - ctx.currentTime + (N - 1) * interval + 0.6) * 1000);
+    clearInterval(timer);
+    const data = await closeCapture(st);
+    this.on = false;
+    $('#btnLatencyCal').disabled = false;
+    if (!data.length || st.firstFrame == null) { status('Kalibrasyon: mikrofondan ses gelmedi.', 'err'); return; }
+    const sr = ctx.sampleRate, rec0 = st.firstFrame / sr;
+    const m = C.measureLatency(data, sr, clicks.map((t) => t - rec0));
+    const list = m.offsets.map((v) => (v == null ? '—' : Math.round(v * 1000))).join(', ');
+    this.last = m;
+    if (m.detected < 4) {
+      $('#latencyInfo').textContent = `Son deneme: ${m.detected}/${N} alkış algılandı (ofsetler: ${list} ms) — gecikme değiştirilmedi.`;
+      status(`Kalibrasyon başarısız: yalnızca ${m.detected} alkış algılandı. Mikrofona yakın, net çırpıp tekrar deneyin.`, 'err');
+      return;
+    }
+    S.proj.settings.latencyMs = m.latencyMs;
+    syncInputs(); refresh();
+    $('#latencyInfo').textContent = `Kalibrasyon: ${m.detected}/${N} alkış · ofsetler ${list} ms · medyan ${m.latencyMs} ms (sapma ±${m.madMs} ms)`;
+    status(`Kayıt gecikmesi ${m.latencyMs} ms olarak kaydedildi.`);
   },
 };
 
@@ -2547,9 +2683,10 @@ function renderNoteInspector(box, n) {
         <div class="row">Analizdeki nota: <b>${esc(nn(n.label ?? n.detMidi))}</b>
           <button data-act="label" data-v="-1">−1</button><button data-act="label" data-v="1">+1</button>
           <button data-act="labelReset"${n.label == null ? ' disabled' : ''}>Sıfırla</button></div>
-        <p class="hint">Pitch detection yanlış algıladığında kullanın. Akor bulma bu etiketi kullanır.</p></div>
+        <p class="hint">Pitch detection yanlış algıladığında kullanın. Ton önerisi (4. adım) ve akor bulma bu etiketi kullanır.</p></div>
       <div class="box b"><h4>b) Ses düzeltme — perde kaydırılır</h4>
         <div class="row">${esc(soundDesc)}</div>
+        <p class="hint">Ton önerisine girmez; akor bulma düzeltilmiş notayı kullanır.</p>
         <div class="row">Hedef: <button data-act="snd" data-v="-1">−1 yarım ses</button><button data-act="snd" data-v="1">+1 yarım ses</button>
           <button data-act="snd" data-v="-0.05">−5c</button><button data-act="snd" data-v="0.05">+5c</button>
           <button data-act="sndSnap">En yakın notaya çek</button>
@@ -2642,6 +2779,8 @@ function renderInfo() {
 function syncInputs() {
   const p = S.proj;
   $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
+  const gq = C.makeGrid(p.settings);
+  $('#bpmUnit').textContent = p.settings.meter === '6/8' ? `(♩. = noktalı çeyrek; ♩ = ${Math.round(gq.quarterBpm)})` : '(♩ = çeyrek nota)';
   $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
   if (p.audio.alignMode) $('#inAlign').value = p.audio.alignMode;
   $('#inFmin').value = p.pitch.fmin; $('#inFmax').value = p.pitch.fmax; $('#inSilence').value = p.pitch.silenceDb;
@@ -2650,6 +2789,7 @@ function syncInputs() {
   $('#inRetune').value = p.autotune.retuneMs; $('#outRetune').textContent = p.autotune.retuneMs + ' ms';
   $('#inKeepVib').checked = p.autotune.keepVibrato; $('#inSkipChrom').checked = p.autotune.skipChromatic;
   $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
+  $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
   $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
   for (const tr of ['vocal', 'piano']) {
     const strip = document.querySelector(`.strip[data-track=${tr}]`), m = p.mixer[tr];
@@ -2659,7 +2799,7 @@ function syncInputs() {
 }
 const onNum = (id, fn) => $(id).addEventListener('change', (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) fn(v); });
 onNum('#inBpm', (v) => { S.proj.settings.bpm = C.clamp(v, 30, 300); applyAlign(); syncInputs(); refresh(); });
-$('#inMeter').addEventListener('change', (e) => { S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
+$('#inMeter').addEventListener('change', (e) => { /* BPM birimi syncInputs'ta güncellenir */ S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
 onNum('#inLatency', (v) => { S.proj.settings.latencyMs = v; refresh(); });
 onNum('#inOffset', (v) => { S.proj.audio.offsetSec = v / 1000; S.proj.audio.alignMode = 'none'; $('#inAlign').value = 'none'; refresh(); });
 $('#inAlign').addEventListener('change', (e) => { S.proj.audio.alignMode = e.target.value; if (e.target.value === 'none' && S.proj.audio.source === 'file') S.proj.audio.offsetSec = 0; applyAlign(); syncInputs(); refresh(); });
@@ -2667,7 +2807,7 @@ $('#btnLatencyGuess').onclick = () => {
   const ctx = getCtx();
   const ms = Math.round(((ctx.baseLatency || 0) + (ctx.outputLatency || 0)) * 1000) + 10;
   S.proj.settings.latencyMs = ms; syncInputs(); refresh();
-  status(`Tahmini gecikme ${ms} ms (çıkış + ~10 ms giriş). En doğrusu: click'e karşı el çırparak kaydedip ofseti ölçmek.`);
+  status(`Tahmini gecikme ${ms} ms (çıkış + ~10 ms giriş). Daha doğrusu için "Kalibre et".`);
 };
 const pitchInput = (id, key) => onNum(id, (v) => { S.proj.pitch[key] = v; });
 pitchInput('#inFmin', 'fmin'); pitchInput('#inFmax', 'fmax'); pitchInput('#inSilence', 'silenceDb'); pitchInput('#inMinNote', 'minNoteMs'); pitchInput('#inChange', 'changeSemis');
@@ -2682,6 +2822,11 @@ $('#btnClearManual').onclick = () => { S.proj.noteEdits.forEach((e) => { e.targe
 $('#btnClearLabels').onclick = () => { S.proj.noteEdits.forEach((e) => { e.label = null; }); cleanupEdits(); refresh(); };
 $('#inPct').addEventListener('input', (e) => { S.proj.chordOpts.changePct = +e.target.value; $('#outPct').textContent = '%' + e.target.value; refresh(); });
 onNum('#inMaxBars', (v) => { S.proj.chordOpts.maxBars = Math.max(1, Math.round(v)); refresh(); });
+onNum('#inHomeEvery', (v) => { S.proj.chordOpts.homeEvery = Math.max(0, Math.round(v)); refresh(); });
+$('#inColorPen').addEventListener('input', (e) => { S.proj.chordOpts.colorPenalty = +e.target.value; $('#outColorPen').textContent = e.target.value; refresh(); });
+$('#btnModeLabel').onclick = () => setEditMode('label');
+$('#btnModeSound').onclick = () => setEditMode('sound');
+$('#btnLatencyCal').onclick = () => Cal.run();
 $('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; refresh(); };
 $('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
 $('#inPlayClick').addEventListener('change', (e) => { S.proj.mixer.click = e.target.checked; });
@@ -2689,9 +2834,6 @@ $$('input[name=editMode]').forEach((r) => r.addEventListener('change', (e) => se
 function setEditMode(m) {
   S.editMode = m;
   $$('input[name=editMode]').forEach((r) => { r.checked = r.value === m; });
-  const b = $('#modeBadge');
-  b.textContent = 'Mod: ' + { select: 'Seç', label: 'Etiket düzelt (ses değişmez)', sound: 'Ses düzelt (sürükle; Shift = cent)' }[m];
-  b.className = 'badge ' + m;
 }
 $$('.strip').forEach((strip) => {
   const tr = strip.dataset.track, m = () => S.proj.mixer[tr];
@@ -2840,6 +2982,7 @@ $('#btnExpMix').onclick = async () => {
 setEditMode('select');
 syncInputs();
 refresh();
+loadPianoSamples(); // hangi piyanonun çalacağı baştan görünsün
 status('Hazır. Kayıt yapın, dosya yükleyin ya da test melodisi üretin.');
 })();
 </script>

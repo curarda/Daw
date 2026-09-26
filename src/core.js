@@ -439,14 +439,17 @@ function lastWeightedNote(notes, g) {
   }
   return sorted[sorted.length - 1];
 }
+const keyMidi = (n) => (n.label != null ? n.label : n.detMidi);
 function suggestKeys(notes, g, topK = 3) {
   const h = new Float64Array(12);
   let total = 0;
-  for (const n of notes) { const w = histWeight(n, g); h[mod12(n.detMidi)] += w; total += w; }
+  // perde sınıfı: etiket düzeltmesi varsa etiket, yoksa algılanan en yakın nota.
+  // Ses düzeltmeleri (autotune/manuel) BİLEREK dahil değil — seçili scale'i kendi kendine doğrulamasın.
+  for (const n of notes) { const w = histWeight(n, g); h[mod12(keyMidi(n))] += w; total += w; }
   if (total <= 0) return { candidates: [], hist: h, last: null };
   for (let i = 0; i < 12; i++) h[i] /= total;
   const lastN = lastWeightedNote(notes, g);
-  const lastPc = lastN ? mod12(lastN.detMidi) : null;
+  const lastPc = lastN ? mod12(keyMidi(lastN)) : null;
   const firstStrong = [...notes].sort((p, q) => p.q0 - q.q0).find((n) => metricPos(n.q0, g).down);
   const all = [];
   for (let t = 0; t < 12; t++) {
@@ -461,7 +464,7 @@ function suggestKeys(notes, g, topK = 3) {
       const third = md.steps.includes(3) ? 3 : md.steps.includes(4) ? 4 : null;
       if (third != null) s += 0.1 * h[mod12(t + third)];
       if (lastPc === t) s += 0.25;
-      if (firstStrong && mod12(firstStrong.detMidi) === t) s += 0.05;
+      if (firstStrong && mod12(keyMidi(firstStrong)) === t) s += 0.05;
       s -= (1 - md.prior) * 0.5;
       all.push({ tonic: t, mode, score: s, pcs: [...set].sort((p, q) => p - q) });
     }
@@ -703,8 +706,9 @@ function roleLabel(interval, q) {
   }
   return '?';
 }
-// triad sesleri tam puan; 7/9/4/6 renk notaları daha az (ağır vuruşta kök/3/5 daha kararlı)
-const ROLE_CREDIT = { 0: 1, 3: 1, 4: 1, 7: 0.9, 6: 0.8, 8: 0.8, 10: 0.7, 11: 0.7, 2: 0.65, 5: 0.65, 9: 0.65, 1: 0.5 };
+const ROLE_CREDIT = { 0: 1, 3: 1, 4: 1, 7: 0.9, 6: 0.8, 8: 0.8, 10: 0.8, 11: 0.8, 2: 0.75, 5: 0.75, 9: 0.75, 1: 0.5 };
+// renk notaları (7, 9/2, 11/4, 6): isteğe bağlı ek ceza (colorPenalty, varsayılan 0)
+const COLOR_IVS = new Set([10, 11, 2, 5, 9]);
 
 // Bölümün modundan diatonik aday akorlar
 function diatonicChords(tonic, mode) {
@@ -755,7 +759,7 @@ function slotNotes(notes, q0, q1, g) {
   }
   return out;
 }
-function scoreChord(c, sn) {
+function scoreChord(c, sn, colorPenalty = 0) {
   const pcs = chordPcs(c);
   let s = 0, W = 0, friction = false, frictionW = 0;
   const used = new Set();
@@ -764,7 +768,7 @@ function scoreChord(c, sn) {
     W += w;
     const iv = mod12(pc - c.root);
     if (pcs.includes(pc)) {
-      s += w * (ROLE_CREDIT[iv] ?? 0.7);
+      s += w * ((ROLE_CREDIT[iv] ?? 0.7) - (COLOR_IVS.has(iv) ? colorPenalty : 0));
       used.add(iv);
       roles.push({ pc, w, role: roleLabel(iv, c.q), tone: true });
     } else {
@@ -789,7 +793,8 @@ function scoreChord(c, sn) {
 }
 const commonTones = (a, b) => (a && b ? chordPcs(a).filter((p) => chordPcs(b).includes(p)).length : 0);
 
-const CHORD_DEFAULTS = { changePct: 25, maxBars: 4 };
+// changePct: X, maxBars: N, homeEvery: M (0 = kapalı), colorPenalty: renk notası cezası
+const CHORD_DEFAULTS = { changePct: 25, maxBars: 4, homeEvery: 2, colorPenalty: 0 };
 // sections: [{startBar,endBar,tonic,mode,...}] (1 tabanlı, dahil), notes: {q0,q1,effMidi,cw}
 function buildChords(notes, sections, g, opts = {}, locks = []) {
   const o = Object.assign({}, CHORD_DEFAULTS, opts);
@@ -803,7 +808,10 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
     const cands = diatonicChords(sec.tonic, sec.mode);
     const home = homeChord(sec.tonic, sec.mode);
     const flats = keyUsesFlats(sec.tonic, sec.mode);
-    let cur = null, curBars = 0;
+    let cur = null, curBars = 0, sinceHome = 0;
+    // ev akoru sayılır: tonik kökte ve ev üçlüsünü içeren akor (ör. C#m, C#m7)
+    const homeThird = CHORD_Q[home.q].find((i) => i === 3 || i === 4);
+    const isHome = (c) => !!c && c.root === home.root && (homeThird == null || CHORD_Q[c.q].includes(homeThird));
     for (let bar = sec.startBar; bar <= sec.endBar; bar++) {
       const q0 = (bar - 1) * g.barQ, q1 = q0 + g.barQ;
       const isFirst = bar === sec.startBar, isLast = bar === sec.endBar;
@@ -811,7 +819,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const evalAll = (sn, extra) => {
         const Wt = sn.reduce((a, b) => a + b.w, 0);
         return cands.map((c) => {
-          const r = scoreChord(c, sn);
+          const r = scoreChord(c, sn, o.colorPenalty);
           let bonus = 0;
           if (sameChord(c, home)) bonus += 0.06 * Wt;
           if (c.deg === 3 || c.deg === 4) bonus += 0.02 * Wt;
@@ -820,7 +828,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         }).sort((p, q) => q.total - p.total);
       };
       const evalOne = (c, sn, extra) => {
-        const r = scoreChord(c, sn);
+        const r = scoreChord(c, sn, o.colorPenalty);
         const Wt = r.W;
         let bonus = sameChord(c, home) ? 0.06 * Wt : 0;
         if (extra) bonus += extra(c, Wt);
@@ -836,11 +844,14 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const lastNoSplit = isLast && !g.split;
       const extraBar = isFirst ? firstExtra : lastNoSplit ? homeExtra : null;
       let barChord, barReason = '', barCands = null;
+      // (d) ev akoru en az her M ölçüde bir duyulsun: M dolunca ev akoru eşik beklemeden aday olur
+      let homeDue = o.homeEvery > 0 && !isFirst && sinceHome >= o.homeEvery - 1;
+      const homeReason = `(d) ev akoru ${o.homeEvery} ölçüdür duyulmadı`;
       const lockFull = lockAt(bar, null);
       if (lockFull) {
         barChord = lockFull.chord; barReason = 'kilitli';
       } else if (!bn.length) {
-        barChord = cur || home; barReason = cur ? 'melodi yok — devam' : 'melodi yok — ev akoru';
+        barChord = cur && !homeDue ? cur : home; barReason = cur && !homeDue ? 'melodi yok — devam' : 'melodi yok — ev akoru';
       } else {
         barCands = evalAll(bn, extraBar);
         const best = barCands[0];
@@ -848,7 +859,9 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         else {
           const cs = evalOne(cur, bn, extraBar);
           const margin = pct * Math.max(Math.abs(cs.total), 0.25 * cs.W);
-          if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
+          const hs = homeDue && !isHome(cur) ? evalOne(home, bn, extraBar) : null;
+          if (hs && !hs.friction && hs.score > 0) { barChord = home; barReason = homeReason; }
+          else if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
           else if (best.total - cs.total >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = `(b) yeni akor ≥%${o.changePct} daha iyi`; }
           else if (curBars >= o.maxBars) {
             const alt = barCands.find((c) => !sameChord(c.chord, cur) && !c.friction && c.total > 0);
@@ -872,7 +885,9 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
             const ex = endHalf ? homeExtra : null;
             const cs = evalOne(hc, hn, ex);
             hc2 = evalAll(hn, ex);
-            if (cs.friction) { chord = hc2[0].chord; reason = '(a) yarım ölçüde sürtünme'; }
+            const hs = homeDue && !isHome(hc) && !isHome(barChord) ? evalOne(home, hn, ex) : null;
+            if (hs && !hs.friction && hs.score > 0) { chord = home; reason = homeReason; homeDue = false; }
+            else if (cs.friction) { chord = hc2[0].chord; reason = '(a) yarım ölçüde sürtünme'; }
             else if (endHalf && !sameChord(hc, home)) {
               const hs = hc2.find((c) => sameChord(c.chord, home));
               if (hs && !hs.friction && hs.total - cs.total >= pct * Math.max(Math.abs(cs.total), 0.25 * cs.W)) { chord = home; reason = 'bölüm sonu — ev akoruna dönüş'; }
@@ -885,7 +900,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const pushSlot = (sq0, sq1, chord, reason, locked, sn, cList) => {
         const scored = (cList || evalAll(sn)).slice(0, 12);
         const top = scored.slice(0, 3).map((c) => ({ chord: c.chord, score: c.total, pct: c.W > 0 ? Math.round((100 * c.total) / c.W) : 0, roles: c.roles, friction: c.friction }));
-        const curEval = scoreChord(chord, sn);
+        const curEval = scoreChord(chord, sn, o.colorPenalty);
         const heavy = sn.filter((x) => x.w >= 2);
         const slot = {
           bar, q0: sq0, q1: sq1, half: sq1 - sq0 < g.barQ - 1e-6 ? (sq0 > q0 + 1e-6 ? 1 : 0) : null,
@@ -909,6 +924,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         if (sameChord(ch, cur)) curBars += 1; else curBars = 1;
         cur = ch;
       }
+      sinceHome = slots.some((sl) => sl.bar === bar && sl.section === sec.id && isHome(sl.chord)) ? 0 : sinceHome + 1;
     }
     prevChord = cur;
   });
@@ -1388,6 +1404,40 @@ function firstOnset(x, sr) {
   return 0;
 }
 
+// ---------------------------------------------------------------- gecikme kalibrasyonu
+// x: mikrofon kaydı, clickTimes: click'lerin kayıttaki zamanları (s).
+// Her click'in [pre, post] penceresinde alkış başlangıcını bulur; ofsetlerin medyanı = gecikme.
+function measureLatency(x, sr, clickTimes, opts = {}) {
+  const interval = clickTimes.length > 1 ? clickTimes[1] - clickTimes[0] : 1;
+  const pre = opts.pre ?? 0.08, post = opts.post ?? Math.min(0.4, 0.8 * interval - pre);
+  const win = Math.max(1, Math.round(0.0005 * sr));
+  // yüksek geçiren (fark) + 0.5 ms kayan ortalama zarf
+  const e = new Float32Array(x.length);
+  let acc = 0;
+  for (let i = 1; i < x.length; i++) {
+    acc += Math.abs(x[i] - x[i - 1]);
+    if (i >= win) acc -= Math.abs(x[i - win] - x[i - win - 1] || 0);
+    e[i] = acc / win;
+  }
+  const offsets = [];
+  for (const ct of clickTimes) {
+    const a = Math.max(1, Math.round((ct - pre) * sr)), b = Math.min(x.length, Math.round((ct + post) * sr));
+    if (b - a < win * 10) { offsets.push(null); continue; }
+    let peak = 0;
+    for (let i = a; i < b; i++) peak = Math.max(peak, e[i]);
+    const floor = median(e.subarray(a, Math.min(b, a + Math.round(0.03 * sr))).filter((_, k) => k % 8 === 0)) || 0;
+    if (!(peak > 1e-4 && peak > 6 * floor)) { offsets.push(null); continue; }
+    const thr = floor + 0.3 * (peak - floor);
+    let on = null;
+    for (let i = a; i < b; i++) if (e[i] >= thr) { on = i / sr; break; }
+    offsets.push(on == null ? null : on - ct);
+  }
+  const valid = offsets.filter((v) => v != null);
+  const med = valid.length ? median(valid) : NaN;
+  const mad = valid.length ? median(valid.map((v) => Math.abs(v - med))) : NaN;
+  return { offsets, detected: valid.length, latencyMs: Math.round(med * 1000), madMs: Math.round(mad * 1000 * 10) / 10 };
+}
+
 const Core = {
   PC_SHARP, PC_FLAT, MODES, MODE_ORDER, METERS, CHORD_Q, TEST_SCORE,
   PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS,
@@ -1398,7 +1448,7 @@ const Core = {
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
-  bytesToBase64, base64ToBytes, firstOnset,
+  bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = Core;
 root.Core = Core;

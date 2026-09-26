@@ -50,6 +50,17 @@ main { flex: 1; display: flex; min-height: 0; }
 .step summary { cursor: pointer; font-weight: 600; padding: 4px 0; list-style: none; }
 .step summary::-webkit-details-marker { display: none; }
 .step summary b { display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 4px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); margin-right: 6px; font-size: 11px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg label { display: block; margin: 0; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; padding: 4px 10px; cursor: pointer; color: var(--text); font-size: 12px; border-right: 1px solid var(--line); }
+.seg label:last-child span { border-right: 0; }
+.seg input:checked + span { background: var(--accent2); color: #fff; }
+.seg input[value=label]:checked + span { background: var(--warn); color: #000; }
+.seg input[value=sound]:checked + span { background: var(--ok); color: #000; }
+.seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
+#pianoBadge.ok { color: var(--ok); border-color: var(--ok); }
+#pianoBadge.warn { color: var(--warn); border-color: var(--warn); }
 .modes { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
 .modes label { display: flex; gap: 6px; align-items: center; color: var(--text); font-size: 13px; }
 .modes input { width: auto; margin: 0; }

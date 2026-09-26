@@ -24,6 +24,7 @@ const S = {
   drag: null,
 };
 window.__daw = S; // hata ayıklama / testler için
+window.__dawCal = () => Cal.last;
 
 // ---------------------------------------------------------------- durum satırı
 function status(msg, kind) { const s = $('#status'); s.textContent = msg; s.className = kind || ''; s.title = msg; }
@@ -111,6 +112,10 @@ const SAL_BASE = 'https://tonejs.github.io/audio/salamander/';
 const SAL_NOTES = ['A0', 'C1', 'D#1', 'F#1', 'A1', 'C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'C7', 'D#7', 'F#7', 'A7', 'C8'];
 const noteToMidi = (n) => { const p = C.parsePc(n); return p.pc + 12 * (parseInt(n.slice(p.len), 10) + 1); };
 let pianoPromise = null;
+function setPianoBadge(text, kind, title) {
+  const b = $('#pianoBadge');
+  b.textContent = text; b.className = 'tag ' + (kind || ''); b.title = title || text;
+}
 function loadPianoSamples() {
   if (pianoPromise) return pianoPromise;
   pianoPromise = (async () => {
@@ -124,6 +129,7 @@ function loadPianoSamples() {
         return { name: n, midi: noteToMidi(n), buffer: ab, data: ab.getChannelData(0), sr: ab.sampleRate };
       }));
       $('#pianoInfo').textContent = 'Piyano: Salamander Grand (gerçek örnekler) yüklendi.';
+      setPianoBadge('Piyano: Salamander', 'ok', 'Salamander Grand Piano örnekleri çalıyor');
       return { kind: 'salamander', samples: bufs };
     } catch (e) {
       console.warn('Salamander yüklenemedi, sentetik piyano kullanılıyor:', e);
@@ -133,6 +139,7 @@ function loadPianoSamples() {
         return { name: n, midi: m, data, sr, buffer: toAudioBuffer(data, sr) };
       });
       $('#pianoInfo').textContent = 'Salamander örneklerine ulaşılamadı (ağ) — yedek sentetik piyano kullanılıyor.';
+      setPianoBadge('Piyano: yedek sentez', 'warn', 'Salamander yüklenemedi (' + e.message + '); sentetik yedek piyano çalıyor');
       return { kind: 'synth', samples };
     }
   })();
@@ -306,23 +313,38 @@ async function makeRecorderNode(ctx, onChunk) {
   node.onaudioprocess = (e) => { e.outputBuffer.getChannelData(0).fill(0); onChunk(Math.round((e.playbackTime - bs / ctx.sampleRate) * ctx.sampleRate), e.inputBuffer.getChannelData(0).slice()); };
   return node;
 }
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// mikrofon yakalama (kayıt ve kalibrasyon ortak) — click'ler bu zincire bağlı değil
+async function openCapture() {
+  const ctx = getCtx();
+  await ctx.resume();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+  const src = ctx.createMediaStreamSource(stream);
+  const st = { ctx, stream, src, node: null, chunks: [], firstFrame: null };
+  st.node = await makeRecorderNode(ctx, (frame, data) => { if (st.firstFrame == null) st.firstFrame = frame; st.chunks.push(data); });
+  src.connect(st.node);
+  st.node.connect(ctx.destination); // node sessizlik üretir (izleme yok); yalnızca işlemenin sürmesi için
+  return st;
+}
+async function closeCapture(st) {
+  if (st.node.port) st.node.port.postMessage('stop'); else st.node.onaudioprocess = null;
+  await sleep(120);
+  st.src.disconnect(); st.node.disconnect();
+  st.stream.getTracks().forEach((t) => t.stop());
+  const len = st.chunks.reduce((a, c) => a + c.length, 0);
+  const data = new Float32Array(len);
+  let o = 0;
+  for (const c of st.chunks) { data.set(c, o); o += c.length; }
+  return data;
+}
 const Rec = {
   st: null,
   async start() {
-    if (this.st) return;
+    if (this.st || Cal.on) return;
     if (Player.playing) Player.stop();
-    const ctx = getCtx();
-    await ctx.resume();
-    let stream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
-    } catch (e) { status('Mikrofon izni alınamadı: ' + e.message, 'err'); return; }
-    const src = ctx.createMediaStreamSource(stream);
-    const st = { ctx, stream, src, node: null, chunks: [], firstFrame: null };
-    const node = await makeRecorderNode(ctx, (frame, data) => { if (st.firstFrame == null) st.firstFrame = frame; st.chunks.push(data); });
-    st.node = node;
-    src.connect(node);
-    node.connect(ctx.destination); // node sessizlik üretir (izleme yok); yalnızca işlemenin sürmesi için
+    let st;
+    try { st = await openCapture(); } catch (e) { status('Mikrofon izni alınamadı: ' + e.message, 'err'); return; }
+    const ctx = st.ctx;
     const g = C.makeGrid(S.proj.settings);
     const t0 = ctx.currentTime + 0.3;
     st.barStart = t0 + g.barSec;
@@ -349,16 +371,9 @@ const Rec = {
     if (!st) return;
     this.st = null;
     clearInterval(st.timer);
-    if (st.node.port) st.node.port.postMessage('stop'); else st.node.onaudioprocess = null;
-    await new Promise((r) => setTimeout(r, 120));
-    st.src.disconnect(); st.node.disconnect();
-    st.stream.getTracks().forEach((t) => t.stop());
+    const data = await closeCapture(st);
     $('#btnRec').classList.remove('on'); $('#btnRecStop').disabled = true;
-    const len = st.chunks.reduce((a, c) => a + c.length, 0);
-    if (!len) { status('Kayıt boş.', 'err'); return; }
-    const data = new Float32Array(len);
-    let o = 0;
-    for (const c of st.chunks) { data.set(c, o); o += c.length; }
+    if (!data.length) { status('Kayıt boş.', 'err'); return; }
     const sr = st.ctx.sampleRate;
     setAudio(data, sr, 'Kayıt ' + new Date().toLocaleTimeString(), 'record');
     // 1. ölçünün başı kayıttaki hangi saniyeye denk geliyor (gecikme ayrıca eklenir)
@@ -366,6 +381,48 @@ const Rec = {
     S.proj.audio.alignMode = 'none';
     syncInputs();
     await analyze();
+  },
+};
+
+// ---------------------------------------------------------------- gecikme kalibrasyonu (8 click + alkış)
+const Cal = {
+  on: false,
+  async run() {
+    if (this.on || Rec.st) return;
+    if (Player.playing) Player.stop();
+    let st;
+    try { st = await openCapture(); } catch (e) { status('Mikrofon izni alınamadı: ' + e.message, 'err'); return; }
+    this.on = true;
+    $('#btnLatencyCal').disabled = true;
+    const ctx = st.ctx, N = 8;
+    const interval = C.clamp(C.makeGrid(S.proj.settings).pulseSec, 0.4, 1.0);
+    const vol = Math.max(0.3, +$('#inClickVol').value);
+    const t0 = ctx.currentTime + 1.0;
+    const clicks = Array.from({ length: N }, (_, i) => t0 + i * interval);
+    clicks.forEach((t, i) => clickAt(ctx, t, i === 0 ? 1760 : 1320, vol));
+    const timer = setInterval(() => {
+      const k = Math.floor((ctx.currentTime - t0) / interval) + 1;
+      status(k < 1 ? 'Kalibrasyon: hazır olun — her click\'te el çırpın' : `Kalibrasyon: click ${Math.min(k, N)}/${N} — el çırpın`, 'busy');
+    }, 60);
+    await sleep((t0 - ctx.currentTime + (N - 1) * interval + 0.6) * 1000);
+    clearInterval(timer);
+    const data = await closeCapture(st);
+    this.on = false;
+    $('#btnLatencyCal').disabled = false;
+    if (!data.length || st.firstFrame == null) { status('Kalibrasyon: mikrofondan ses gelmedi.', 'err'); return; }
+    const sr = ctx.sampleRate, rec0 = st.firstFrame / sr;
+    const m = C.measureLatency(data, sr, clicks.map((t) => t - rec0));
+    const list = m.offsets.map((v) => (v == null ? '—' : Math.round(v * 1000))).join(', ');
+    this.last = m;
+    if (m.detected < 4) {
+      $('#latencyInfo').textContent = `Son deneme: ${m.detected}/${N} alkış algılandı (ofsetler: ${list} ms) — gecikme değiştirilmedi.`;
+      status(`Kalibrasyon başarısız: yalnızca ${m.detected} alkış algılandı. Mikrofona yakın, net çırpıp tekrar deneyin.`, 'err');
+      return;
+    }
+    S.proj.settings.latencyMs = m.latencyMs;
+    syncInputs(); refresh();
+    $('#latencyInfo').textContent = `Kalibrasyon: ${m.detected}/${N} alkış · ofsetler ${list} ms · medyan ${m.latencyMs} ms (sapma ±${m.madMs} ms)`;
+    status(`Kayıt gecikmesi ${m.latencyMs} ms olarak kaydedildi.`);
   },
 };
 
@@ -855,9 +912,10 @@ function renderNoteInspector(box, n) {
         <div class="row">Analizdeki nota: <b>${esc(nn(n.label ?? n.detMidi))}</b>
           <button data-act="label" data-v="-1">−1</button><button data-act="label" data-v="1">+1</button>
           <button data-act="labelReset"${n.label == null ? ' disabled' : ''}>Sıfırla</button></div>
-        <p class="hint">Pitch detection yanlış algıladığında kullanın. Akor bulma bu etiketi kullanır.</p></div>
+        <p class="hint">Pitch detection yanlış algıladığında kullanın. Ton önerisi (4. adım) ve akor bulma bu etiketi kullanır.</p></div>
       <div class="box b"><h4>b) Ses düzeltme — perde kaydırılır</h4>
         <div class="row">${esc(soundDesc)}</div>
+        <p class="hint">Ton önerisine girmez; akor bulma düzeltilmiş notayı kullanır.</p>
         <div class="row">Hedef: <button data-act="snd" data-v="-1">−1 yarım ses</button><button data-act="snd" data-v="1">+1 yarım ses</button>
           <button data-act="snd" data-v="-0.05">−5c</button><button data-act="snd" data-v="0.05">+5c</button>
           <button data-act="sndSnap">En yakın notaya çek</button>
@@ -950,6 +1008,8 @@ function renderInfo() {
 function syncInputs() {
   const p = S.proj;
   $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
+  const gq = C.makeGrid(p.settings);
+  $('#bpmUnit').textContent = p.settings.meter === '6/8' ? `(♩. = noktalı çeyrek; ♩ = ${Math.round(gq.quarterBpm)})` : '(♩ = çeyrek nota)';
   $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
   if (p.audio.alignMode) $('#inAlign').value = p.audio.alignMode;
   $('#inFmin').value = p.pitch.fmin; $('#inFmax').value = p.pitch.fmax; $('#inSilence').value = p.pitch.silenceDb;
@@ -958,6 +1018,7 @@ function syncInputs() {
   $('#inRetune').value = p.autotune.retuneMs; $('#outRetune').textContent = p.autotune.retuneMs + ' ms';
   $('#inKeepVib').checked = p.autotune.keepVibrato; $('#inSkipChrom').checked = p.autotune.skipChromatic;
   $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
+  $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
   $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
   for (const tr of ['vocal', 'piano']) {
     const strip = document.querySelector(`.strip[data-track=${tr}]`), m = p.mixer[tr];
@@ -967,7 +1028,7 @@ function syncInputs() {
 }
 const onNum = (id, fn) => $(id).addEventListener('change', (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) fn(v); });
 onNum('#inBpm', (v) => { S.proj.settings.bpm = C.clamp(v, 30, 300); applyAlign(); syncInputs(); refresh(); });
-$('#inMeter').addEventListener('change', (e) => { S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
+$('#inMeter').addEventListener('change', (e) => { /* BPM birimi syncInputs'ta güncellenir */ S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
 onNum('#inLatency', (v) => { S.proj.settings.latencyMs = v; refresh(); });
 onNum('#inOffset', (v) => { S.proj.audio.offsetSec = v / 1000; S.proj.audio.alignMode = 'none'; $('#inAlign').value = 'none'; refresh(); });
 $('#inAlign').addEventListener('change', (e) => { S.proj.audio.alignMode = e.target.value; if (e.target.value === 'none' && S.proj.audio.source === 'file') S.proj.audio.offsetSec = 0; applyAlign(); syncInputs(); refresh(); });
@@ -975,7 +1036,7 @@ $('#btnLatencyGuess').onclick = () => {
   const ctx = getCtx();
   const ms = Math.round(((ctx.baseLatency || 0) + (ctx.outputLatency || 0)) * 1000) + 10;
   S.proj.settings.latencyMs = ms; syncInputs(); refresh();
-  status(`Tahmini gecikme ${ms} ms (çıkış + ~10 ms giriş). En doğrusu: click'e karşı el çırparak kaydedip ofseti ölçmek.`);
+  status(`Tahmini gecikme ${ms} ms (çıkış + ~10 ms giriş). Daha doğrusu için "Kalibre et".`);
 };
 const pitchInput = (id, key) => onNum(id, (v) => { S.proj.pitch[key] = v; });
 pitchInput('#inFmin', 'fmin'); pitchInput('#inFmax', 'fmax'); pitchInput('#inSilence', 'silenceDb'); pitchInput('#inMinNote', 'minNoteMs'); pitchInput('#inChange', 'changeSemis');
@@ -990,6 +1051,11 @@ $('#btnClearManual').onclick = () => { S.proj.noteEdits.forEach((e) => { e.targe
 $('#btnClearLabels').onclick = () => { S.proj.noteEdits.forEach((e) => { e.label = null; }); cleanupEdits(); refresh(); };
 $('#inPct').addEventListener('input', (e) => { S.proj.chordOpts.changePct = +e.target.value; $('#outPct').textContent = '%' + e.target.value; refresh(); });
 onNum('#inMaxBars', (v) => { S.proj.chordOpts.maxBars = Math.max(1, Math.round(v)); refresh(); });
+onNum('#inHomeEvery', (v) => { S.proj.chordOpts.homeEvery = Math.max(0, Math.round(v)); refresh(); });
+$('#inColorPen').addEventListener('input', (e) => { S.proj.chordOpts.colorPenalty = +e.target.value; $('#outColorPen').textContent = e.target.value; refresh(); });
+$('#btnModeLabel').onclick = () => setEditMode('label');
+$('#btnModeSound').onclick = () => setEditMode('sound');
+$('#btnLatencyCal').onclick = () => Cal.run();
 $('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; refresh(); };
 $('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
 $('#inPlayClick').addEventListener('change', (e) => { S.proj.mixer.click = e.target.checked; });
@@ -997,9 +1063,6 @@ $$('input[name=editMode]').forEach((r) => r.addEventListener('change', (e) => se
 function setEditMode(m) {
   S.editMode = m;
   $$('input[name=editMode]').forEach((r) => { r.checked = r.value === m; });
-  const b = $('#modeBadge');
-  b.textContent = 'Mod: ' + { select: 'Seç', label: 'Etiket düzelt (ses değişmez)', sound: 'Ses düzelt (sürükle; Shift = cent)' }[m];
-  b.className = 'badge ' + m;
 }
 $$('.strip').forEach((strip) => {
   const tr = strip.dataset.track, m = () => S.proj.mixer[tr];
@@ -1148,5 +1211,6 @@ $('#btnExpMix').onclick = async () => {
 setEditMode('select');
 syncInputs();
 refresh();
+loadPianoSamples(); // hangi piyanonun çalacağı baştan görünsün
 status('Hazır. Kayıt yapın, dosya yükleyin ya da test melodisi üretin.');
 })();

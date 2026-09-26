@@ -62,6 +62,27 @@ await step('3) Pitch detection: nota olayları, medyan perde, nefes atılır', a
   return `${d.notes.length} nota · pes nota: ${nm(flat.nearest)} ${flat.cents}c\n    ${lines.join(' ')}`;
 });
 
+await step('3b) Etiket düzeltme ton önerisinden önce: histogram etiketleri kullanır, ses düzeltmelerini kullanmaz', () => {
+  const h0 = Array.from(d.keyInfo.s0.hist);
+  const n = d.notes[5]; // D4, ölçü 2 vuruş 3
+  // etiket → histogram değişir
+  proj.noteEdits = [{ t0: n.t0, t1: n.t1, label: 64 }];
+  const hl = Array.from(Core.derive(proj, st).keyInfo.s0.hist);
+  assert.ok(hl[4] > 0 && h0[4] === 0, 'etiketlenen E histograma girmedi');
+  assert.ok(hl[2] < h0[2], 'D ağırlığı azalmadı');
+  // ses düzeltmeleri (autotune + manuel) → histogram aynı kalır
+  const n0 = d.notes[0];
+  proj.noteEdits = [{ t0: n0.t0, t1: n0.t1, target: 63, locked: true }];
+  proj.autotune = Object.assign({}, proj.autotune, { enabled: true });
+  const dS = Core.derive(proj, st);
+  assert.equal(dS.notes[0].effMidi, 63, 'manuel ses düzeltmesi uygulanmadı');
+  assert.deepEqual(Array.from(dS.keyInfo.s0.hist), h0, 'ses düzeltmesi histogramı değiştirdi');
+  proj.noteEdits = [];
+  proj.autotune = Object.assign({}, proj.autotune, { enabled: false });
+  const pct = (h, i) => (h[i] * 100).toFixed(0) + '%';
+  return `verse histogramı C#/D/E: önce ${pct(h0, 1)}/${pct(h0, 2)}/${pct(h0, 4)} · D→E etiketiyle ${pct(hl, 1)}/${pct(hl, 2)}/${pct(hl, 4)} · autotune + manuel D#4 ile değişmedi`;
+});
+
 await step('4) Ton/mod önerisi: verse → C# Frig, nakarat → B Dorian (ilk 3 aday)', () => {
   const v = d.keyInfo.s0, c = d.keyInfo.s1;
   const fmt = (k) => k.candidates.map((x) => `${x.name} (${x.confidence}%)`).join(', ') + ` · son ağırlıklı nota: ${k.last.name}`;
@@ -129,17 +150,25 @@ await step('5b) Manuel düzeltme kilitler; autotune ona dokunmaz', () => {
   return 'nota 1 → D#4 (manuel, kilitli)';
 });
 
-await step('6) Akor bulma: verse C#m / D(maj7), nakarat sonu Bm', () => {
+await step('6) Akor bulma: verse C#m / Dmaj7, ev akoru her 2 ölçüde; nakarat sonu Bm', () => {
   d = Core.derive(proj, st);
-  const byBar = {};
-  for (const c of d.chords) (byBar[c.bar] ||= []).push(Core.chordName(c.chord, c.flats));
-  const txt = Object.entries(byBar).map(([b, cs]) => `${b}:${cs.join(' ')}`).join(' | ');
-  const verse = d.chords.filter((c) => c.bar <= 4).map((c) => Core.chordName(c.chord));
-  assert.ok(verse.includes('C#m'), 'verse C#m içermiyor: ' + txt);
-  assert.ok(verse.includes('D') || verse.includes('Dmaj7'), 'verse D/Dmaj7 içermiyor: ' + txt);
-  assert.ok(verse.every((c) => ['C#m', 'D', 'Dmaj7'].includes(c)), 'verse beklenmeyen akor: ' + txt);
-  const last = d.chords[d.chords.length - 1];
-  assert.equal(Core.chordName(last.chord), 'Bm', 'nakarat sonu: ' + txt);
+  const chart = (dd) => {
+    const byBar = {};
+    for (const c of dd.chords) (byBar[c.bar] ||= []).push(Core.chordName(c.chord, c.flats));
+    return Object.values(byBar).map((cs) => cs.join(' '));
+  };
+  const bars = chart(d);
+  const txt = bars.map((b, i) => `${i + 1}:${b}`).join(' | ');
+  assert.deepEqual(bars.slice(0, 4), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7 C#m'], 'verse: ' + txt);
+  assert.match(d.chords.find((c) => c.bar === 3).reason, /\(d\) ev akoru 2 ölçüdür/);
+  assert.equal(bars[7], 'Bm', 'nakarat sonu: ' + txt);
+  // ev akoru kuralı kapalıyken (M=0) renk akoru Dmaj7 cezasız devam eder
+  const off = chart(Core.derive(Object.assign({}, proj, { chordOpts: Object.assign({}, proj.chordOpts, { homeEvery: 0 }) }), st));
+  assert.equal(off[2], 'Dmaj7', 'M=0: ' + off.join(' | '));
+  // renk notası cezası parametresi (0.1) eski sürümün sonucunu verir
+  const pen = chart(Core.derive(Object.assign({}, proj, { chordOpts: Object.assign({}, proj.chordOpts, { homeEvery: 0, colorPenalty: 0.1 }) }), st));
+  assert.equal(pen[2], 'C#m', 'ceza 0.1: ' + pen.join(' | '));
+  assert.equal(Core.CHORD_DEFAULTS.colorPenalty, 0);
   // Frig ev akoru asla majör değil
   assert.ok(!Core.diatonicChords(1, 'phrygian').some((c) => c.root === 1 && Core.CHORD_Q[c.q].includes(4)));
   // kilit korunur
@@ -148,7 +177,26 @@ await step('6) Akor bulma: verse C#m / D(maj7), nakarat sonu Bm', () => {
   assert.equal(Core.chordName(d3.chords[0].chord), 'A');
   assert.ok(d3.chords[0].locked);
   proj.chordLocks = [];
-  return txt;
+  return `${txt}\n    M=0: ${off.join(' | ')}\n    M=0 + renk cezası 0.1: ${pen.join(' | ')}`;
+});
+
+await step('1) Gecikme kalibrasyonu: 8 click, alkış ofsetlerinin medyanı', () => {
+  const sr = 48000, n = sr * 5, x = new Float32Array(n);
+  let r = 7;
+  const rnd = () => { r = (r * 1103515245 + 12345) & 0x7fffffff; return r / 0x7fffffff * 2 - 1; };
+  for (let i = 0; i < n; i++) x[i] = rnd() * 0.002;
+  const clicks = Array.from({ length: 8 }, (_, i) => 0.5 + i * 0.5);
+  const jitter = [4, -6, 0, 9, -3, 2, 0, 0];
+  clicks.forEach((c, i) => {
+    if (i === 6) return; // bir alkış kaçırıldı
+    const s0 = Math.round((c + 0.045 + jitter[i] / 1000) * sr);
+    for (let k = 0; k < 0.03 * sr; k++) x[s0 + k] += rnd() * 0.6 * Math.exp(-k / (0.006 * sr));
+  });
+  const m = Core.measureLatency(x, sr, clicks);
+  assert.equal(m.detected, 7);
+  assert.ok(Math.abs(m.latencyMs - 47) <= 3, 'medyan ' + m.latencyMs);
+  assert.equal(Core.measureLatency(new Float32Array(n), sr, clicks).detected, 0);
+  return `${m.detected}/8 alkış · ofsetler ${m.offsets.map((v) => (v == null ? '—' : Math.round(v * 1000))).join(', ')} ms · medyan ${m.latencyMs} ms`;
 });
 
 await step('7) Akor düzenleme: en iyi 3 aday + melodi notalarının rolü', () => {
