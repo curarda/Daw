@@ -1,0 +1,2847 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini DAW — Vokal Armoni</title>
+<style>:root {
+  --bg: #15171c; --panel: #1d2027; --panel2: #242833; --line: #323746; --text: #e4e7ee; --muted: #9aa2b4;
+  --accent: #6aa7ff; --accent2: #3d7be0; --rec: #ff5a5f; --ok: #5fd08a; --warn: #ffb454; --lock: #f4d35e;
+  --note-in: #5b9dff; --note-out: #ff8a4c; --raw: #e8ecf5; --cor: #5fd08a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; display: flex; flex-direction: column; }
+button, select, input { font: inherit; color: inherit; }
+button { background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: default; }
+button.accent { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+button.rec { color: var(--rec); font-weight: 600; }
+button.rec.on { background: var(--rec); color: #fff; }
+button.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+input[type=number], select, input[type=text] { background: #111318; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; width: 100%; }
+input[type=number] { width: 100%; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+kbd { background: #111318; border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font-size: 11px; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0; }
+.row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0; }
+.row .grow { flex: 1; }
+.row input[type=number] { width: 58px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; align-items: end; }
+label { display: block; color: var(--muted); font-size: 12px; }
+label > input, label > select { margin-top: 2px; }
+label.chk { display: flex; gap: 6px; align-items: center; color: var(--text); margin: 4px 0; }
+label.chk input { width: auto; margin: 0; }
+output { color: var(--text); float: right; }
+fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; padding: 6px 8px; }
+legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
+
+#topbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; font-size: 15px; }
+.brand small { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#posReadout { min-width: 88px; text-align: center; background: #0e1014; border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; }
+button.ab { min-width: 150px; }
+#status { flex: 1; min-width: 200px; color: var(--muted); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status.err { color: var(--rec); }
+#status.busy::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 6px; border-radius: 50%; border: 2px solid var(--accent); border-top-color: transparent; animation: spin .8s linear infinite; vertical-align: -1px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+main { flex: 1; display: flex; min-height: 0; }
+#panels { width: 340px; flex: none; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 6px 10px 40px; }
+.step { border-bottom: 1px solid var(--line); padding: 6px 0 10px; }
+.step summary { cursor: pointer; font-weight: 600; padding: 4px 0; list-style: none; }
+.step summary::-webkit-details-marker { display: none; }
+.step summary b { display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 4px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); margin-right: 6px; font-size: 11px; }
+.modes { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
+.modes label { display: flex; gap: 6px; align-items: center; color: var(--text); font-size: 13px; }
+.modes input { width: auto; margin: 0; }
+
+.sec-card { border: 1px solid var(--line); border-radius: 7px; padding: 6px 8px; margin: 8px 0; background: var(--panel2); }
+.sec-card.sel { border-color: var(--accent); }
+.sec-card .head { display: flex; gap: 6px; align-items: center; }
+.sec-card .head input[type=text] { flex: 1; }
+.sec-card .head input[type=number] { width: 52px; }
+.sec-card .keyrow { display: flex; gap: 6px; margin: 6px 0; align-items: center; }
+.sec-card .keyrow select:first-child { width: 70px; }
+.tag { font-size: 11px; padding: 1px 6px; border-radius: 9px; border: 1px solid var(--line); white-space: nowrap; }
+.tag.ok { color: var(--ok); border-color: var(--ok); }
+.tag.warn { color: var(--warn); border-color: var(--warn); }
+.cands { list-style: none; margin: 4px 0 0; padding: 0; }
+.cands li { display: flex; gap: 6px; align-items: center; padding: 3px 0; border-top: 1px dashed var(--line); }
+.cands li .nm { font-weight: 600; min-width: 108px; }
+.cands li .sub { color: var(--muted); font-size: 11px; flex: 1; }
+.cands li button { padding: 2px 8px; }
+.bar { height: 6px; background: #0e1014; border-radius: 3px; overflow: hidden; width: 50px; flex: none; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+
+.mixer { display: grid; gap: 6px; }
+.strip { display: grid; grid-template-columns: 52px 1fr 46px 28px 28px; gap: 6px; align-items: center; }
+.strip button { padding: 3px 0; }
+.strip button.mute.on { background: var(--warn); border-color: var(--warn); color: #000; }
+.strip button.solo.on { background: var(--ok); border-color: var(--ok); color: #000; }
+.strip output { float: none; text-align: right; font-size: 12px; }
+
+#work { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+#tlTools { display: flex; gap: 16px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+#tlTools label { display: flex; gap: 6px; align-items: center; }
+#tlTools input[type=range] { width: 120px; }
+.legend { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.lg { display: inline-block; width: 14px; height: 8px; border-radius: 2px; margin-left: 6px; }
+.lg.in { background: var(--note-in); } .lg.out { background: var(--note-out); }
+.lg.raw { height: 2px; background: var(--raw); } .lg.cor { height: 2px; background: var(--cor); }
+.badge { margin-left: auto; font-size: 12px; padding: 2px 8px; border-radius: 9px; background: var(--panel2); border: 1px solid var(--line); }
+.badge.label { border-color: var(--warn); color: var(--warn); }
+.badge.sound { border-color: var(--ok); color: var(--ok); }
+#tlScroll { flex: 1; min-height: 300px; overflow-x: auto; overflow-y: hidden; position: relative; background: #101217; }
+#tlInner { height: 100%; position: relative; }
+#tl { position: sticky; left: 0; top: 0; display: block; height: 100%; cursor: default; touch-action: none; }
+#inspector { flex: none; max-height: 42%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; }
+#inspector h3 { margin: 0 0 6px; font-size: 14px; }
+#inspector .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 6px 0; }
+#inspector .kv > :nth-child(odd) { color: var(--muted); }
+#inspector .cols { display: flex; gap: 14px; flex-wrap: wrap; }
+#inspector .box { border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; flex: 1; min-width: 240px; }
+#inspector .box.a { border-color: var(--warn); }
+#inspector .box.b { border-color: var(--ok); }
+#inspector .box h4 { margin: 0 0 4px; font-size: 12px; }
+#inspector table { border-collapse: collapse; width: 100%; }
+#inspector td, #inspector th { text-align: left; padding: 3px 6px; border-top: 1px solid var(--line); font-size: 12px; }
+#inspector th { color: var(--muted); font-weight: 500; }
+.role { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: 8px; background: #2c3342; margin: 1px 2px; }
+.role.clash { background: #5b2530; color: #ffb3b9; }
+.role.tone { background: #1f3b2c; color: #aef0c6; }
+.file-btn { display: inline-block; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; color: var(--text); font-size: 13px; }
+.file-btn:hover { border-color: var(--accent); }
+
+@media (max-width: 860px) {
+  main { flex-direction: column; }
+  #panels { width: 100%; max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  #status { text-align: left; }
+}
+</style>
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">Mini DAW <small>vokal → armoni</small></div>
+  <div class="group transport">
+    <button id="btnPlay" title="Boşluk tuşu">▶ Çal</button>
+    <button id="btnStop" title="Başa sar">■</button>
+    <span id="posReadout" class="mono">1 · 1</span>
+    <button id="btnAB" class="ab" title="Orijinal / düzeltilmiş vokal">A/B: Düzeltilmiş</button>
+  </div>
+  <div class="group">
+    <button id="btnTest" class="accent">Test melodisi üret</button>
+    <button id="btnNew">Yeni</button>
+    <button id="btnOpen">Proje aç</button>
+    <button id="btnSave">Proje kaydet</button>
+    <label class="chk" title="Orijinal kaydı proje dosyasına WAV olarak göm"><input type="checkbox" id="chkEmbed" checked> sesi göm</label>
+    <input type="file" id="fileProject" accept=".json,application/json" hidden>
+  </div>
+  <div id="status" role="status"></div>
+</header>
+
+<main>
+  <aside id="panels">
+    <details class="step" open>
+      <summary><b>1</b> Proje ayarı</summary>
+      <div class="grid2">
+        <label>BPM <small>(vuruş; 6/8'de ♩.)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
+        <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>6/8</option></select></label>
+        <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
+        <button id="btnLatencyGuess" title="Ses kartının bildirdiği giriş+çıkış gecikmesi">Tahmin et</button>
+      </div>
+      <p class="hint">Gecikme telafisi yalnızca kayıtlara uygulanır: kayıt bu kadar ms öne çekilir.</p>
+    </details>
+
+    <details class="step" open>
+      <summary><b>2</b> Kayıt / yükleme</summary>
+      <div class="row">
+        <button id="btnRec" class="rec">● Kaydet</button>
+        <button id="btnRecStop" disabled>■ Durdur</button>
+        <label class="grow">Click<input type="range" id="inClickVol" min="0" max="1" step="0.05" value="0.6"></label>
+      </div>
+      <p class="hint">Önce 1 ölçü count-in çalar. Click yalnızca çıkışa (kulaklığa) gider, kayda karışmaz — hoparlör değil kulaklık kullanın.</p>
+      <div class="row">
+        <label class="file-btn">WAV/MP3 yükle<input type="file" id="fileAudio" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac" hidden></label>
+        <label class="grow">Hizalama
+          <select id="inAlign">
+            <option value="beat">İlk ses → en yakın vuruş</option>
+            <option value="bar1">İlk ses → 1. ölçü başı</option>
+            <option value="none">Yok (dosya başı = 0)</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid2">
+        <label>Kayıt ofseti (ms)<input type="number" id="inOffset" step="1" value="0"></label>
+        <div id="audioInfo" class="hint"></div>
+      </div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>3</b> Pitch detection</summary>
+      <div class="grid2">
+        <label>Min f0 (Hz)<input type="number" id="inFmin" min="40" max="400" value="65"></label>
+        <label>Max f0 (Hz)<input type="number" id="inFmax" min="200" max="2000" value="1000"></label>
+        <label>Sessizlik eşiği (dB)<input type="number" id="inSilence" min="-80" max="-10" value="-45"></label>
+        <label>Min nota (ms)<input type="number" id="inMinNote" min="30" max="400" value="70"></label>
+        <label>Nota değişim eşiği (yarım ses)<input type="number" id="inChange" min="0.2" max="1.5" step="0.05" value="0.5"></label>
+        <button id="btnAnalyze">Yeniden analiz</button>
+      </div>
+      <div id="pitchInfo" class="hint"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>4</b> Bölümler ve ton</summary>
+      <p class="hint">Zaman çizelgesindeki <b>bölüm şeridinde</b> sürükleyerek ölçü aralığı seçin ya da buradan ekleyin.</p>
+      <div class="row">
+        <select id="inSecName"><option>Verse</option><option>Nakarat</option><option>Köprü</option><option>Intro</option><option>Outro</option><option>Pre-nakarat</option></select>
+        <input type="number" id="inSecStart" min="1" value="1" title="başlangıç ölçüsü">
+        <span>–</span>
+        <input type="number" id="inSecEnd" min="1" value="4" title="bitiş ölçüsü">
+        <button id="btnSecAdd">Ekle</button>
+      </div>
+      <div id="sectionList"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>5</b> Nota düzeltme</summary>
+      <div class="modes" role="radiogroup" aria-label="Fare düzenleme modu">
+        <label><input type="radio" name="editMode" value="select" checked> Seç</label>
+        <label><input type="radio" name="editMode" value="label"> a) Etiket düzelt</label>
+        <label><input type="radio" name="editMode" value="sound"> b) Ses düzelt (manuel)</label>
+      </div>
+      <p class="hint"><b>Etiket</b>: ses değişmez, analizdeki nota değişir. <b>Ses</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
+      <fieldset>
+        <legend>Otomatik (autotune) — bölüm scale'ine göre</legend>
+        <label>Miktar <output id="outAmount">100%</output><input type="range" id="inAmount" min="0" max="100" value="100"></label>
+        <label>Retune hızı <output id="outRetune">30 ms</output><input type="range" id="inRetune" min="0" max="400" step="5" value="30"></label>
+        <label class="chk"><input type="checkbox" id="inKeepVib" checked> Vibratoyu koru</label>
+        <label class="chk"><input type="checkbox" id="inSkipChrom" checked> Kromatik geçiş notalarına dokunma</label>
+        <div class="row">
+          <button id="btnAutoApply" class="accent">Autotune uygula</button>
+          <button id="btnAutoOff">Autotune kapat</button>
+        </div>
+      </fieldset>
+      <div class="row">
+        <button id="btnClearManual">Manuel düzeltmeleri sil</button>
+        <button id="btnClearLabels">Etiketleri sıfırla</button>
+      </div>
+      <div id="renderInfo" class="hint"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>6–7</b> Akor bulma ve düzenleme</summary>
+      <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
+      <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
+      <p class="hint">Akora tıklayın: en iyi 3 aday, melodi notalarının akordaki rolü, elle yazma ve kilitleme.</p>
+      <button id="btnUnlockChords">Tüm akor kilitlerini kaldır</button>
+    </details>
+
+    <details class="step" open>
+      <summary><b>8</b> Piyano ve mikser</summary>
+      <div class="mixer">
+        <div class="strip" data-track="vocal">
+          <b>Vokal</b>
+          <input type="range" min="-40" max="6" step="1" value="0" class="vol" aria-label="Vokal ses seviyesi">
+          <output>0 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
+        <div class="strip" data-track="piano">
+          <b>Piyano</b>
+          <input type="range" min="-40" max="6" step="1" value="-6" class="vol" aria-label="Piyano ses seviyesi">
+          <output>-6 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
+      <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
+      <div id="pianoInfo" class="hint"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>9</b> Dışa aktarım</summary>
+      <div class="grid2">
+        <button id="btnExpMidi">MIDI (akor + melodi)</button>
+        <button id="btnExpChart">Akor şeması (.txt)</button>
+        <button id="btnExpVocal">Düzeltilmiş vokal WAV</button>
+        <button id="btnExpMix">Vokal + piyano WAV</button>
+      </div>
+    </details>
+  </aside>
+
+  <section id="work">
+    <div id="tlTools">
+      <label>Yakınlaş <input type="range" id="inZoom" min="12" max="160" value="44"></label>
+      <span class="legend"><i class="lg in"></i>scale içi <i class="lg out"></i>scale dışı <i class="lg raw"></i>ham perde <i class="lg cor"></i>düzeltilmiş perde</span>
+      <span id="modeBadge" class="badge">Mod: Seç</span>
+    </div>
+    <div id="tlScroll"><div id="tlInner"><canvas id="tl"></canvas></div></div>
+    <div id="inspector"><p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p></div>
+  </section>
+</main>
+
+<script id="core">/* =====================================================================
+   MINI DAW ÇEKİRDEĞİ — DOM'dan bağımsız. Tarayıcıda window.Core,
+   Node'da module.exports olarak kullanılır (testler bunu çalıştırır).
+   ===================================================================== */
+(function (root) {
+'use strict';
+
+// ---------------------------------------------------------------- yardımcılar
+const PC_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const PC_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+const mod12 = (x) => ((x % 12) + 12) % 12;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const hzToMidi = (f) => 69 + 12 * Math.log2(f / 440);
+const midiToHz = (m) => 440 * Math.pow(2, (m - 69) / 12);
+function median(arr) {
+  const a = [];
+  for (const v of arr) if (Number.isFinite(v)) a.push(v);
+  if (!a.length) return NaN;
+  a.sort((x, y) => x - y);
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : 0.5 * (a[m - 1] + a[m]);
+}
+function percentile(arr, p) {
+  const a = arr.filter(Number.isFinite).sort((x, y) => x - y);
+  if (!a.length) return NaN;
+  return a[clamp(Math.round(p * (a.length - 1)), 0, a.length - 1)];
+}
+const pcName = (pc, flats) => (flats ? PC_FLAT : PC_SHARP)[mod12(pc)];
+const noteName = (m, flats) => {
+  const r = Math.round(m);
+  return pcName(r, flats) + (Math.floor(r / 12) - 1);
+};
+function parsePc(s) {
+  const m = /^\s*([A-Ga-g])([#b♯♭]?)/.exec(s || '');
+  if (!m) return null;
+  const base = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }[m[1].toUpperCase()];
+  const acc = m[2] === '#' || m[2] === '♯' ? 1 : m[2] === 'b' || m[2] === '♭' ? -1 : 0;
+  return { pc: mod12(base + acc), len: m[0].trimStart().length };
+}
+const yieldTick = () => new Promise((r) => setTimeout(r, 0));
+
+// ---------------------------------------------------------------- ölçü / grid
+// Tüm müzikal zaman "q" (çeyrek nota) biriminde. BPM = vuruş (pulse) temposu:
+// 4/4 ve 3/4'te çeyrek, 6/8'de noktalı çeyrek.
+const METERS = {
+  '4/4': { barQ: 4, pulseQ: 1, strong: [2], split: 2, clickQ: 1, accents: [0] },
+  '3/4': { barQ: 3, pulseQ: 1, strong: [], split: null, clickQ: 1, accents: [0] },
+  '6/8': { barQ: 3, pulseQ: 1.5, strong: [1.5], split: 1.5, clickQ: 0.5, accents: [0, 1.5] },
+};
+function makeGrid(settings) {
+  const m = METERS[settings.meter] || METERS['4/4'];
+  const pulseSec = 60 / settings.bpm;
+  const spq = pulseSec / m.pulseQ;
+  return Object.assign({}, m, { meter: settings.meter, bpm: settings.bpm, spq, pulseSec, barSec: m.barQ * spq, quarterBpm: 60 / spq });
+}
+
+// ---------------------------------------------------------------- mod / scale
+const MODES = {
+  major:         { name: 'Majör (İyonyen)',      short: 'majör',        steps: [0, 2, 4, 5, 7, 9, 11], prior: 1.0,  parent: 0 },
+  minor:         { name: 'Doğal minör (Eolyen)', short: 'minör',        steps: [0, 2, 3, 5, 7, 8, 10], prior: 1.0,  parent: 3 },
+  harmonicMinor: { name: 'Harmonik minör',       short: 'harmonik minör', steps: [0, 2, 3, 5, 7, 8, 11], prior: 0.88, parent: 3 },
+  dorian:        { name: 'Dorian',               short: 'Dorian',       steps: [0, 2, 3, 5, 7, 9, 10], prior: 0.95, parent: 10 },
+  phrygian:      { name: 'Frig',                 short: 'Frig',         steps: [0, 1, 3, 5, 7, 8, 10], prior: 0.95, parent: 8 },
+  lydian:        { name: 'Lidya',                short: 'Lidya',        steps: [0, 2, 4, 6, 7, 9, 11], prior: 0.9,  parent: 7 },
+  mixolydian:    { name: 'Miksolidya',           short: 'Miksolidya',   steps: [0, 2, 4, 5, 7, 9, 10], prior: 0.95, parent: 5 },
+  locrian:       { name: 'Lokriyen',             short: 'Lokriyen',     steps: [0, 1, 3, 5, 6, 8, 10], prior: 0.8,  parent: 1 },
+  majorPent:     { name: 'Majör pentatonik',     short: 'majör pent.',  steps: [0, 2, 4, 7, 9],        prior: 0.85, parent: 0, hepta: 'major' },
+  minorPent:     { name: 'Minör pentatonik',     short: 'minör pent.',  steps: [0, 3, 5, 7, 10],       prior: 0.85, parent: 3, hepta: 'minor' },
+};
+const MODE_ORDER = Object.keys(MODES);
+const FLAT_PARENTS = new Set([5, 10, 3, 8, 1]); // F, Bb, Eb, Ab, Db majör aileleri
+const scalePcs = (tonic, mode) => MODES[mode].steps.map((s) => mod12(tonic + s));
+const keyUsesFlats = (tonic, mode) => tonic != null && mode && FLAT_PARENTS.has(mod12(tonic + MODES[mode].parent));
+const keyName = (tonic, mode) => `${pcName(tonic, keyUsesFlats(tonic, mode))} ${MODES[mode].short}`;
+
+// ---------------------------------------------------------------- FFT
+const fftCache = new Map();
+function getFFT(n) {
+  if (fftCache.has(n)) return fftCache.get(n);
+  const levels = Math.round(Math.log2(n));
+  const cos = new Float64Array(n / 2), sin = new Float64Array(n / 2);
+  for (let i = 0; i < n / 2; i++) { cos[i] = Math.cos((2 * Math.PI * i) / n); sin[i] = Math.sin((2 * Math.PI * i) / n); }
+  const rev = new Uint32Array(n);
+  for (let i = 0; i < n; i++) { let r = 0; for (let b = 0; b < levels; b++) r |= ((i >> b) & 1) << (levels - 1 - b); rev[i] = r; }
+  const fft = (re, im, inverse) => {
+    for (let i = 0; i < n; i++) {
+      const j = rev[i];
+      if (j > i) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (let size = 2; size <= n; size <<= 1) {
+      const half = size >> 1, step = n / size;
+      for (let i = 0; i < n; i += size) {
+        for (let j = 0, k = 0; j < half; j++, k += step) {
+          const a = i + j, b = a + half;
+          const c = cos[k], s = inverse ? sin[k] : -sin[k];
+          const tr = re[b] * c - im[b] * s, ti = re[b] * s + im[b] * c;
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        }
+      }
+    }
+    if (inverse) for (let i = 0; i < n; i++) { re[i] /= n; im[i] /= n; }
+  };
+  fftCache.set(n, fft);
+  return fft;
+}
+const nextPow2 = (x) => 1 << Math.ceil(Math.log2(Math.max(2, x)));
+
+// ---------------------------------------------------------------- yeniden örnekleme
+function resample(x, srIn, srOut) {
+  if (srIn === srOut) return Float32Array.from(x);
+  let src = x;
+  if (srOut < srIn) { // pencereli-sinc alçak geçiren
+    const fc = (0.45 * srOut) / srIn, taps = 48;
+    const h = new Float64Array(2 * taps + 1);
+    let sum = 0;
+    for (let k = -taps; k <= taps; k++) {
+      const w = 0.42 + 0.5 * Math.cos((Math.PI * k) / taps) + 0.08 * Math.cos((2 * Math.PI * k) / taps);
+      const v = k === 0 ? 2 * fc : Math.sin(2 * Math.PI * fc * k) / (Math.PI * k);
+      h[k + taps] = v * w; sum += v * w;
+    }
+    for (let k = 0; k < h.length; k++) h[k] /= sum;
+    src = new Float32Array(x.length);
+    for (let i = 0; i < x.length; i++) {
+      let acc = 0;
+      const k0 = Math.max(-taps, i - x.length + 1), k1 = Math.min(taps, i);
+      for (let k = k0; k <= k1; k++) acc += h[k + taps] * x[i - k];
+      src[i] = acc;
+    }
+  }
+  const n = Math.floor((x.length * srOut) / srIn);
+  const out = new Float32Array(n), r = srIn / srOut;
+  for (let i = 0; i < n; i++) {
+    const p = i * r, i0 = Math.floor(p), f = p - i0;
+    out[i] = (src[i0] || 0) * (1 - f) + (src[i0 + 1] || 0) * f;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- PITCH (pYIN benzeri)
+// Beta(2,18) eşik dağılımı — pYIN'deki gibi her eşik için YIN seçimi yapılır,
+// olasılıklar adaylarda toplanır, sonra Viterbi ile en olası yol seçilir.
+const BETA_CDF = (() => {
+  const N = 1000, pdf = new Float64Array(N + 1), cdf = new Float64Array(N + 1);
+  for (let i = 0; i <= N; i++) { const x = i / N; pdf[i] = x * Math.pow(1 - x, 17); }
+  for (let i = 1; i <= N; i++) cdf[i] = cdf[i - 1] + 0.5 * (pdf[i] + pdf[i - 1]);
+  for (let i = 0; i <= N; i++) cdf[i] /= cdf[N];
+  return cdf;
+})();
+const betaCdf = (v) => {
+  if (v <= 0) return 0;
+  if (v >= 1) return 1;
+  const x = v * 1000, i = Math.floor(x), f = x - i;
+  return BETA_CDF[i] * (1 - f) + BETA_CDF[i + 1] * f;
+};
+
+const PITCH_DEFAULTS = { fmin: 65, fmax: 1000, silenceDb: -45, hopMs: 5, analysisSr: 16000 };
+
+async function detectPitch(signal, sr, opts = {}, onProgress) {
+  const o = Object.assign({}, PITCH_DEFAULTS, opts);
+  const a = o.analysisSr;
+  const x = resample(signal, sr, a);
+  const hop = Math.max(1, Math.round((a * o.hopMs) / 1000));
+  const hopSec = hop / a;
+  const W = Math.round(a * 0.03);
+  const tauMin = Math.max(2, Math.floor(a / o.fmax));
+  const tauMax = Math.ceil(a / o.fmin);
+  const L = W + tauMax + 2;
+  const N = nextPow2(L);
+  const fft = getFFT(N);
+  const nF = Math.max(1, Math.ceil(x.length / hop));
+  const K = 5;
+  const candMidi = new Float32Array(nF * K), candP = new Float32Array(nF * K);
+  const candN = new Uint8Array(nF), Pv = new Float32Array(nF), rms = new Float32Array(nF), aper = new Float32Array(nF);
+  const re = new Float64Array(N), im = new Float64Array(N), rr = new Float64Array(N), ri = new Float64Array(N);
+  const frame = new Float64Array(L), cum = new Float64Array(L + 1), dp = new Float64Array(tauMax + 2);
+  let maxRms = 0;
+  for (let f = 0; f < nF; f++) {
+    const start = f * hop - (W >> 1);
+    for (let j = 0; j < L; j++) { const idx = start + j; frame[j] = idx >= 0 && idx < x.length ? x[idx] : 0; }
+    cum[0] = 0;
+    for (let j = 0; j < L; j++) cum[j + 1] = cum[j] + frame[j] * frame[j];
+    const e0 = cum[W];
+    rms[f] = Math.sqrt(e0 / W);
+    if (rms[f] > maxRms) maxRms = rms[f];
+    if (e0 < 1e-10) { aper[f] = 1; continue; }
+    // iki gerçek diziyi tek karmaşık FFT'de paketle: z = a + i·b
+    for (let j = 0; j < N; j++) { re[j] = j < W ? frame[j] : 0; im[j] = j < L ? frame[j] : 0; }
+    fft(re, im, false);
+    for (let k = 0; k < N; k++) {
+      const nk = (N - k) % N;
+      const zr = re[k], zi = im[k], wr = re[nk], wi = im[nk];
+      const Ar = 0.5 * (zr + wr), Ai = 0.5 * (zi - wi);
+      const Br = 0.5 * (zi + wi), Bi = -0.5 * (zr - wr);
+      rr[k] = Ar * Br + Ai * Bi; ri[k] = Ar * Bi - Ai * Br;
+    }
+    fft(rr, ri, true);
+    // CMNDF
+    let run = 0;
+    dp[0] = 1;
+    for (let t = 1; t <= tauMax + 1 && t + W <= L; t++) {
+      const d = Math.max(0, e0 + (cum[t + W] - cum[t]) - 2 * rr[t]);
+      run += d;
+      dp[t] = run > 0 ? (d * t) / run : 1;
+    }
+    // adaylar (yerel minimumlar)
+    const cands = [];
+    let gmin = Infinity, gminIdx = -1;
+    for (let t = tauMin; t <= tauMax; t++) {
+      if (dp[t] < dp[t - 1] && dp[t] <= dp[t + 1]) {
+        const y0 = dp[t - 1], y1 = dp[t], y2 = dp[t + 1];
+        const den = y0 - 2 * y1 + y2;
+        const off = den > 1e-12 ? clamp((0.5 * (y0 - y2)) / den, -0.5, 0.5) : 0;
+        const val = y1 - 0.25 * (y0 - y2) * off;
+        cands.push({ tau: t + off, val, p: 0 });
+        if (val < gmin) { gmin = val; gminIdx = cands.length - 1; }
+      }
+    }
+    aper[f] = Math.min(1, gmin);
+    if (!cands.length) continue;
+    let prevMin = 1, sumP = 0;
+    for (const c of cands) {
+      if (c.val < prevMin) { c.p = betaCdf(prevMin) - betaCdf(c.val); prevMin = c.val; }
+    }
+    cands[gminIdx].p += 0.01 * betaCdf(gmin);
+    cands.sort((u, v) => v.p - u.p);
+    let n = 0;
+    for (const c of cands) {
+      if (n >= K || c.p < 1e-4) break;
+      candMidi[f * K + n] = hzToMidi(a / c.tau);
+      candP[f * K + n] = c.p;
+      sumP += c.p; n++;
+    }
+    candN[f] = n;
+    Pv[f] = Math.min(0.999, sumP);
+    if (onProgress && f % 400 === 0) { onProgress(0.9 * (f / nF)); await yieldTick(); }
+  }
+  // sessizlik kapısı
+  const thr = Math.max(maxRms * Math.pow(10, o.silenceDb / 20), 1e-5);
+  for (let f = 0; f < nF; f++) if (rms[f] < thr) { candN[f] = 0; Pv[f] = 0; }
+  // Viterbi (aday durumları + sessiz durum)
+  const S = K + 1, NEG = -1e30;
+  let prev = new Float64Array(S).fill(NEG), cur = new Float64Array(S);
+  const bp = new Int8Array(nF * S);
+  prev[K] = 0; // başlangıç: sessiz
+  let prevN = 0;
+  const lam = 0.35, sw = Math.log(0.02);
+  for (let f = 0; f < nF; f++) {
+    const n = candN[f];
+    for (let s = 0; s < S; s++) cur[s] = NEG;
+    for (let s = 0; s <= n; s++) {
+      const si = s === n ? K : s;
+      const voiced = s < n;
+      const em = voiced ? Math.log(candP[f * K + s] + 1e-4) : Math.log(1 - Pv[f] + 1e-3);
+      let best = NEG, arg = K;
+      for (let ps = 0; ps <= prevN; ps++) {
+        const psi = ps === prevN ? K : ps;
+        if (prev[psi] <= NEG) continue;
+        const pv = ps < prevN;
+        let tr;
+        if (voiced && pv) tr = -lam * Math.max(0, Math.abs(candMidi[f * K + s] - candMidi[(f - 1) * K + ps]) - 0.25);
+        else if (voiced !== pv) tr = sw;
+        else tr = 0;
+        const v = prev[psi] + tr;
+        if (v > best) { best = v; arg = psi; }
+      }
+      cur[si] = best + em;
+      bp[f * S + si] = arg;
+    }
+    const t = prev; prev = cur; cur = t;
+    prevN = n;
+  }
+  const f0 = new Float32Array(nF), prob = new Float32Array(nF);
+  let s = K, best = NEG;
+  for (let i = 0; i < S; i++) if (prev[i] > best) { best = prev[i]; s = i; }
+  for (let f = nF - 1; f >= 0; f--) {
+    if (s !== K && s < candN[f]) { f0[f] = midiToHz(candMidi[f * K + s]); prob[f] = candP[f * K + s]; }
+    s = bp[f * S + s];
+  }
+  // çok kısa sesli parçaları at (nefes/çıtırtı)
+  const minRun = Math.round(0.03 / hopSec);
+  for (let f = 0; f < nF;) {
+    if (f0[f] > 0) { let e = f; while (e < nF && f0[e] > 0) e++; if (e - f < minRun) for (let k = f; k < e; k++) f0[k] = 0; f = e; } else f++;
+  }
+  const rmsN = new Float32Array(nF);
+  for (let f = 0; f < nF; f++) rmsN[f] = maxRms > 0 ? rms[f] / maxRms : 0;
+  if (onProgress) onProgress(1);
+  return { hopSec, f0, prob, rms: rmsN, aper, sr, analysisSr: a, duration: signal.length / sr };
+}
+
+// ---------------------------------------------------------------- NOTA SEGMENTASYONU
+const SEG_DEFAULTS = { minNoteMs: 70, changeSemis: 0.5 };
+function segmentNotes(track, opts = {}) {
+  const o = Object.assign({}, SEG_DEFAULTS, opts);
+  const hop = track.hopSec, n = track.f0.length;
+  const minF = Math.max(3, Math.round(o.minNoteMs / 1000 / hop));
+  const midi = new Float32Array(n);
+  for (let i = 0; i < n; i++) midi[i] = track.f0[i] > 0 ? hzToMidi(track.f0[i]) : NaN;
+  const rms = track.rms;
+  // 1) sesli bölgeler (kısa boşluklar köprülenir)
+  const bridge = Math.round(0.02 / hop);
+  const runs = [];
+  for (let i = 0; i < n;) {
+    if (!(midi[i] === midi[i])) { i++; continue; }
+    const a = i;
+    let b = i;
+    for (;;) {
+      while (b < n && midi[b] === midi[b]) b++;
+      let c = b;
+      while (c < n && !(midi[c] === midi[c]) && c - b <= bridge) c++;
+      if (c < n && c > b && c - b <= bridge && midi[c] === midi[c] && Math.abs(midi[c] - midi[b - 1]) < 0.8) { b = c; continue; }
+      break;
+    }
+    runs.push([a, b]);
+    i = b;
+  }
+  const segs = [];
+  const K = Math.round(0.18 / hop), K2 = Math.round(0.12 / hop); // K ≈ bir vibrato periyodu
+  for (const [a, b] of runs) {
+    if (b - a < minF) continue;
+    // boşlukları doldur + 5'li medyan filtre
+    const s = new Float32Array(b - a);
+    let last = NaN;
+    for (let i = a; i < b; i++) { if (midi[i] === midi[i]) last = midi[i]; s[i - a] = last; }
+    for (let i = s.length - 1, nx = NaN; i >= 0; i--) { if (s[i] === s[i]) nx = s[i]; else s[i] = nx; }
+    const sm = new Float32Array(s.length);
+    for (let i = 0; i < s.length; i++) sm[i] = median(s.subarray(Math.max(0, i - 2), Math.min(s.length, i + 3)));
+    // 2) perde değişim noktaları: sol/sağ pencere medyan farkı
+    const D = new Float32Array(s.length);
+    for (let i = minF; i <= s.length - minF; i++) {
+      const L = median(sm.subarray(Math.max(0, i - K), i));
+      const R = median(sm.subarray(i, Math.min(s.length, i + K)));
+      D[i] = Math.abs(L - R);
+    }
+    const peaks = [];
+    for (let i = minF; i <= s.length - minF; i++) {
+      if (D[i] >= o.changeSemis && D[i] >= (D[i - 1] || 0) && D[i] >= (D[i + 1] || 0)) peaks.push(i);
+    }
+    peaks.sort((p, q) => D[q] - D[p]);
+    const cuts = [];
+    for (const p of peaks) if (cuts.every((c) => Math.abs(c.i - p) >= minF)) cuts.push({ i: p, kind: 'pitch' });
+    // sınırı en dik perde değişimine oturt
+    for (const c of cuts) {
+      let bi = c.i, bv = -1;
+      for (let j = Math.max(1, c.i - 6); j <= Math.min(s.length - 1, c.i + 6); j++) {
+        const v = Math.abs(sm[j] - sm[j - 1]);
+        if (v > bv) { bv = v; bi = j; }
+      }
+      c.i = bi;
+    }
+    // 3) enerji çukurları (aynı perdede tekrar eden hece)
+    for (let i = a + 3; i < b - 3; i++) {
+      const r = rms[i];
+      let lm = true;
+      for (let k = -3; k <= 3; k++) if (rms[i + k] < r) { lm = false; break; }
+      if (!lm) continue;
+      let ml = 0, mr = 0;
+      for (let k = Math.max(a, i - K2); k < i; k++) ml = Math.max(ml, rms[k]);
+      for (let k = i + 1; k < Math.min(b, i + K2); k++) mr = Math.max(mr, rms[k]);
+      if (r < 0.35 * Math.min(ml, mr) && cuts.every((c) => Math.abs(c.i - (i - a)) >= minF)) cuts.push({ i: i - a, kind: 'energy' });
+    }
+    cuts.sort((p, q) => p.i - q.i);
+    const bounds = [{ i: 0, kind: 'run' }, ...cuts, { i: b - a, kind: 'run' }];
+    for (let k = 0; k + 1 < bounds.length; k++) {
+      let s0 = a + bounds[k].i, s1 = a + bounds[k + 1].i;
+      // kenarlardaki düşük enerjili kareleri kırp
+      let pk = 0;
+      for (let i = s0; i < s1; i++) pk = Math.max(pk, rms[i]);
+      while (s0 < s1 && rms[s0] < 0.15 * pk) s0++;
+      while (s1 > s0 && rms[s1 - 1] < 0.15 * pk) s1--;
+      segs.push({ f0i: s0, f1i: s1, splitBefore: bounds[k].kind });
+    }
+  }
+  // 4) notalar: vibrato/kaymalara karşı çekirdek bölgenin medyanı
+  const notes = [];
+  for (const sg of segs) {
+    const len = sg.f1i - sg.f0i;
+    if (len < minF) continue;
+    const trim = len >= 10 ? Math.floor(len * 0.15) : 0;
+    const core = midi.subarray(sg.f0i + trim, sg.f1i - trim);
+    let valid = 0;
+    for (const v of core) if (v === v) valid++;
+    if (valid < core.length * 0.5) continue;
+    const med = median(core);
+    const prevN = notes[notes.length - 1];
+    if (prevN && sg.splitBefore === 'pitch' && sg.f0i - prevN.f1i <= 1 && Math.abs(prevN.median - med) < 0.4) {
+      prevN.f1i = sg.f1i; // vibrato kaynaklı aşırı bölünme — birleştir
+      const len2 = prevN.f1i - prevN.f0i, tr2 = Math.floor(len2 * 0.15);
+      prevN.median = median(midi.subarray(prevN.f0i + tr2, prevN.f1i - tr2));
+      continue;
+    }
+    notes.push({ f0i: sg.f0i, f1i: sg.f1i, median: med });
+  }
+  return notes.map((nt) => {
+    const nearest = Math.round(nt.median);
+    return {
+      f0i: nt.f0i, f1i: nt.f1i,
+      t0: nt.f0i * hop, t1: nt.f1i * hop,
+      median: nt.median, nearest, cents: Math.round((nt.median - nearest) * 100),
+    };
+  });
+}
+
+// ---------------------------------------------------------------- nota ağırlıkları
+function metricPos(q, g) {
+  const tol = 0.12 * g.pulseQ;
+  const bar = Math.floor((q + tol) / g.barQ);
+  const pos = q - bar * g.barQ;
+  const near = (x) => Math.abs(pos - x) <= tol;
+  const down = near(0);
+  const strong = !down && g.strong.some(near);
+  const onBeat = down || strong || Math.abs(pos / g.pulseQ - Math.round(pos / g.pulseQ)) * g.pulseQ <= tol;
+  return { bar, pos, down, strong, onBeat };
+}
+// Akor bulma ağırlığı (şartname): 1. vuruş x3, diğer güçlü vuruş x2,
+// bir vuruştan uzun x2, kısa geçiş notası x0.5
+function chordWeight(n, g) {
+  const mp = metricPos(n.q0, g);
+  const dur = n.q1 - n.q0, tol = 0.12 * g.pulseQ;
+  let w = 1;
+  if (mp.down) w *= 3; else if (mp.strong) w *= 2;
+  if (dur > g.pulseQ + tol * 0.5) w *= 2;
+  else if (dur <= 0.5 * g.pulseQ + tol && !mp.down && !mp.strong) w *= 0.5;
+  return w;
+}
+// Ton önerisi histogram ağırlığı: süre (vuruş) x metrik ağırlık
+function histWeight(n, g) {
+  const mp = metricPos(n.q0, g);
+  const dur = Math.min(n.q1 - n.q0, 4 * g.pulseQ) / g.pulseQ;
+  return dur * (mp.down ? 2 : mp.strong ? 1.5 : mp.onBeat ? 1.2 : 1);
+}
+
+// ---------------------------------------------------------------- TON / MOD ÖNERİSİ
+function lastWeightedNote(notes, g) {
+  if (!notes.length) return null;
+  const sorted = [...notes].sort((p, q) => p.q0 - q.q0);
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const n = sorted[i], mp = metricPos(n.q0, g);
+    if (n.q1 - n.q0 >= g.pulseQ * 0.9 || mp.down || mp.strong) return n;
+  }
+  return sorted[sorted.length - 1];
+}
+function suggestKeys(notes, g, topK = 3) {
+  const h = new Float64Array(12);
+  let total = 0;
+  for (const n of notes) { const w = histWeight(n, g); h[mod12(n.detMidi)] += w; total += w; }
+  if (total <= 0) return { candidates: [], hist: h, last: null };
+  for (let i = 0; i < 12; i++) h[i] /= total;
+  const lastN = lastWeightedNote(notes, g);
+  const lastPc = lastN ? mod12(lastN.detMidi) : null;
+  const firstStrong = [...notes].sort((p, q) => p.q0 - q.q0).find((n) => metricPos(n.q0, g).down);
+  const all = [];
+  for (let t = 0; t < 12; t++) {
+    for (const mode of MODE_ORDER) {
+      const md = MODES[mode];
+      const set = new Set(scalePcs(t, mode));
+      let inS = 0;
+      for (let pc = 0; pc < 12; pc++) if (set.has(pc)) inS += h[pc];
+      let s = inS - 2.0 * (1 - inS);
+      s += 0.45 * h[t];
+      if (set.has(mod12(t + 7))) s += 0.15 * h[mod12(t + 7)];
+      const third = md.steps.includes(3) ? 3 : md.steps.includes(4) ? 4 : null;
+      if (third != null) s += 0.1 * h[mod12(t + third)];
+      if (lastPc === t) s += 0.25;
+      if (firstStrong && mod12(firstStrong.detMidi) === t) s += 0.05;
+      s -= (1 - md.prior) * 0.5;
+      all.push({ tonic: t, mode, score: s, pcs: [...set].sort((p, q) => p - q) });
+    }
+  }
+  all.sort((p, q) => q.score - p.score);
+  const top = all.slice(0, topK);
+  const maxS = top[0].score;
+  for (const c of top) {
+    c.name = keyName(c.tonic, c.mode);
+    c.confidence = Math.round(100 * Math.exp(3 * (c.score - maxS)));
+    c.sameNotesAs = top.filter((o) => o !== c && o.pcs.join() === c.pcs.join()).map((o) => o.name);
+    c.endsOnTonic = lastPc === c.tonic;
+  }
+  return { candidates: top, hist: h, last: lastN ? { pc: lastPc, name: pcName(lastPc, keyUsesFlats(top[0].tonic, top[0].mode)), q0: lastN.q0 } : null };
+}
+
+// ---------------------------------------------------------------- AUTOTUNE / DÜZELTME EĞRİSİ
+const AUTOTUNE_DEFAULTS = { enabled: false, amount: 100, retuneMs: 30, keepVibrato: true, skipChromatic: true };
+function nearestScaleNote(m, pcs) {
+  if (!pcs) return Math.round(m);
+  let best = Math.round(m), bd = Infinity;
+  for (let k = Math.floor(m) - 2; k <= Math.ceil(m) + 2; k++) {
+    if (!pcs.includes(mod12(k))) continue;
+    const d = Math.abs(k - m);
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+function isChromaticPassing(i, notes, pcs, g) {
+  const n = notes[i], p = notes[i - 1], x = notes[i + 1];
+  if (!pcs || !p || !x) return false;
+  if (pcs.includes(mod12(n.nearest))) return false;
+  if (n.q1 - n.q0 > g.pulseQ + 1e-6) return false;
+  if (n.q0 - p.q1 > 0.5 * g.pulseQ || x.q0 - n.q1 > 0.5 * g.pulseQ) return false;
+  const d1 = n.nearest - p.nearest, d2 = x.nearest - n.nearest;
+  return d1 !== 0 && Math.sign(d1) === Math.sign(d2) && Math.abs(d1) <= 2 && Math.abs(d2) <= 2 && (Math.abs(d1) === 1 || Math.abs(d2) === 1);
+}
+// notes: zaman sıralı, her birinde { f0i, f1i, median, nearest, scalePcs, locked, manualTarget }
+function computeCorrection(track, notes, at, g) {
+  const nF = track.f0.length, hop = track.hopSec;
+  const shift = new Float32Array(nF);
+  const info = notes.map(() => ({ target: null, source: 'none', applied: 0, chromatic: false }));
+  notes.forEach((n, i) => {
+    let target = null, tau, amount, keepVib;
+    if (n.manualTarget != null) {
+      target = n.manualTarget; tau = 0.01; amount = 1; keepVib = true; info[i].source = 'manual';
+    } else if (at.enabled && !n.locked) {
+      if (at.skipChromatic && isChromaticPassing(i, notes, n.scalePcs, g)) { info[i].chromatic = true; return; }
+      target = nearestScaleNote(n.median, n.scalePcs);
+      tau = at.retuneMs / 1000; amount = at.amount / 100; keepVib = at.keepVibrato; info[i].source = 'auto';
+    }
+    if (target == null) return;
+    info[i].target = target;
+    const alpha = tau > 0 ? 1 - Math.exp(-hop / tau) : 1;
+    let y = 0, e = 0;
+    for (let f = n.f0i; f < n.f1i; f++) {
+      const m = track.f0[f] > 0 ? hzToMidi(track.f0[f]) : NaN;
+      if (keepVib) e = (target - n.median) * 100;
+      else if (m === m) e = (target - m) * 100;
+      y += alpha * (e - y);
+      shift[f] = y * amount;
+    }
+  });
+  // kısa yumuşatma (nota geçişlerinde tıkırtı olmasın)
+  const out = new Float32Array(nF);
+  for (let f = 0; f < nF; f++) {
+    let s = 0, c = 0;
+    for (let k = -2; k <= 2; k++) { const j = f + k; if (j >= 0 && j < nF) { s += shift[j]; c++; } }
+    out[f] = track.f0[f] > 0 || shift[f] !== 0 ? s / c : 0;
+  }
+  notes.forEach((n, i) => {
+    const len = n.f1i - n.f0i, tr = Math.floor(len * 0.15);
+    info[i].applied = median(out.subarray(n.f0i + tr, Math.max(n.f0i + tr + 1, n.f1i - tr))) || 0;
+  });
+  return { shift: out, info, hopSec: hop };
+}
+
+// ---------------------------------------------------------------- TD-PSOLA PERDE KAYDIRMA
+// Perde işaretleri algılanan f0'dan; tanecikler (grain) orijinal periyotlarla
+// alındığı için spektral zarf (formantlar) korunur.
+function psolaShift(x, sr, track, shiftCents, onProgress) {
+  const n = x.length, hop = track.hopSec, nF = track.f0.length;
+  const fAt = (i) => Math.min(nF - 1, Math.max(0, Math.round(i / sr / hop)));
+  const f0At = (i) => {
+    const p = i / sr / hop, a = Math.floor(p), fr = p - a;
+    const f1 = track.f0[clamp(a, 0, nF - 1)], f2 = track.f0[clamp(a + 1, 0, nF - 1)];
+    if (f1 > 0 && f2 > 0) return f1 * (1 - fr) + f2 * fr;
+    return f1 > 0 ? f1 : f2;
+  };
+  const shAt = (i) => {
+    const p = i / sr / hop, a = Math.floor(p), fr = p - a;
+    return (shiftCents[clamp(a, 0, nF - 1)] || 0) * (1 - fr) + (shiftCents[clamp(a + 1, 0, nF - 1)] || 0) * fr;
+  };
+  // tepe seçimi için alçak geçirilmiş sinyal
+  const lp = new Float32Array(n);
+  const al = 1 - Math.exp((-2 * Math.PI * 900) / sr);
+  let z1 = 0, z2 = 0;
+  for (let i = 0; i < n; i++) { z1 += al * (x[i] - z1); z2 += al * (z1 - z2); lp[i] = z2; }
+  // sesli bölgeler (örnek cinsinden)
+  const regions = [];
+  for (let f = 0; f < nF;) {
+    if (track.f0[f] > 0) { let e = f; while (e < nF && track.f0[e] > 0) e++; regions.push([Math.floor(f * hop * sr), Math.min(n, Math.floor(e * hop * sr))]); f = e; } else f++;
+  }
+  const Pu = Math.round(0.005 * sr);
+  const marks = [], voicedMark = [];
+  let pos = 0;
+  const pushUnvoiced = (from, to) => { for (let p = from; p < to; p += Pu) { marks.push(p); voicedMark.push(0); } };
+  for (const [s0, s1] of regions) {
+    const P0 = sr / f0At(s0);
+    let best = s0, bv = -Infinity;
+    for (let i = s0; i < Math.min(s1, s0 + P0); i++) if (lp[i] > bv) { bv = lp[i]; best = i; }
+    pushUnvoiced(pos, best - Pu / 2);
+    let m = best;
+    marks.push(m); voicedMark.push(1);
+    for (;;) {
+      const f = f0At(m);
+      if (!(f > 0)) break;
+      const P = sr / f, pred = m + P;
+      if (pred >= s1) break;
+      let bi = Math.round(pred), bvv = -Infinity;
+      for (let i = Math.round(pred - 0.2 * P); i <= Math.round(pred + 0.2 * P); i++) if (i > m && i < n && lp[i] > bvv) { bvv = lp[i]; bi = i; }
+      m = bi;
+      marks.push(m); voicedMark.push(1);
+    }
+    pos = m + Pu;
+  }
+  pushUnvoiced(pos, n + Pu);
+  const M = marks.length;
+  const out = new Float32Array(n);
+  let t = marks[0], k = 0, iter = 0;
+  while (t < n) {
+    while (k + 1 < M && Math.abs(marks[k + 1] - t) <= Math.abs(marks[k] - t)) k++;
+    const m = marks[k];
+    const Lh = Math.max(8, k > 0 ? m - marks[k - 1] : marks[1] - m);
+    const Rh = Math.max(8, k + 1 < M ? marks[k + 1] - m : Lh);
+    const r = voicedMark[k] ? Math.pow(2, shAt(t) / 1200) : 1;
+    const g = 1 / r, ti = Math.round(t);
+    for (let j = -Lh; j < Rh; j++) {
+      const si = m + j, oi = ti + j;
+      if (si < 0 || si >= n || oi < 0 || oi >= n) continue;
+      const w = j < 0 ? 0.5 + 0.5 * Math.cos((Math.PI * j) / Lh) : 0.5 + 0.5 * Math.cos((Math.PI * j) / Rh);
+      out[oi] += x[si] * w * g;
+    }
+    t += Rh / r;
+    if (onProgress && ++iter % 4000 === 0) onProgress(t / n);
+  }
+  // kaydırma olmayan yerlerde orijinali birebir kullan (yumuşak geçişli maske)
+  const maskF = new Float32Array(nF);
+  for (let f = 0; f < nF; f++) if (Math.abs(shiftCents[f]) > 0.5) for (let k2 = -4; k2 <= 4; k2++) if (f + k2 >= 0 && f + k2 < nF) maskF[f + k2] = 1;
+  const maskS = new Float32Array(nF);
+  for (let f = 0; f < nF; f++) { let s = 0, c = 0; for (let k2 = -3; k2 <= 3; k2++) { const j = f + k2; if (j >= 0 && j < nF) { s += maskF[j]; c++; } } maskS[f] = s / c; }
+  for (let i = 0; i < n; i++) {
+    const p = i / sr / hop, a = Math.floor(p), fr = p - a;
+    const mk = maskS[clamp(a, 0, nF - 1)] * (1 - fr) + maskS[clamp(a + 1, 0, nF - 1)] * fr;
+    out[i] = mk * out[i] + (1 - mk) * x[i];
+  }
+  void fAt;
+  return out;
+}
+
+// ---------------------------------------------------------------- AKORLAR
+const CHORD_Q = {
+  '':      [0, 4, 7],
+  'm':     [0, 3, 7],
+  'dim':   [0, 3, 6],
+  'aug':   [0, 4, 8],
+  'maj7':  [0, 4, 7, 11],
+  'm7':    [0, 3, 7, 10],
+  '7':     [0, 4, 7, 10],
+  'sus2':  [0, 2, 7],
+  'sus4':  [0, 5, 7],
+  'add9':  [0, 4, 7, 2],
+  'madd9': [0, 3, 7, 2],
+  'm7b5':  [0, 3, 6, 10],
+  'dim7':  [0, 3, 6, 9],
+  '6':     [0, 4, 7, 9],
+  'm6':    [0, 3, 7, 9],
+  'mMaj7': [0, 3, 7, 11],
+  '9':     [0, 4, 7, 10, 2],
+  'm9':    [0, 3, 7, 10, 2],
+  'maj9':  [0, 4, 7, 11, 2],
+  '5':     [0, 7],
+};
+const Q_ALIASES = {
+  '': '', 'M': '', 'maj': '', 'major': '',
+  'm': 'm', 'min': 'm', '-': 'm', 'minor': 'm',
+  'dim': 'dim', '°': 'dim', 'o': 'dim',
+  'aug': 'aug', '+': 'aug',
+  'maj7': 'maj7', 'M7': 'maj7', 'Δ': 'maj7', 'Δ7': 'maj7', 'ma7': 'maj7',
+  'm7': 'm7', 'min7': 'm7', '-7': 'm7',
+  '7': '7', 'dom7': '7',
+  'sus2': 'sus2', 'sus4': 'sus4', 'sus': 'sus4',
+  'add9': 'add9', 'add2': 'add9', '(add9)': 'add9',
+  'madd9': 'madd9', 'm(add9)': 'madd9', 'madd2': 'madd9',
+  'm7b5': 'm7b5', 'ø': 'm7b5', 'ø7': 'm7b5', 'm7-5': 'm7b5',
+  'dim7': 'dim7', '°7': 'dim7', 'o7': 'dim7',
+  '6': '6', 'm6': 'm6', 'mMaj7': 'mMaj7', 'm(maj7)': 'mMaj7', 'mmaj7': 'mMaj7',
+  '9': '9', 'm9': 'm9', 'maj9': 'maj9', '5': '5',
+};
+const chordPcs = (c) => CHORD_Q[c.q].map((i) => mod12(c.root + i));
+const chordKey = (c) => (c ? `${c.root}:${c.q}` : '');
+const sameChord = (a, b) => !!a && !!b && a.root === b.root && a.q === b.q;
+function chordName(c, flats) {
+  if (!c) return '';
+  let s = pcName(c.root, flats) + c.q;
+  if (c.bass != null && c.bass !== c.root) s += '/' + pcName(c.bass, flats);
+  return s;
+}
+function parseChord(str) {
+  const s = (str || '').trim();
+  const r = parsePc(s);
+  if (!r) return null;
+  let rest = s.slice(r.len).trim();
+  let bass = null;
+  const sl = rest.lastIndexOf('/');
+  if (sl >= 0) {
+    const b = parsePc(rest.slice(sl + 1));
+    if (!b) return null;
+    bass = b.pc; rest = rest.slice(0, sl).trim();
+  }
+  const q = Q_ALIASES[rest];
+  if (q === undefined) return null;
+  return { root: r.pc, q, bass };
+}
+function roleLabel(interval, q) {
+  switch (mod12(interval)) {
+    case 0: return 'kök';
+    case 1: return 'b9';
+    case 2: return q === 'sus2' ? '2' : '9';
+    case 3: return q === '' || q === '7' || q === 'maj7' ? '#9' : 'b3';
+    case 4: return '3';
+    case 5: return q === 'sus4' ? '4' : '11';
+    case 6: return 'b5';
+    case 7: return '5';
+    case 8: return '#5';
+    case 9: return '6';
+    case 10: return 'b7';
+    case 11: return '7';
+  }
+  return '?';
+}
+// triad sesleri tam puan; 7/9/4/6 renk notaları daha az (ağır vuruşta kök/3/5 daha kararlı)
+const ROLE_CREDIT = { 0: 1, 3: 1, 4: 1, 7: 0.9, 6: 0.8, 8: 0.8, 10: 0.7, 11: 0.7, 2: 0.65, 5: 0.65, 9: 0.65, 1: 0.5 };
+
+// Bölümün modundan diatonik aday akorlar
+function diatonicChords(tonic, mode) {
+  const md = MODES[mode];
+  const heptaMode = md.hepta || mode;
+  const sc = scalePcs(tonic, heptaMode);
+  const set = new Set(sc);
+  const out = [], seen = new Set();
+  const add = (root, q, deg, variant) => {
+    const c = { root, q, deg, variant };
+    const k = chordKey(c);
+    if (seen.has(k)) return;
+    // Frig kuralı: ev akoru asla majör olmasın
+    if (mode === 'phrygian' && root === tonic && CHORD_Q[q].includes(4)) return;
+    if (!chordPcs(c).every((p) => set.has(p))) return;
+    seen.add(k); out.push(c);
+  };
+  for (let d = 0; d < 7; d++) {
+    const r = sc[d], i3 = mod12(sc[(d + 2) % 7] - r), i5 = mod12(sc[(d + 4) % 7] - r);
+    let tri = null;
+    if (i3 === 4 && i5 === 7) tri = '';
+    else if (i3 === 3 && i5 === 7) tri = 'm';
+    else if (i3 === 3 && i5 === 6) tri = 'dim';
+    else if (i3 === 4 && i5 === 8) tri = 'aug';
+    if (tri == null) continue;
+    add(r, tri, d, false);
+    if (tri === '') { add(r, 'maj7', d, true); add(r, 'add9', d, true); add(r, 'sus2', d, true); add(r, 'sus4', d, true); }
+    if (tri === 'm') { add(r, 'm7', d, true); add(r, 'sus2', d, true); add(r, 'sus4', d, true); }
+  }
+  return out;
+}
+function homeChord(tonic, mode) {
+  const c = diatonicChords(tonic, mode).find((x) => x.root === tonic && !x.variant);
+  return c ? { root: c.root, q: c.q } : { root: tonic, q: 'm' };
+}
+
+// slot içindeki notalar ve ağırlıkları
+function slotNotes(notes, q0, q1, g) {
+  const out = [];
+  for (const n of notes) {
+    if (n.q1 <= q0 + 1e-6 || n.q0 >= q1 - 1e-6) continue;
+    const tol = 0.12 * g.pulseQ;
+    if (n.q0 >= q0 - tol && n.q0 < q1 - tol) out.push({ n, pc: mod12(n.effMidi), w: n.cw, carried: false });
+    else if (n.q0 < q0) {
+      const ov = Math.min(n.q1, q1) - q0;
+      if (ov > 0.25 * g.pulseQ) out.push({ n, pc: mod12(n.effMidi), w: 0.5 * Math.min(ov / g.pulseQ, 1.5), carried: true });
+    }
+  }
+  return out;
+}
+function scoreChord(c, sn) {
+  const pcs = chordPcs(c);
+  let s = 0, W = 0, friction = false, frictionW = 0;
+  const used = new Set();
+  const roles = [];
+  for (const { pc, w } of sn) {
+    W += w;
+    const iv = mod12(pc - c.root);
+    if (pcs.includes(pc)) {
+      s += w * (ROLE_CREDIT[iv] ?? 0.7);
+      used.add(iv);
+      roles.push({ pc, w, role: roleLabel(iv, c.q), tone: true });
+    } else {
+      const near = Math.min(...pcs.map((p) => Math.min(mod12(pc - p), mod12(p - pc))));
+      if (near === 1) {
+        s -= 2 * w;
+        if (w >= 2) friction = true;
+        frictionW += w;
+        roles.push({ pc, w, role: roleLabel(iv, c.q) + ' (sürtünme)', tone: false, clash: true });
+      } else {
+        s -= 0.15 * w;
+        roles.push({ pc, w, role: roleLabel(iv, c.q) + ' (gerilim)', tone: false });
+      }
+    }
+  }
+  // karmaşıklık: uzantı melodide kullanılmıyorsa hafif ceza
+  const base = CHORD_Q[c.q];
+  const ext = base.filter((i) => ![0, 3, 4, 7].includes(i));
+  for (const e of ext) if (!used.has(e)) s -= 0.12 * W;
+  if (c.q === 'dim' || c.q === 'aug' || c.q === 'm7b5' || c.q === 'dim7') s -= 0.3 * W; // düşük öncelik
+  return { score: s, W, friction, frictionW, roles };
+}
+const commonTones = (a, b) => (a && b ? chordPcs(a).filter((p) => chordPcs(b).includes(p)).length : 0);
+
+const CHORD_DEFAULTS = { changePct: 25, maxBars: 4 };
+// sections: [{startBar,endBar,tonic,mode,...}] (1 tabanlı, dahil), notes: {q0,q1,effMidi,cw}
+function buildChords(notes, sections, g, opts = {}, locks = []) {
+  const o = Object.assign({}, CHORD_DEFAULTS, opts);
+  const pct = o.changePct / 100;
+  const slots = [];
+  let prevChord = null;
+  const lockAt = (bar, half) => locks.find((l) => l.bar === bar && (l.half ?? null) === half);
+  const secs = [...sections].sort((p, q) => p.startBar - q.startBar);
+  secs.forEach((sec, si) => {
+    if (sec.tonic == null || !sec.mode) return;
+    const cands = diatonicChords(sec.tonic, sec.mode);
+    const home = homeChord(sec.tonic, sec.mode);
+    const flats = keyUsesFlats(sec.tonic, sec.mode);
+    let cur = null, curBars = 0;
+    for (let bar = sec.startBar; bar <= sec.endBar; bar++) {
+      const q0 = (bar - 1) * g.barQ, q1 = q0 + g.barQ;
+      const isFirst = bar === sec.startBar, isLast = bar === sec.endBar;
+      const bn = slotNotes(notes, q0, q1, g);
+      const evalAll = (sn, extra) => {
+        const Wt = sn.reduce((a, b) => a + b.w, 0);
+        return cands.map((c) => {
+          const r = scoreChord(c, sn);
+          let bonus = 0;
+          if (sameChord(c, home)) bonus += 0.06 * Wt;
+          if (c.deg === 3 || c.deg === 4) bonus += 0.02 * Wt;
+          if (extra) bonus += extra(c, Wt);
+          return Object.assign({ chord: c, total: r.score + bonus }, r);
+        }).sort((p, q) => q.total - p.total);
+      };
+      const evalOne = (c, sn, extra) => {
+        const r = scoreChord(c, sn);
+        const Wt = r.W;
+        let bonus = sameChord(c, home) ? 0.06 * Wt : 0;
+        if (extra) bonus += extra(c, Wt);
+        return Object.assign({ chord: c, total: r.score + bonus }, r);
+      };
+      const firstExtra = (c, Wt) => {
+        let b = 0;
+        if (prevChord) b += 0.08 * Wt * commonTones(prevChord, c); // bölüm geçişi: ortak nota
+        if (si === 0 && sameChord(c, home)) b += 0.15 * Wt;
+        return b;
+      };
+      const homeExtra = (c, Wt) => (sameChord(c, home) ? 0.5 * Wt : 0);
+      const lastNoSplit = isLast && !g.split;
+      const extraBar = isFirst ? firstExtra : lastNoSplit ? homeExtra : null;
+      let barChord, barReason = '', barCands = null;
+      const lockFull = lockAt(bar, null);
+      if (lockFull) {
+        barChord = lockFull.chord; barReason = 'kilitli';
+      } else if (!bn.length) {
+        barChord = cur || home; barReason = cur ? 'melodi yok — devam' : 'melodi yok — ev akoru';
+      } else {
+        barCands = evalAll(bn, extraBar);
+        const best = barCands[0];
+        if (!cur) { barChord = best.chord; barReason = isFirst && prevChord ? 'bölüm başı (ortak nota tercihli)' : 'en iyi puan'; }
+        else {
+          const cs = evalOne(cur, bn, extraBar);
+          const margin = pct * Math.max(Math.abs(cs.total), 0.25 * cs.W);
+          if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
+          else if (best.total - cs.total >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = `(b) yeni akor ≥%${o.changePct} daha iyi`; }
+          else if (curBars >= o.maxBars) {
+            const alt = barCands.find((c) => !sameChord(c.chord, cur) && !c.friction && c.total > 0);
+            if (alt) { barChord = alt.chord; barReason = `(c) aynı akor ${o.maxBars} ölçüdür çalıyordu`; }
+            else { barChord = cur; barReason = 'mevcut akor korunuyor'; }
+          } else { barChord = cur; barReason = 'mevcut akor korunuyor'; }
+        }
+      }
+      // yarım ölçü kontrolü
+      const halves = [];
+      if (g.split && !lockFull) {
+        let hc = barChord;
+        for (let h = 0; h < 2; h++) {
+          const hq0 = q0 + h * g.split, hq1 = h ? q1 : q0 + g.split;
+          const lk = lockAt(bar, h);
+          const hn = slotNotes(notes, hq0, hq1, g);
+          if (lk) { halves.push({ q0: hq0, q1: hq1, chord: lk.chord, reason: 'kilitli', locked: true, sn: hn }); hc = lk.chord; continue; }
+          const endHalf = isLast && h === 1;
+          let chord = hc, reason = null, hc2 = null;
+          if (hn.length) {
+            const ex = endHalf ? homeExtra : null;
+            const cs = evalOne(hc, hn, ex);
+            hc2 = evalAll(hn, ex);
+            if (cs.friction) { chord = hc2[0].chord; reason = '(a) yarım ölçüde sürtünme'; }
+            else if (endHalf && !sameChord(hc, home)) {
+              const hs = hc2.find((c) => sameChord(c.chord, home));
+              if (hs && !hs.friction && hs.total - cs.total >= pct * Math.max(Math.abs(cs.total), 0.25 * cs.W)) { chord = home; reason = 'bölüm sonu — ev akoruna dönüş'; }
+            }
+          }
+          halves.push({ q0: hq0, q1: hq1, chord, reason, sn: hn, cands: hc2 });
+          hc = chord;
+        }
+      }
+      const pushSlot = (sq0, sq1, chord, reason, locked, sn, cList) => {
+        const scored = (cList || evalAll(sn)).slice(0, 12);
+        const top = scored.slice(0, 3).map((c) => ({ chord: c.chord, score: c.total, pct: c.W > 0 ? Math.round((100 * c.total) / c.W) : 0, roles: c.roles, friction: c.friction }));
+        const curEval = scoreChord(chord, sn);
+        const heavy = sn.filter((x) => x.w >= 2);
+        const slot = {
+          bar, q0: sq0, q1: sq1, half: sq1 - sq0 < g.barQ - 1e-6 ? (sq0 > q0 + 1e-6 ? 1 : 0) : null,
+          section: sec.id, chord: Object.assign({}, chord), locked: !!locked, reason, flats,
+          candidates: top, roles: curEval.roles, score: curEval.score, W: curEval.W, notes: sn.map((x) => ({ id: x.n.id, pc: x.pc, w: x.w })),
+          suggest: null,
+        };
+        // İstisna: melodi maj7 ise akoru maj7 yaz
+        if (!locked && slot.chord.q === '' && sn.some((x) => x.w >= 0.5 && mod12(x.pc - slot.chord.root) === 11)) { slot.chord.q = 'maj7'; slot.reason = (slot.reason || '') + ' · melodi maj7 → maj7'; }
+        // Minör akorda melodi 2'liye basıyorsa sus2 öner
+        if (slot.chord.q === 'm' && heavy.some((x) => mod12(x.pc - slot.chord.root) === 2)) slot.suggest = { root: slot.chord.root, q: 'sus2' };
+        slots.push(slot);
+      };
+      if (halves.length && !sameChord(halves[0].chord, halves[1].chord)) {
+        halves.forEach((h, i) => pushSlot(h.q0, h.q1, h.chord, h.reason || (i === 0 ? barReason : 'devam'), h.locked, h.sn, h.cands));
+        if (sameChord(halves[1].chord, cur)) curBars += 1; else curBars = 0.5;
+        cur = halves[1].chord;
+      } else {
+        const ch = halves.length ? halves[0].chord : barChord;
+        pushSlot(q0, q1, ch, (halves[0] && halves[0].reason) || barReason, !!lockFull || (halves[0] && halves[0].locked && halves[1].locked), bn, barCands && sameChord(ch, barChord) ? barCands : null);
+        if (sameChord(ch, cur)) curBars += 1; else curBars = 1;
+        cur = ch;
+      }
+    }
+    prevChord = cur;
+  });
+  return slots;
+}
+
+// ---------------------------------------------------------------- SESLENDİRME (voicing)
+function voiceChords(slots, notes, sections, opts = {}) {
+  let prevV = null, prevBass = null, prevSec = null;
+  const secById = new Map(sections.map((s) => [s.id, s]));
+  const lowBySec = new Map();
+  for (const s of sections) {
+    const ms = notes.filter((n) => n.section === s.id).map((n) => n.effMidi);
+    lowBySec.set(s.id, ms.length ? percentile(ms, 0.1) : 60);
+  }
+  slots.forEach((slot, i) => {
+    const sec = secById.get(slot.section);
+    const firstInSec = slot.section !== prevSec;
+    const lastInSec = !slots[i + 1] || slots[i + 1].section !== slot.section;
+    const low = lowBySec.get(slot.section) ?? 60;
+    const pcs = chordPcs(slot.chord);
+    let top = Math.min(Math.round(low) - 1, 76), lo = top - 15;
+    let best = null;
+    for (let attempt = 0; attempt < 8 && !best; attempt++) {
+      const opt = pcs.map((pc) => { const a = []; for (let m = lo; m <= top; m++) if (mod12(m) === pc) a.push(m); return a; });
+      if (opt.some((a) => !a.length)) { if (lo > 40) lo -= 3; else top += 3; continue; }
+      const combos = [[]];
+      for (const a of opt) { const nx = []; for (const c of combos) for (const m of a) nx.push([...c, m]); combos.length = 0; combos.push(...nx); }
+      let bc = Infinity;
+      for (const c of combos) {
+        const v = [...c].sort((p, q) => p - q);
+        const span = v[v.length - 1] - v[0];
+        if (span > 14) continue;
+        let cost = 0;
+        if (prevV) {
+          for (const m of v) cost += Math.min(...prevV.map((p) => Math.abs(p - m)));
+          for (const p of prevV) cost += Math.min(...v.map((m) => Math.abs(p - m)));
+        } else cost += Math.abs(v.reduce((a, b) => a + b, 0) / v.length - (top - 6));
+        for (let k = 1; k < v.length; k++) if (v[k] - v[k - 1] === 1) cost += 1.5;
+        if (v[0] < 48 && v[1] - v[0] < 3) cost += 1;
+        cost += 0.05 * span;
+        if (cost < bc) { bc = cost; best = v; }
+      }
+      if (!best) { if (lo > 40) lo -= 3; else top += 3; }
+    }
+    if (!best) best = pcs.map((pc) => 48 + pc).sort((p, q) => p - q);
+    // bas
+    const bassTop = Math.min(52, best[0] - 1);
+    const place = (pc, near) => {
+      let bm = null, bd = Infinity;
+      for (let m = 28; m <= bassTop; m++) if (mod12(m) === pc) { const d = Math.abs(m - near); if (d < bd) { bd = d; bm = m; } }
+      return bm ?? 36 + mod12(pc);
+    };
+    let bassPc, bass;
+    const forcedBass = slot.chord.bass;
+    if (forcedBass != null) { bassPc = forcedBass; bass = place(bassPc, prevBass ?? 40); }
+    else if (opts.pedal && sec) { bassPc = sec.tonic; bass = place(bassPc, 40); }
+    else {
+      const iv = CHORD_Q[slot.chord.q];
+      const opt = [{ pc: slot.chord.root, c: 0 }];
+      if (prevBass != null && !firstInSec && !lastInSec) {
+        const th = iv.find((x) => x === 3 || x === 4);
+        if (th != null) opt.push({ pc: mod12(slot.chord.root + th), c: 2.0 });
+        if (iv.includes(7)) opt.push({ pc: mod12(slot.chord.root + 7), c: 3.0 });
+      }
+      let bc = Infinity;
+      for (const op of opt) {
+        const m = place(op.pc, prevBass ?? 40);
+        const d = prevBass == null ? 0 : Math.abs(m - prevBass);
+        const mc = d <= 2 ? 0 : d <= 4 ? 1.5 : 3;
+        if (op.c + mc < bc) { bc = op.c + mc; bassPc = op.pc; bass = m; }
+      }
+    }
+    slot.voicing = { bass, notes: best, bassPc };
+    slot.inversion = bassPc !== slot.chord.root;
+    prevV = best; prevBass = bass; prevSec = slot.section;
+  });
+  return slots;
+}
+
+// ---------------------------------------------------------------- MIDI
+function vlq(n) {
+  const bytes = [n & 0x7f];
+  while ((n >>= 7)) bytes.unshift((n & 0x7f) | 0x80);
+  return bytes;
+}
+function strBytes(s) { return Array.from(new TextEncoder().encode(s)); }
+function midiTrack(events) {
+  events.sort((a, b) => a.tick - b.tick || a.order - b.order);
+  const data = [];
+  let last = 0;
+  for (const e of events) {
+    data.push(...vlq(Math.max(0, e.tick - last)), ...e.bytes);
+    last = e.tick;
+  }
+  data.push(0, 0xff, 0x2f, 0);
+  return [0x4d, 0x54, 0x72, 0x6b, (data.length >>> 24) & 255, (data.length >>> 16) & 255, (data.length >>> 8) & 255, data.length & 255, ...data];
+}
+// tracks: [{name, channel, program, notes:[{q0,q1,midi,vel}], texts:[{q,text,type}]}]
+function writeMidi({ quarterBpm, meter, tracks, markers = [] }, ppq = 480) {
+  const [num, den] = meter.split('/').map(Number);
+  const tempo = Math.round(60000000 / quarterBpm);
+  const tick = (q) => Math.max(0, Math.round(q * ppq));
+  const t0 = [
+    { tick: 0, order: 0, bytes: [0xff, 0x51, 3, (tempo >> 16) & 255, (tempo >> 8) & 255, tempo & 255] },
+    { tick: 0, order: 0, bytes: [0xff, 0x58, 4, num, Math.log2(den), den === 8 ? 12 : 24, 8] },
+  ];
+  for (const m of markers) { const b = strBytes(m.text); t0.push({ tick: tick(m.q), order: 1, bytes: [0xff, 0x06, ...vlq(b.length), ...b] }); }
+  const chunks = [midiTrack(t0)];
+  for (const tr of tracks) {
+    const ev = [];
+    const nb = strBytes(tr.name);
+    ev.push({ tick: 0, order: 0, bytes: [0xff, 0x03, ...vlq(nb.length), ...nb] });
+    ev.push({ tick: 0, order: 0, bytes: [0xc0 | tr.channel, tr.program || 0] });
+    for (const tx of tr.texts || []) { const b = strBytes(tx.text); ev.push({ tick: tick(tx.q), order: 1, bytes: [0xff, 0x01, ...vlq(b.length), ...b] }); }
+    for (const n of tr.notes) {
+      if (n.q1 <= 0) continue;
+      const a = tick(n.q0), b = Math.max(a + 1, tick(n.q1));
+      ev.push({ tick: a, order: 3, bytes: [0x90 | tr.channel, clamp(n.midi, 0, 127), n.vel || 90] });
+      ev.push({ tick: b, order: 2, bytes: [0x80 | tr.channel, clamp(n.midi, 0, 127), 0] });
+    }
+    chunks.push(midiTrack(ev));
+  }
+  const header = [0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, chunks.length, (ppq >> 8) & 255, ppq & 255];
+  return new Uint8Array([...header, ...chunks.flat()]);
+}
+function parseMidi(bytes) { // test amaçlı küçük okuyucu
+  const d = bytes;
+  let p = 14;
+  const ntr = (d[10] << 8) | d[11], ppq = (d[12] << 8) | d[13];
+  const tracks = [];
+  const rv = () => { let v = 0, b; do { b = d[p++]; v = (v << 7) | (b & 0x7f); } while (b & 0x80); return v; };
+  for (let t = 0; t < ntr; t++) {
+    p += 4;
+    const len = (d[p] << 24) | (d[p + 1] << 16) | (d[p + 2] << 8) | d[p + 3];
+    p += 4;
+    const end = p + len;
+    let tick = 0, name = '', run = 0;
+    const notes = [], texts = [];
+    while (p < end) {
+      tick += rv();
+      let st = d[p];
+      if (st === 0xff) {
+        p++; const type = d[p++]; const l = rv(); const txt = new TextDecoder().decode(d.slice(p, p + l)); p += l;
+        if (type === 3) name = txt; else if (type === 1 || type === 6) texts.push({ tick, text: txt, type });
+        continue;
+      }
+      if (st & 0x80) { run = st; p++; } else st = run;
+      const hi = st & 0xf0;
+      if (hi === 0x90 || hi === 0x80) { const n = d[p++], v = d[p++]; if (hi === 0x90 && v > 0) notes.push({ tick, midi: n, vel: v }); }
+      else if (hi === 0xc0 || hi === 0xd0) p += 1;
+      else p += 2;
+    }
+    p = end;
+    tracks.push({ name, notes, texts });
+  }
+  return { ppq, tracks };
+}
+
+// ---------------------------------------------------------------- WAV
+function encodeWav(channels, sr) {
+  const nCh = channels.length, len = channels[0].length;
+  const buf = new ArrayBuffer(44 + len * nCh * 2);
+  const v = new DataView(buf);
+  const ws = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  ws(0, 'RIFF'); v.setUint32(4, 36 + len * nCh * 2, true); ws(8, 'WAVE'); ws(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, nCh, true); v.setUint32(24, sr, true);
+  v.setUint32(28, sr * nCh * 2, true); v.setUint16(32, nCh * 2, true); v.setUint16(34, 16, true);
+  ws(36, 'data'); v.setUint32(40, len * nCh * 2, true);
+  let o = 44;
+  for (let i = 0; i < len; i++) for (let c = 0; c < nCh; c++) { v.setInt16(o, Math.round(clamp(channels[c][i], -1, 1) * 32767), true); o += 2; }
+  return buf;
+}
+function decodeWav(buf) {
+  const v = new DataView(buf);
+  let p = 12, fmt = null;
+  while (p < v.byteLength) {
+    const id = String.fromCharCode(v.getUint8(p), v.getUint8(p + 1), v.getUint8(p + 2), v.getUint8(p + 3));
+    const size = v.getUint32(p + 4, true);
+    if (id === 'fmt ') fmt = { ch: v.getUint16(p + 10, true), sr: v.getUint32(p + 12, true), bits: v.getUint16(p + 22, true), fmt: v.getUint16(p + 8, true) };
+    if (id === 'data' && fmt) {
+      const bps = fmt.bits / 8, n = Math.floor(size / (bps * fmt.ch));
+      const out = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        let s = 0;
+        for (let c = 0; c < fmt.ch; c++) {
+          const o = p + 8 + (i * fmt.ch + c) * bps;
+          s += fmt.fmt === 3 ? v.getFloat32(o, true) : bps === 2 ? v.getInt16(o, true) / 32768 : bps === 3 ? ((v.getUint8(o) | (v.getUint8(o + 1) << 8) | (v.getInt8(o + 2) << 16)) / 8388608) : (v.getUint8(o) - 128) / 128;
+        }
+        out[i] = s / fmt.ch;
+      }
+      return { sr: fmt.sr, data: out };
+    }
+    p += 8 + size + (size & 1);
+  }
+  throw new Error('WAV çözülemedi');
+}
+
+// ---------------------------------------------------------------- piyano render (çevrimdışı; örnek tabanlı)
+// samples: [{midi, data:Float32Array, sr}] ; events: [{t, dur, midi, vel}]
+function renderPiano(events, samples, sr, length, gain = 1) {
+  const out = new Float32Array(length);
+  if (!samples.length) return out;
+  for (const e of events) {
+    let s = samples[0];
+    for (const c of samples) if (Math.abs(c.midi - e.midi) < Math.abs(s.midi - e.midi)) s = c;
+    const rate = Math.pow(2, (e.midi - s.midi) / 12) * (s.sr / sr);
+    const start = Math.round(e.t * sr), rel = 0.35, relN = Math.round(rel * sr);
+    const holdN = Math.round(e.dur * sr);
+    const v = gain * Math.pow((e.vel || 80) / 127, 1.6);
+    for (let i = 0; i < holdN + relN; i++) {
+      const o = start + i;
+      if (o < 0) continue;
+      if (o >= length) break;
+      const sp = i * rate, i0 = Math.floor(sp);
+      if (i0 + 1 >= s.data.length) break;
+      const smp = s.data[i0] + (s.data[i0 + 1] - s.data[i0]) * (sp - i0);
+      const env = i < holdN ? 1 : Math.exp((-(i - holdN) / relN) * 5);
+      out[o] += smp * v * env;
+    }
+  }
+  return out;
+}
+// Salamander yüklenemezse kullanılan basit sentetik piyano örneği
+function synthPianoSample(midi, sr, dur = 3) {
+  const n = Math.round(dur * sr), out = new Float32Array(n);
+  const f = midiToHz(midi);
+  const B = 0.0004;
+  for (let h = 1; h <= 12; h++) {
+    const fh = f * h * Math.sqrt(1 + B * h * h);
+    if (fh > sr / 2.2) break;
+    const amp = (1 / h) * (h === 1 ? 1 : 0.7);
+    const dec = 1.2 + h * 0.9 + f / 400;
+    const ph = Math.random() * 6.28;
+    for (let i = 0; i < n; i++) out[i] += amp * Math.exp((-dec * i) / sr) * Math.sin(ph + (2 * Math.PI * fh * i) / sr);
+  }
+  const att = Math.round(0.004 * sr);
+  let mx = 0;
+  for (let i = 0; i < n; i++) { if (i < att) out[i] *= i / att; mx = Math.max(mx, Math.abs(out[i])); }
+  for (let i = 0; i < n; i++) out[i] *= 0.6 / mx;
+  return out;
+}
+
+// ---------------------------------------------------------------- TEST MELODİSİ
+// 4/4, 120 BPM. Verse (1–4) C# Frig: her ölçüde C#–D; Nakarat (5–8) B Dorian, B'de biter.
+// 2. ölçünün ilk notası (D4) bilerek 40 cent pes.
+const TEST_SCORE = [
+  // [ölçü, vuruş(1 tabanlı), süre(vuruş), midi, cent, legato(sonrakine kayarak bağlan)]
+  [1, 1, 1.5, 61, 0, true], [1, 2.5, 0.5, 62, 0, false], [1, 3, 2, 61, 0, false],
+  [2, 1, 1.5, 62, -40, true], [2, 2.5, 0.5, 61, 0, false], [2, 3, 2, 62, 0, false],
+  [3, 1, 1.5, 61, 0, true], [3, 2.5, 0.5, 62, 0, true], [3, 3, 2, 61, 0, false],
+  [4, 1, 1.5, 62, 0, true], [4, 2.5, 0.5, 61, 0, false], [4, 3, 1.5, 61, 0, false],
+  [5, 1, 2, 59, 0, true], [5, 3, 1, 62, 0, true], [5, 4, 1, 66, 0, false],
+  [6, 1, 1.5, 64, 0, true], [6, 2.5, 0.5, 68, 0, true], [6, 3, 1, 66, 0, true], [6, 4, 1, 64, 0, false],
+  [7, 1, 2, 66, 0, true], [7, 3, 1, 64, 0, true], [7, 4, 1, 61, 0, false],
+  [8, 1, 1, 62, 0, true], [8, 2, 3, 59, 0, false],
+];
+function synthTestVocal(sr = 44100, opts = {}) {
+  const bpm = 120, spb = 60 / bpm, lead = opts.leadSec ?? 0.5;
+  const totalSec = lead + 8 * 4 * spb + 0.6;
+  const n = Math.round(totalSec * sr);
+  const f0 = new Float32Array(n), amp = new Float32Array(n);
+  let rnd = 12345;
+  const rand = () => { rnd = (rnd * 1103515245 + 12345) & 0x7fffffff; return rnd / 0x7fffffff; };
+  const ev = TEST_SCORE.map(([bar, beat, dur, midi, cents, legato]) => ({
+    t0: lead + ((bar - 1) * 4 + (beat - 1)) * spb, dur: dur * spb, m: midi + cents / 100, legato,
+  }));
+  ev.forEach((e, i) => {
+    const next = ev[i + 1];
+    const legato = e.legato && next && Math.abs(next.t0 - (e.t0 + e.dur)) < 1e-6;
+    const gap = legato ? 0 : 0.06;
+    const t1 = e.t0 + e.dur - gap;
+    const prevLeg = i > 0 && ev[i - 1].legato && Math.abs(ev[i - 1].t0 + ev[i - 1].dur - e.t0) < 1e-6;
+    for (let s = Math.round(e.t0 * sr); s < Math.round(t1 * sr) && s < n; s++) {
+      const t = s / sr - e.t0, rem = t1 - s / sr;
+      let m = e.m;
+      if (!prevLeg) m -= 0.5 * Math.exp(-t / 0.025); // başta hafif "scoop"
+      if (legato && rem < 0.04) m += (next.m - e.m) * (0.5 - 0.5 * Math.cos((Math.PI * (0.04 - rem)) / 0.04)); // portamento
+      if (e.dur >= 0.7) { // vibrato (±30 cent, 5.5 Hz)
+        const vf = clamp((t - 0.15) / 0.15, 0, 1);
+        m += vf * 0.3 * Math.sin(2 * Math.PI * 5.5 * t);
+      }
+      f0[s] = midiToHz(m);
+      const att = prevLeg ? 1 : clamp(t / 0.03, 0, 1), rel = legato ? 1 : clamp(rem / 0.035, 0, 1);
+      amp[s] = 0.32 * att * rel * (1 - 0.1 * Math.min(1, t / e.dur));
+    }
+  });
+  // additive "a" ünlüsü: sabit formant zarfı, harmonikler f0'la hareket eder
+  const formants = [[730, 90, 1.0], [1090, 110, 0.5], [2440, 160, 0.25], [3400, 250, 0.1]];
+  const env = (f) => { let s = 0.015; for (const [F, B, G] of formants) s += G / (1 + ((f - F) / (B * 0.7)) ** 2); return s; };
+  const sig = new Float32Array(n);
+  let phase = 0;
+  const H = 40, hA = new Float32Array(H + 1);
+  for (let s0 = 0; s0 < n; s0 += 64) {
+    const fb = f0[s0] || f0[Math.min(n - 1, s0 + 63)];
+    for (let h = 1; h <= H; h++) hA[h] = fb > 0 && fb * h < 7000 ? env(fb * h) / Math.pow(h, 0.3) : 0;
+    for (let s = s0; s < Math.min(n, s0 + 64); s++) {
+      if (!(f0[s] > 0) || amp[s] <= 0) { continue; }
+      phase += (2 * Math.PI * f0[s]) / sr;
+      if (phase > 2 * Math.PI * 1000) phase -= 2 * Math.PI * 1000;
+      let v = 0;
+      for (let h = 1; h <= H; h++) if (hA[h] > 0) v += hA[h] * Math.sin(h * phase);
+      sig[s] = v * amp[s] * 0.55;
+    }
+  }
+  // nefes (verse sonu) + zemin gürültüsü
+  const breath = [lead + 7.78, lead + 7.96];
+  let b1 = 0, b2 = 0;
+  for (let s = 0; s < n; s++) {
+    const t = s / sr;
+    let nz = (rand() * 2 - 1);
+    sig[s] += nz * 0.0006;
+    if (t >= breath[0] && t < breath[1]) {
+      const e = Math.sin((Math.PI * (t - breath[0])) / (breath[1] - breath[0]));
+      b1 += 0.25 * (nz - b1); b2 += 0.25 * (b1 - b2);
+      sig[s] += (b1 - b2) * 0.12 * e;
+    }
+  }
+  return {
+    signal: sig, sr, bpm, meter: '4/4', offsetSec: lead,
+    sections: [{ name: 'Verse', startBar: 1, endBar: 4 }, { name: 'Nakarat', startBar: 5, endBar: 8 }],
+    flat: { bar: 2, beat: 1, midi: 62, cents: -40 },
+    score: TEST_SCORE,
+  };
+}
+
+// ---------------------------------------------------------------- PIPELINE (UI ve test ortak)
+function newProject() {
+  return {
+    version: 1,
+    settings: { bpm: 120, meter: '4/4', latencyMs: 0 },
+    audio: { offsetSec: 0, alignMode: 'none' },
+    pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
+    sections: [],
+    noteEdits: [],
+    autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
+    chordOpts: Object.assign({}, CHORD_DEFAULTS),
+    chordLocks: [],
+    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
+  };
+}
+const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+function findEdit(edits, n) {
+  let best = null, bo = 0;
+  for (const e of edits) {
+    const o = overlap(n.t0, n.t1, e.t0, e.t1);
+    if (o > bo && o >= 0.5 * Math.min(n.t1 - n.t0, e.t1 - e.t0)) { bo = o; best = e; }
+  }
+  return best;
+}
+function totalBars(proj, duration) {
+  const g = makeGrid(proj.settings);
+  const d = duration ? duration - effectiveOffset(proj) : 0;
+  const maxSec = Math.max(0, ...proj.sections.map((s) => s.endBar * g.barSec));
+  return Math.max(4, Math.ceil(Math.max(d, maxSec) / g.barSec - 1e-6));
+}
+const effectiveOffset = (proj) => (proj.audio.offsetSec || 0) + (proj.audio.source === 'record' ? (proj.settings.latencyMs || 0) / 1000 : 0);
+
+// Senkron türetme aşamaları: notlar → ton önerileri → düzeltme → akorlar → voicing
+function derive(proj, st) {
+  const g = makeGrid(proj.settings);
+  const off = effectiveOffset(proj);
+  const bars = totalBars(proj, st.duration);
+  let sections = proj.sections.map((s) => Object.assign({}, s));
+  if (!sections.length) sections = [{ id: '_all', name: 'Tümü', startBar: 1, endBar: bars, implicit: true }];
+  sections.sort((a, b) => a.startBar - b.startBar);
+  const secOfQ = (q) => { const bar = Math.floor(q / g.barQ + 1e-6) + 1; return sections.find((s) => bar >= s.startBar && bar <= s.endBar) || null; };
+  // 3) notalar (zaman çizelgesi + düzenlemeler)
+  const notes = (st.rawNotes || []).map((r, i) => {
+    const t0 = r.t0 - off, t1 = r.t1 - off;
+    const n = Object.assign({}, r, { idx: i, id: 'n' + Math.round(r.t0 * 1000), tl0: t0, tl1: t1, q0: t0 / g.spq, q1: t1 / g.spq, detMidi: r.nearest });
+    const ed = findEdit(proj.noteEdits, r);
+    n.edit = ed;
+    n.label = ed && ed.label != null ? ed.label : null;
+    n.manualTarget = ed && ed.target != null ? ed.target : null;
+    n.locked = !!(ed && (ed.locked || ed.target != null));
+    const s = secOfQ(n.q0 + 0.12 * g.pulseQ);
+    n.section = s ? s.id : null;
+    return n;
+  });
+  // 4) bölüm tonları (öneri her zaman algılanan notalardan)
+  const keyInfo = {};
+  for (const s of sections) {
+    const q0 = (s.startBar - 1) * g.barQ, q1 = s.endBar * g.barQ;
+    const sn = notes.filter((n) => n.q0 >= q0 - 0.12 * g.pulseQ && n.q0 < q1 - 0.12 * g.pulseQ);
+    const sug = suggestKeys(sn, g, 3);
+    keyInfo[s.id] = sug;
+    s.confirmed = s.tonic != null && !!s.mode;
+    if (!s.confirmed && sug.candidates.length) { s.tonic = sug.candidates[0].tonic; s.mode = sug.candidates[0].mode; s.provisional = true; }
+    s.pcs = s.tonic != null && s.mode ? scalePcs(s.tonic, s.mode) : null;
+  }
+  const secById = new Map(sections.map((s) => [s.id, s]));
+  for (const n of notes) { const s = secById.get(n.section); n.scalePcs = s ? s.pcs : null; }
+  // 5) düzeltme
+  let correction = null;
+  if (st.track) {
+    correction = computeCorrection(st.track, notes, proj.autotune, g);
+    notes.forEach((n, i) => {
+      const inf = correction.info[i];
+      n.corr = inf;
+      n.soundMidi = n.median + inf.applied / 100;
+      n.effMidi = n.label != null ? n.label : Math.round(n.soundMidi);
+      n.inScale = n.scalePcs ? n.scalePcs.includes(mod12(n.effMidi)) : true;
+    });
+  }
+  for (const n of notes) n.cw = chordWeight(n, g);
+  // 6) akorlar
+  const chords = buildChords(notes, sections, g, proj.chordOpts, proj.chordLocks);
+  // 8) voicing
+  voiceChords(chords, notes, sections, { pedal: proj.mixer.pedal });
+  return { g, off, bars, sections, notes, keyInfo, correction, chords };
+}
+
+// Nota olayları (oynatma + MIDI)
+function pianoEvents(chords, g) {
+  const ev = [];
+  for (const c of chords) {
+    if (!c.voicing) continue;
+    const t = c.q0 * g.spq, dur = (c.q1 - c.q0) * g.spq;
+    ev.push({ t, dur, midi: c.voicing.bass, vel: 78, q0: c.q0, q1: c.q1 });
+    for (const m of c.voicing.notes) ev.push({ t, dur, midi: m, vel: 62, q0: c.q0, q1: c.q1 });
+  }
+  return ev;
+}
+function chordChart(proj, d) {
+  const lines = [`Tempo: ${proj.settings.bpm} BPM · Ölçü: ${proj.settings.meter}`, ''];
+  for (const s of d.sections) {
+    const key = s.tonic != null ? keyName(s.tonic, s.mode) + (s.provisional ? ' (öneri)' : '') : '—';
+    lines.push(`[${s.name}] ${key} — ölçü ${s.startBar}–${s.endBar}`);
+    const bars = [];
+    for (let b = s.startBar; b <= s.endBar; b++) {
+      const cs = d.chords.filter((c) => c.bar === b && c.section === s.id).map((c) => chordName(Object.assign({}, c.chord, { bass: c.chord.bass ?? (c.inversion ? c.voicing.bassPc : null) }), c.flats));
+      bars.push(' ' + (cs.join(' ') || '%') + ' ');
+    }
+    for (let i = 0; i < bars.length; i += 4) lines.push('|' + bars.slice(i, i + 4).join('|') + '|');
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+function exportMidi(proj, d) {
+  const g = d.g;
+  const vocal = d.notes.filter((n) => n.effMidi != null).map((n) => ({ q0: n.q0, q1: n.q1, midi: n.effMidi, vel: 96 }));
+  const piano = pianoEvents(d.chords, g).map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
+  const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
+  const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
+  return writeMidi({
+    quarterBpm: g.quarterBpm, meter: proj.settings.meter, markers,
+    tracks: [
+      { name: 'Vokal (düzeltilmiş melodi)', channel: 0, program: 53, notes: vocal },
+      { name: 'Piyano akorları', channel: 1, program: 0, notes: piano, texts },
+    ],
+  });
+}
+
+// ---------------------------------------------------------------- base64 (proje dosyasına ses gömme)
+function bytesToBase64(bytes) {
+  if (typeof Buffer !== 'undefined') return Buffer.from(bytes).toString('base64');
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+function base64ToBytes(b64) {
+  if (typeof Buffer !== 'undefined') return new Uint8Array(Buffer.from(b64, 'base64'));
+  const s = atob(b64), out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out;
+}
+
+// ilk ses başlangıcı (yükleme hizalaması)
+function firstOnset(x, sr) {
+  const win = Math.round(0.01 * sr);
+  let mx = 0;
+  const e = [];
+  for (let i = 0; i + win <= x.length; i += win) { let s = 0; for (let j = 0; j < win; j++) s += x[i + j] * x[i + j]; const r = Math.sqrt(s / win); e.push(r); mx = Math.max(mx, r); }
+  const thr = mx * 0.1;
+  for (let k = 0; k < e.length; k++) if (e[k] > thr) return (k * win) / sr;
+  return 0;
+}
+
+const Core = {
+  PC_SHARP, PC_FLAT, MODES, MODE_ORDER, METERS, CHORD_Q, TEST_SCORE,
+  PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS,
+  mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
+  makeGrid, scalePcs, keyUsesFlats, keyName, resample,
+  detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
+  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift,
+  diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, voiceChords, sameChord,
+  writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
+  newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
+  bytesToBase64, base64ToBytes, firstOnset,
+};
+if (typeof module !== 'undefined' && module.exports) module.exports = Core;
+root.Core = Core;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script id="app">/* =====================================================================
+   MINI DAW ARAYÜZÜ — zaman çizelgesi, kayıt, Tone.js oynatma, dışa aktarım
+   ===================================================================== */
+(function () {
+'use strict';
+const C = window.Core;
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dbToGain = (db) => Math.pow(10, db / 20);
+const uid = () => 's' + Math.random().toString(36).slice(2, 8);
+
+const S = {
+  proj: C.newProject(),
+  audio: null,            // { data: Float32Array (mono, orijinal — asla değişmez), sr, name }
+  onset: null,
+  track: null, rawNotes: null,
+  d: null,
+  corrected: null, correctedShift: null,
+  sel: null,              // {type:'note', id} | {type:'chord', q} | {type:'section', id}
+  editMode: 'select',
+  view: { pxPerQ: 44 },
+  pos: 0,                 // oynatma imleci (zaman çizelgesi saniyesi)
+  drag: null,
+};
+window.__daw = S; // hata ayıklama / testler için
+
+// ---------------------------------------------------------------- durum satırı
+function status(msg, kind) { const s = $('#status'); s.textContent = msg; s.className = kind || ''; s.title = msg; }
+async function busy(msg, fn) {
+  status(msg, 'busy');
+  try { return await fn(); } catch (e) { console.error(e); status('Hata: ' + e.message, 'err'); throw e; }
+}
+const tick = () => new Promise((r) => setTimeout(r, 0));
+
+// ---------------------------------------------------------------- ses bağlamı
+let actx = null;
+function getCtx() {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
+  return actx;
+}
+function toAudioBuffer(data, sr) {
+  const b = new AudioBuffer({ length: Math.max(1, data.length), numberOfChannels: 1, sampleRate: sr });
+  b.copyToChannel(data, 0);
+  return b;
+}
+
+// ---------------------------------------------------------------- pipeline
+function setAudio(data, sr, name, source) {
+  S.audio = { data, sr, name };
+  S.proj.audio.source = source;
+  S.onset = null; S.track = null; S.rawNotes = null;
+  S.corrected = null; S.correctedShift = null;
+  S.pos = 0;
+  Player.buffersDirty = true;
+}
+async function analyze() {
+  if (!S.audio) { refresh(); return; }
+  await busy('Perde analizi…', async () => {
+    const p = S.proj.pitch;
+    S.track = await C.detectPitch(S.audio.data, S.audio.sr, p, (x) => status(`Perde analizi… %${Math.round(x * 100)}`, 'busy'));
+    S.rawNotes = C.segmentNotes(S.track, p);
+  });
+  S.correctedShift = null;
+  refresh();
+  status(`Analiz tamam: ${S.rawNotes.length} nota.`);
+}
+function refresh() {
+  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0 });
+  if (S.sel && S.sel.type === 'note' && !S.d.notes.some((n) => n.id === S.sel.id)) S.sel = null;
+  renderSections();
+  renderInspector();
+  renderInfo();
+  layoutTimeline();
+  draw();
+  scheduleRender();
+}
+
+// ---------------------------------------------------------------- düzeltilmiş vokal render (TD-PSOLA)
+let renderTimer = null;
+const hasShift = (a) => { for (let i = 0; i < a.length; i++) if (a[i] !== 0) return true; return false; };
+function shiftsEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function scheduleRender(now) {
+  const corr = S.d && S.d.correction;
+  if (!corr || !S.audio) return;
+  if (shiftsEqual(corr.shift, S.correctedShift)) return;
+  clearTimeout(renderTimer);
+  $('#renderInfo').textContent = 'Düzeltilmiş vokal yeniden render edilecek…';
+  renderTimer = setTimeout(doRender, now ? 0 : 350);
+}
+async function doRender() {
+  if (S.drag) { renderTimer = setTimeout(doRender, 150); return; }
+  const shift = S.d.correction.shift.slice();
+  await busy('Düzeltilmiş vokal render ediliyor (TD-PSOLA, formant korumalı)…', async () => {
+    await tick();
+    S.corrected = hasShift(shift) ? C.psolaShift(S.audio.data, S.audio.sr, S.track, shift) : S.audio.data;
+    S.correctedShift = shift;
+  });
+  Player.buffersDirty = true;
+  renderInfo();
+  status('Düzeltilmiş vokal hazır (ayrı iz). A/B ile karşılaştırın.');
+}
+const renderReady = () => !!S.d && !!S.d.correction && shiftsEqual(S.d.correction.shift, S.correctedShift);
+
+// ---------------------------------------------------------------- piyano örnekleri (Salamander → yedek sentez)
+const SAL_BASE = 'https://tonejs.github.io/audio/salamander/';
+const SAL_NOTES = ['A0', 'C1', 'D#1', 'F#1', 'A1', 'C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'C7', 'D#7', 'F#7', 'A7', 'C8'];
+const noteToMidi = (n) => { const p = C.parsePc(n); return p.pc + 12 * (parseInt(n.slice(p.len), 10) + 1); };
+let pianoPromise = null;
+function loadPianoSamples() {
+  if (pianoPromise) return pianoPromise;
+  pianoPromise = (async () => {
+    const ctx = getCtx();
+    const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('zaman aşımı')), ms))]);
+    try {
+      const bufs = await Promise.all(SAL_NOTES.map(async (n) => {
+        const r = await withTimeout(fetch(SAL_BASE + n.replace('#', 's') + '.mp3'), 10000);
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const ab = await ctx.decodeAudioData(await r.arrayBuffer());
+        return { name: n, midi: noteToMidi(n), buffer: ab, data: ab.getChannelData(0), sr: ab.sampleRate };
+      }));
+      $('#pianoInfo').textContent = 'Piyano: Salamander Grand (gerçek örnekler) yüklendi.';
+      return { kind: 'salamander', samples: bufs };
+    } catch (e) {
+      console.warn('Salamander yüklenemedi, sentetik piyano kullanılıyor:', e);
+      const sr = 44100;
+      const samples = SAL_NOTES.filter((n) => { const m = noteToMidi(n); return m >= 24 && m <= 96; }).map((n) => {
+        const m = noteToMidi(n), data = C.synthPianoSample(m, sr, 2.5);
+        return { name: n, midi: m, data, sr, buffer: toAudioBuffer(data, sr) };
+      });
+      $('#pianoInfo').textContent = 'Salamander örneklerine ulaşılamadı (ağ) — yedek sentetik piyano kullanılıyor.';
+      return { kind: 'synth', samples };
+    }
+  })();
+  return pianoPromise;
+}
+
+// ---------------------------------------------------------------- Tone.js oynatma
+const TONE_URLS = [
+  'https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/tone/15.1.22/Tone.js',
+  'https://unpkg.com/tone@15.1.22/build/Tone.js',
+];
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = src; s.async = true; s.crossOrigin = 'anonymous';
+    s.onload = res; s.onerror = () => { s.remove(); rej(new Error('yüklenemedi: ' + src)); };
+    document.head.appendChild(s);
+  });
+}
+async function loadTone() {
+  if (window.Tone) return;
+  for (const u of TONE_URLS) { try { await loadScript(u); if (window.Tone) return; } catch (e) { console.warn(e.message); } }
+  throw new Error('Tone.js yüklenemedi (internet bağlantısı gerekli)');
+}
+const Player = {
+  ready: false, init: null, playing: false, buffersDirty: true, t0: 0, from: 0, raf: 0,
+  ensure() { if (!this.init) this.init = this._init().catch((e) => { this.init = null; throw e; }); return this.init; },
+  async _init() {
+    await loadTone();
+    await Tone.start();
+    const T = Tone;
+    this.vocalCh = new T.Channel(0).toDestination();
+    this.pianoCh = new T.Channel(-6).toDestination();
+    this.gA = new T.Gain(0).connect(this.vocalCh);
+    this.gB = new T.Gain(1).connect(this.vocalCh);
+    this.pA = new T.Player().connect(this.gA);
+    this.pB = new T.Player().connect(this.gB);
+    this.click = new T.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 }, volume: -16 }).toDestination();
+    const piano = await loadPianoSamples();
+    const urls = {};
+    for (const s of piano.samples) urls[s.name] = new T.ToneAudioBuffer(s.buffer);
+    this.sampler = new T.Sampler({ urls, release: 1.2 }).connect(this.pianoCh);
+    await T.loaded();
+    this.ready = true;
+    this.applyMixer();
+  },
+  transport() { return Tone.getTransport ? Tone.getTransport() : Tone.Transport; },
+  updateBuffers() {
+    if (!this.ready || !this.buffersDirty || !S.audio) return;
+    this.pA.buffer = new Tone.ToneAudioBuffer(toAudioBuffer(S.audio.data, S.audio.sr));
+    this.pB.buffer = new Tone.ToneAudioBuffer(toAudioBuffer(S.corrected || S.audio.data, S.audio.sr));
+    this.buffersDirty = false;
+  },
+  applyMixer() {
+    const m = S.proj.mixer;
+    if (!this.ready) return;
+    const anySolo = m.vocal.solo || m.piano.solo;
+    this.vocalCh.volume.value = m.vocal.vol;
+    this.pianoCh.volume.value = m.piano.vol;
+    this.vocalCh.mute = m.vocal.mute || (anySolo && !m.vocal.solo);
+    this.pianoCh.mute = m.piano.mute || (anySolo && !m.piano.solo);
+    const corr = m.ab !== 'original';
+    this.gA.gain.value = corr ? 0 : 1;
+    this.gB.gain.value = corr ? 1 : 0;
+  },
+  async play() {
+    if (!S.d) return;
+    try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
+    this.stop(true);
+    this.updateBuffers();
+    this.applyMixer();
+    const T = this.transport();
+    T.cancel(0);
+    const g = S.d.g, off = S.d.off, from = S.pos;
+    const now = Tone.now() + 0.12;
+    if (S.audio) {
+      for (const p of [this.pA, this.pB]) {
+        if (!p.loaded) continue;
+        const bo = from + off;
+        if (bo >= 0) { if (bo < p.buffer.duration) p.start(now, bo); } else p.start(now - bo, 0);
+      }
+    }
+    for (const e of C.pianoEvents(S.d.chords, g)) {
+      const end = e.t + e.dur;
+      if (end <= from + 0.01) continue;
+      const st = Math.max(e.t, from);
+      const name = Tone.Frequency(e.midi, 'midi').toNote();
+      T.schedule((time) => this.sampler.triggerAttackRelease(name, end - st, time, e.vel / 127), st);
+    }
+    if (S.proj.mixer.click) {
+      const endQ = S.d.bars * g.barQ;
+      for (let q = Math.ceil(from / g.spq / g.clickQ - 1e-6) * g.clickQ; q < endQ; q += g.clickQ) {
+        const inBar = q % g.barQ, acc = g.accents.some((a) => Math.abs(inBar - a) < 1e-6);
+        T.schedule((time) => this.click.triggerAttackRelease(acc ? (inBar < 1e-6 ? 1760 : 1320) : 990, 0.03, time), q * g.spq);
+      }
+    }
+    T.start(now, from);
+    this.playing = true; this.t0 = now; this.from = from;
+    $('#btnPlay').textContent = '❚❚ Duraklat';
+    const loop = () => {
+      if (!this.playing) return;
+      S.pos = this.from + Math.max(0, Tone.now() - this.t0);
+      const endSec = S.d.bars * g.barSec + 1;
+      if (S.pos >= endSec) { this.stop(); S.pos = 0; }
+      followPlayhead();
+      draw(); updateReadout();
+      this.raf = requestAnimationFrame(loop);
+    };
+    this.raf = requestAnimationFrame(loop);
+  },
+  stop(silent) {
+    if (!this.ready) return;
+    const T = this.transport();
+    T.stop(); T.cancel(0);
+    this.pA.stop(); this.pB.stop();
+    this.sampler.releaseAll();
+    this.playing = false;
+    cancelAnimationFrame(this.raf);
+    $('#btnPlay').textContent = '▶ Çal';
+    if (!silent) { draw(); updateReadout(); }
+  },
+};
+function followPlayhead() {
+  const sc = $('#tlScroll');
+  const x = C.clamp(S.pos / S.d.g.spq, 0, 1e9) * S.view.pxPerQ + TL.KW;
+  if (x < sc.scrollLeft + TL.KW || x > sc.scrollLeft + sc.clientWidth - 40) sc.scrollLeft = Math.max(0, x - TL.KW - 40);
+}
+function updateReadout() {
+  const g = S.d ? S.d.g : C.makeGrid(S.proj.settings);
+  const q = S.pos / g.spq, bar = Math.floor(q / g.barQ + 1e-9) + 1, beat = (q - (bar - 1) * g.barQ) / g.pulseQ + 1;
+  $('#posReadout').textContent = `${bar} · ${beat.toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------- kayıt (count-in + click kulaklığa)
+const WORKLET_SRC = `class RecProc extends AudioWorkletProcessor {
+  constructor() { super(); this.on = true; this.buf = new Float32Array(8192); this.n = 0; this.f0 = 0;
+    this.port.onmessage = (e) => { if (e.data === 'stop') { this.flush(); this.on = false; } }; }
+  flush() { if (this.n) { this.port.postMessage({ frame: this.f0, data: this.buf.slice(0, this.n) }); this.n = 0; } }
+  process(inputs) {
+    if (!this.on) return false;
+    const ch = inputs[0] && inputs[0][0];
+    if (ch) { if (this.n === 0) this.f0 = currentFrame; this.buf.set(ch, this.n); this.n += ch.length; if (this.n + 128 > this.buf.length) this.flush(); }
+    return true;
+  }
+}
+registerProcessor('rec-proc', RecProc);`;
+let workletLoaded = false;
+function clickAt(ctx, t, freq, gain) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'square'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.25 * gain, t + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04);
+  o.connect(g).connect(ctx.destination); // yalnızca çıkışa — kayıt zincirine bağlı değil
+  o.start(t); o.stop(t + 0.05);
+}
+// AudioWorklet (Blob, file:// altında data: URL); olmazsa ScriptProcessor yedeği
+async function makeRecorderNode(ctx, onChunk) {
+  if (!workletLoaded && ctx.audioWorklet) {
+    const urls = [URL.createObjectURL(new Blob([WORKLET_SRC], { type: 'application/javascript' })), 'data:application/javascript;base64,' + btoa(WORKLET_SRC)];
+    if (location.protocol === 'file:') urls.reverse();
+    for (const u of urls) { try { await ctx.audioWorklet.addModule(u); workletLoaded = true; break; } catch (e) { console.warn('worklet:', e.message); } }
+  }
+  if (workletLoaded) {
+    const node = new AudioWorkletNode(ctx, 'rec-proc', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    node.port.onmessage = (e) => onChunk(e.data.frame, e.data.data);
+    return node;
+  }
+  const bs = 4096, node = ctx.createScriptProcessor(bs, 1, 1);
+  node.onaudioprocess = (e) => { e.outputBuffer.getChannelData(0).fill(0); onChunk(Math.round((e.playbackTime - bs / ctx.sampleRate) * ctx.sampleRate), e.inputBuffer.getChannelData(0).slice()); };
+  return node;
+}
+const Rec = {
+  st: null,
+  async start() {
+    if (this.st) return;
+    if (Player.playing) Player.stop();
+    const ctx = getCtx();
+    await ctx.resume();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+    } catch (e) { status('Mikrofon izni alınamadı: ' + e.message, 'err'); return; }
+    const src = ctx.createMediaStreamSource(stream);
+    const st = { ctx, stream, src, node: null, chunks: [], firstFrame: null };
+    const node = await makeRecorderNode(ctx, (frame, data) => { if (st.firstFrame == null) st.firstFrame = frame; st.chunks.push(data); });
+    st.node = node;
+    src.connect(node);
+    node.connect(ctx.destination); // node sessizlik üretir (izleme yok); yalnızca işlemenin sürmesi için
+    const g = C.makeGrid(S.proj.settings);
+    const t0 = ctx.currentTime + 0.3;
+    st.barStart = t0 + g.barSec;
+    const vol = +$('#inClickVol').value;
+    let q = 0;
+    const sched = () => {
+      const horizon = ctx.currentTime + 0.25;
+      while (t0 + q * g.spq < horizon) {
+        const inBar = q % g.barQ, acc = g.accents.some((a) => Math.abs(inBar - a) < 1e-6);
+        clickAt(ctx, t0 + q * g.spq, inBar < 1e-6 ? 1760 : acc ? 1320 : 990, vol * (acc ? 1 : 0.6));
+        q += g.clickQ;
+      }
+      const el = ctx.currentTime - t0;
+      if (el < g.barSec) status(`Count-in… ${Math.max(1, Math.ceil((g.barSec - el) / g.pulseSec))}`, 'busy');
+      else status(`● Kayıt — ölçü ${Math.floor((el - g.barSec) / g.barSec) + 1}`, 'busy');
+    };
+    sched();
+    st.timer = setInterval(sched, 40);
+    this.st = st;
+    $('#btnRec').classList.add('on'); $('#btnRecStop').disabled = false;
+  },
+  async stop() {
+    const st = this.st;
+    if (!st) return;
+    this.st = null;
+    clearInterval(st.timer);
+    if (st.node.port) st.node.port.postMessage('stop'); else st.node.onaudioprocess = null;
+    await new Promise((r) => setTimeout(r, 120));
+    st.src.disconnect(); st.node.disconnect();
+    st.stream.getTracks().forEach((t) => t.stop());
+    $('#btnRec').classList.remove('on'); $('#btnRecStop').disabled = true;
+    const len = st.chunks.reduce((a, c) => a + c.length, 0);
+    if (!len) { status('Kayıt boş.', 'err'); return; }
+    const data = new Float32Array(len);
+    let o = 0;
+    for (const c of st.chunks) { data.set(c, o); o += c.length; }
+    const sr = st.ctx.sampleRate;
+    setAudio(data, sr, 'Kayıt ' + new Date().toLocaleTimeString(), 'record');
+    // 1. ölçünün başı kayıttaki hangi saniyeye denk geliyor (gecikme ayrıca eklenir)
+    S.proj.audio.offsetSec = st.barStart - st.firstFrame / sr;
+    S.proj.audio.alignMode = 'none';
+    syncInputs();
+    await analyze();
+  },
+};
+
+// ---------------------------------------------------------------- dosya yükleme + hizalama
+async function loadAudioFile(file) {
+  await busy('Dosya çözülüyor…', async () => {
+    const ctx = getCtx();
+    const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+    const mono = new Float32Array(buf.length);
+    for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i] += d[i] / buf.numberOfChannels; }
+    setAudio(mono, buf.sampleRate, file.name, 'file');
+    S.proj.audio.alignMode = $('#inAlign').value;
+    applyAlign();
+    syncInputs();
+  });
+  await analyze();
+}
+function applyAlign() {
+  if (!S.audio || S.proj.audio.source !== 'file') return;
+  const mode = S.proj.audio.alignMode;
+  if (mode === 'none') return;
+  if (S.onset == null) S.onset = C.firstOnset(S.audio.data, S.audio.sr);
+  const g = C.makeGrid(S.proj.settings);
+  S.proj.audio.offsetSec = mode === 'bar1' ? S.onset : S.onset - Math.round(S.onset / g.pulseSec) * g.pulseSec;
+}
+
+// ---------------------------------------------------------------- zaman çizelgesi
+const TL = { KW: 46, RULER: 22, SEC: 26, CHORD: 36 };
+TL.TOP = TL.RULER + TL.SEC + TL.CHORD;
+const cv = $('#tl'), sc = $('#tlScroll');
+const ctx2d = cv.getContext('2d');
+const grid = () => (S.d ? S.d.g : C.makeGrid(S.proj.settings));
+const totalQ = () => (S.d ? S.d.bars : 8) * grid().barQ;
+const qToX = (q) => TL.KW + q * S.view.pxPerQ - sc.scrollLeft;
+const xToQ = (x) => (x - TL.KW + sc.scrollLeft) / S.view.pxPerQ;
+function layoutTimeline() {
+  $('#tlInner').style.width = TL.KW + totalQ() * S.view.pxPerQ + 80 + 'px';
+  resizeCanvas();
+}
+function resizeCanvas() {
+  const w = sc.clientWidth, h = sc.clientHeight, dpr = window.devicePixelRatio || 1;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    cv.style.width = w + 'px'; cv.style.height = h + 'px';
+  }
+}
+function pitchRange() {
+  let lo = Infinity, hi = -Infinity;
+  if (S.d) for (const n of S.d.notes) { lo = Math.min(lo, n.effMidi, n.median); hi = Math.max(hi, n.effMidi, n.median); }
+  if (!Number.isFinite(lo)) { lo = 55; hi = 74; }
+  lo = Math.floor(lo) - 3; hi = Math.ceil(hi) + 3;
+  if (hi - lo < 18) { const c = (lo + hi) / 2; lo = Math.floor(c - 9); hi = lo + 18; }
+  return { lo, hi };
+}
+function rollGeom() {
+  const H = sc.clientHeight, { lo, hi } = pitchRange();
+  const rowH = (H - TL.TOP) / (hi - lo + 1);
+  return { lo, hi, rowH, yOf: (m) => TL.TOP + (hi - m + 0.5) * rowH, mOf: (y) => hi + 0.5 - (y - TL.TOP) / rowH };
+}
+const SEC_COLORS = ['#3d7be0', '#b560d4', '#2fa37a', '#d9823b', '#c94f6d', '#5c6bc0'];
+const isBlack = (m) => [1, 3, 6, 8, 10].includes(C.mod12(m));
+
+function draw() {
+  resizeCanvas();
+  const dpr = window.devicePixelRatio || 1, W = sc.clientWidth, H = sc.clientHeight;
+  const c = ctx2d;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, W, H);
+  c.fillStyle = '#101217'; c.fillRect(0, 0, W, H);
+  const g = grid(), d = S.d, rg = rollGeom();
+  const q0v = xToQ(TL.KW), q1v = xToQ(W);
+  const pq = S.view.pxPerQ;
+  // arka plan satırları
+  for (let m = rg.lo; m <= rg.hi; m++) {
+    c.fillStyle = isBlack(m) ? '#0d0f13' : '#12151b';
+    c.fillRect(TL.KW, rg.yOf(m) - rg.rowH / 2, W, rg.rowH);
+  }
+  // bölüm scale şeritleri
+  if (d) {
+    for (const s of d.sections) {
+      if (!s.pcs) continue;
+      const x0 = Math.max(TL.KW, qToX((s.startBar - 1) * g.barQ)), x1 = Math.min(W, qToX(s.endBar * g.barQ));
+      if (x1 <= x0) continue;
+      for (let m = rg.lo; m <= rg.hi; m++) {
+        const pc = C.mod12(m);
+        if (!s.pcs.includes(pc)) continue;
+        c.fillStyle = pc === s.tonic ? 'rgba(106,167,255,0.24)' : 'rgba(106,167,255,0.12)';
+        c.fillRect(x0, rg.yOf(m) - rg.rowH / 2 + 0.5, x1 - x0, rg.rowH - 1);
+      }
+    }
+  }
+  // grid çizgileri
+  const barQ = g.barQ, sub = pq * g.clickQ >= 10 ? g.clickQ : g.pulseQ;
+  for (let q = Math.floor(q0v / sub) * sub; q <= q1v; q += sub) {
+    const x = Math.round(qToX(q)) + 0.5;
+    if (x < TL.KW) continue;
+    const isBar = Math.abs(q / barQ - Math.round(q / barQ)) < 1e-6;
+    const isPulse = Math.abs(q / g.pulseQ - Math.round(q / g.pulseQ)) < 1e-6;
+    c.strokeStyle = isBar ? '#3a4152' : isPulse ? '#232834' : '#1a1e27';
+    c.beginPath(); c.moveTo(x, isBar ? 0 : TL.RULER); c.lineTo(x, H); c.stroke();
+  }
+  // cetvel
+  c.fillStyle = '#181b22'; c.fillRect(TL.KW, 0, W, TL.RULER);
+  c.font = '11px system-ui, sans-serif'; c.textBaseline = 'middle';
+  for (let b = Math.max(0, Math.floor(q0v / barQ)); b * barQ <= q1v; b++) {
+    const x = qToX(b * barQ);
+    if (x < TL.KW - 1) continue;
+    c.fillStyle = '#9aa2b4'; c.fillText(String(b + 1), x + 4, TL.RULER / 2);
+  }
+  // bölüm şeridi
+  const secY = TL.RULER;
+  c.fillStyle = '#15181f'; c.fillRect(TL.KW, secY, W, TL.SEC);
+  if (d) {
+    d.sections.forEach((s, i) => {
+      const x0 = qToX((s.startBar - 1) * barQ), x1 = qToX(s.endBar * barQ);
+      if (x1 < TL.KW || x0 > W) return;
+      const col = s.implicit ? '#2a2f3b' : SEC_COLORS[i % SEC_COLORS.length];
+      c.fillStyle = col; c.globalAlpha = s.implicit ? 1 : 0.85;
+      roundRect(c, x0 + 1, secY + 3, x1 - x0 - 2, TL.SEC - 6, 4); c.fill();
+      c.globalAlpha = 1;
+      if (S.sel && S.sel.type === 'section' && S.sel.id === s.id) { c.strokeStyle = '#fff'; c.lineWidth = 1.5; roundRect(c, x0 + 1, secY + 3, x1 - x0 - 2, TL.SEC - 6, 4); c.stroke(); c.lineWidth = 1; }
+      c.save(); c.beginPath(); c.rect(Math.max(TL.KW, x0), secY, x1 - Math.max(TL.KW, x0) - 4, TL.SEC); c.clip();
+      c.fillStyle = '#fff';
+      c.font = (s.provisional ? 'italic ' : '') + '12px system-ui, sans-serif';
+      const key = s.tonic != null ? ' · ' + C.keyName(s.tonic, s.mode) + (s.provisional ? ' (öneri)' : '') : '';
+      c.fillText((s.implicit ? 'Bölüm yok — tüm şarkı' : s.name) + key, Math.max(TL.KW, x0) + 6, secY + TL.SEC / 2);
+      c.restore();
+    });
+  }
+  if (S.drag && S.drag.type === 'newSection') {
+    const a = Math.min(S.drag.b0, S.drag.b1), b = Math.max(S.drag.b0, S.drag.b1);
+    const x0 = qToX((a - 1) * barQ), x1 = qToX(b * barQ);
+    c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(x0, secY + 2, x1 - x0, TL.SEC - 4);
+    c.fillStyle = '#fff'; c.fillText(`ölçü ${a}–${b}`, x0 + 6, secY + TL.SEC / 2);
+  }
+  // akor şeridi
+  const chY = TL.RULER + TL.SEC;
+  c.fillStyle = '#171a21'; c.fillRect(TL.KW, chY, W, TL.CHORD);
+  if (d) {
+    for (const s of d.chords) {
+      const x0 = qToX(s.q0), x1 = qToX(s.q1);
+      if (x1 < TL.KW || x0 > W) continue;
+      const sel = S.sel && S.sel.type === 'chord' && S.sel.q >= s.q0 - 1e-6 && S.sel.q < s.q1 - 1e-6;
+      c.fillStyle = sel ? '#2b3a57' : s.locked ? '#2f2a18' : '#1f2430';
+      roundRect(c, x0 + 1, chY + 3, x1 - x0 - 2, TL.CHORD - 6, 5); c.fill();
+      c.strokeStyle = sel ? '#6aa7ff' : s.locked ? '#f4d35e' : '#323746';
+      roundRect(c, x0 + 1.5, chY + 3.5, x1 - x0 - 3, TL.CHORD - 7, 5); c.stroke();
+      c.save(); c.beginPath(); c.rect(Math.max(TL.KW, x0), chY, x1 - Math.max(TL.KW, x0) - 3, TL.CHORD); c.clip();
+      const disp = Object.assign({}, s.chord, { bass: s.chord.bass ?? (s.inversion ? s.voicing.bassPc : null) });
+      c.fillStyle = '#fff'; c.font = '600 14px system-ui, sans-serif';
+      c.fillText((s.locked ? '🔒 ' : '') + C.chordName(disp, s.flats), Math.max(TL.KW, x0) + 7, chY + TL.CHORD / 2);
+      if (s.suggest) { c.font = '10px system-ui, sans-serif'; c.fillStyle = '#ffb454'; c.fillText(C.chordName(s.suggest, s.flats) + '?', x1 - 44, chY + TL.CHORD - 9); }
+      c.restore();
+    }
+  }
+  // notalar
+  if (d) {
+    const ns = d.notes;
+    c.font = '11px system-ui, sans-serif';
+    for (const n of ns) {
+      const x0 = qToX(n.q0), x1 = qToX(n.q1);
+      if (x1 < TL.KW || x0 > W) continue;
+      const y = rg.yOf(n.effMidi), h = Math.max(4, rg.rowH - 2);
+      // ses düzeltmesiyle yeri değişen notanın orijinal yeri (hayalet)
+      if (n.nearest !== n.effMidi || n.label != null) {
+        c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,255,255,0.35)';
+        c.strokeRect(x0 + 0.5, rg.yOf(n.nearest) - h / 2 + 0.5, x1 - x0 - 1, h - 1);
+        c.setLineDash([]);
+      }
+      c.fillStyle = n.inScale ? '#5b9dff' : '#ff8a4c';
+      c.globalAlpha = 0.85;
+      roundRect(c, x0, y - h / 2, Math.max(3, x1 - x0 - 1), h, 3); c.fill();
+      c.globalAlpha = 1;
+      const selN = S.sel && S.sel.type === 'note' && S.sel.id === n.id;
+      if (selN || n.locked || n.label != null) {
+        c.lineWidth = selN ? 2 : 1.5;
+        c.strokeStyle = selN ? '#fff' : n.locked ? '#f4d35e' : '#ffb454';
+        if (n.label != null && !selN) c.setLineDash([4, 2]);
+        roundRect(c, x0, y - h / 2, Math.max(3, x1 - x0 - 1), h, 3); c.stroke();
+        c.setLineDash([]); c.lineWidth = 1;
+      }
+      if (x1 - x0 > 34 && h >= 10) {
+        c.fillStyle = '#0b0d12';
+        let t = C.noteName(n.effMidi, false);
+        if (x1 - x0 > 70) t += ` ${n.cents > 0 ? '+' : ''}${n.cents}c`;
+        if (n.locked) t = '🔒' + t;
+        c.save(); c.beginPath(); c.rect(x0, y - h / 2, x1 - x0 - 2, h); c.clip();
+        c.fillText(t, x0 + 4, y + 0.5);
+        c.restore();
+      }
+    }
+    // ham ve düzeltilmiş perde eğrileri
+    if (S.track) {
+      const tr = S.track, hop = tr.hopSec, off = d.off, spq = g.spq;
+      const f0s = Math.max(0, Math.floor(((q0v * spq) + off) / hop) - 1), f1s = Math.min(tr.f0.length, Math.ceil(((q1v * spq) + off) / hop) + 1);
+      const sh = d.correction ? d.correction.shift : null;
+      const curve = (withShift, color, width) => {
+        c.strokeStyle = color; c.lineWidth = width; c.beginPath();
+        let pen = false;
+        for (let f = f0s; f < f1s; f++) {
+          const on = tr.f0[f] > 0 && (!withShift || (sh && Math.abs(sh[f]) > 0.5));
+          if (!on) { pen = false; continue; }
+          const m = C.hzToMidi(tr.f0[f]) + (withShift ? sh[f] / 100 : 0);
+          const x = qToX((f * hop - off) / spq), y = rg.yOf(m);
+          if (!pen) { c.moveTo(x, y); pen = true; } else c.lineTo(x, y);
+        }
+        c.stroke(); c.lineWidth = 1;
+      };
+      curve(false, 'rgba(232,236,245,0.75)', 1);
+      if (sh) curve(true, '#5fd08a', 1.5);
+    }
+  }
+  // klavye
+  c.fillStyle = '#0c0e12'; c.fillRect(0, 0, TL.KW, H);
+  for (let m = rg.lo; m <= rg.hi; m++) {
+    const y = rg.yOf(m) - rg.rowH / 2;
+    c.fillStyle = isBlack(m) ? '#22252c' : '#d8dbe2';
+    c.fillRect(0, y + 0.5, isBlack(m) ? TL.KW * 0.62 : TL.KW - 2, rg.rowH - 1);
+    if (C.mod12(m) === 0 && rg.rowH >= 8) { c.fillStyle = '#20242c'; c.font = '10px system-ui, sans-serif'; c.fillText('C' + (m / 12 - 1), TL.KW - 22, y + rg.rowH / 2); }
+  }
+  c.fillStyle = '#0c0e12'; c.fillRect(0, 0, TL.KW, TL.TOP);
+  c.fillStyle = '#9aa2b4'; c.font = '10px system-ui, sans-serif';
+  c.fillText('ölçü', 6, TL.RULER / 2); c.fillText('bölüm', 6, TL.RULER + TL.SEC / 2); c.fillText('akor', 6, TL.RULER + TL.SEC + TL.CHORD / 2);
+  // imleç
+  const px = qToX(S.pos / g.spq);
+  if (px >= TL.KW && px <= W) { c.strokeStyle = '#ff5a5f'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(px, 0); c.lineTo(px, H); c.stroke(); c.lineWidth = 1; }
+}
+function roundRect(c, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+}
+
+// ---------------------------------------------------------------- fare etkileşimi
+function noteAt(x, y) {
+  if (!S.d) return null;
+  const rg = rollGeom();
+  const h = Math.max(6, rg.rowH);
+  let best = null;
+  for (const n of S.d.notes) {
+    const x0 = qToX(n.q0), x1 = qToX(n.q1), yc = rg.yOf(n.effMidi);
+    if (x >= x0 - 2 && x <= x1 + 2 && Math.abs(y - yc) <= h / 2 + 2) best = n;
+  }
+  return best;
+}
+const sectionAtBar = (bar) => S.proj.sections.find((s) => bar >= s.startBar && bar <= s.endBar);
+function editFor(n, create) {
+  let e = C.findEdit(S.proj.noteEdits, n);
+  if (!e && create) { e = { t0: n.t0, t1: n.t1 }; S.proj.noteEdits.push(e); }
+  return e;
+}
+function cleanupEdits() {
+  S.proj.noteEdits = S.proj.noteEdits.filter((e) => e.label != null || e.target != null || e.locked);
+}
+cv.addEventListener('pointerdown', (e) => {
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  if (x < TL.KW) return;
+  const g = grid(), q = xToQ(x);
+  if (y < TL.RULER) { seek(Math.max(0, q) * g.spq); return; }
+  if (y < TL.RULER + TL.SEC) {
+    const bar = Math.max(1, Math.floor(q / g.barQ) + 1);
+    const s = sectionAtBar(bar);
+    if (s) { select({ type: 'section', id: s.id }); return; }
+    S.drag = { type: 'newSection', b0: bar, b1: bar };
+    cv.setPointerCapture(e.pointerId); draw(); return;
+  }
+  if (y < TL.TOP) {
+    const slot = S.d && S.d.chords.find((s) => q >= s.q0 && q < s.q1);
+    if (slot) select({ type: 'chord', q: (slot.q0 + slot.q1) / 2 });
+    return;
+  }
+  const n = noteAt(x, y);
+  if (!n) { select(null); return; }
+  select({ type: 'note', id: n.id });
+  if (S.editMode !== 'select') {
+    S.drag = { type: 'note', id: n.id, y0: y, mode: S.editMode, base: S.editMode === 'sound' ? (n.manualTarget ?? n.soundMidi) : n.effMidi, moved: false };
+    cv.setPointerCapture(e.pointerId);
+  }
+});
+cv.addEventListener('pointermove', (e) => {
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  if (!S.drag) {
+    cv.style.cursor = y > TL.TOP && S.editMode !== 'select' && noteAt(x, y) ? 'ns-resize' : y < TL.TOP && y > TL.RULER ? 'pointer' : 'default';
+    return;
+  }
+  const g = grid();
+  if (S.drag.type === 'newSection') {
+    S.drag.b1 = Math.max(1, Math.floor(xToQ(x) / g.barQ) + 1);
+    draw(); return;
+  }
+  if (S.drag.type === 'note') {
+    const dy = S.drag.y0 - y;
+    if (!S.drag.moved && Math.abs(dy) < 4) return;
+    S.drag.moved = true;
+    const n = S.d.notes.find((k) => k.id === S.drag.id);
+    if (!n) return;
+    const semis = dy / rollGeom().rowH;
+    const ed = editFor(n, true);
+    if (S.drag.mode === 'sound') {
+      ed.target = e.shiftKey ? Math.round((S.drag.base + semis) * 100) / 100 : Math.round(S.drag.base + semis);
+      ed.locked = true;
+    } else {
+      ed.label = Math.round(S.drag.base + semis);
+    }
+    refresh();
+  }
+});
+cv.addEventListener('pointerup', () => {
+  const dr = S.drag;
+  S.drag = null;
+  if (!dr) return;
+  if (dr.type === 'newSection') {
+    const a = Math.min(dr.b0, dr.b1), b = Math.max(dr.b0, dr.b1);
+    addSection(null, a, b);
+  } else if (dr.type === 'note' && dr.moved) {
+    cleanupEdits(); refresh();
+    if (dr.mode === 'sound') scheduleRender(true);
+  }
+  draw();
+});
+cv.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, q = xToQ(x);
+  setZoom(S.view.pxPerQ * (e.deltaY < 0 ? 1.15 : 1 / 1.15), q, x);
+}, { passive: false });
+function setZoom(z, anchorQ, anchorX) {
+  S.view.pxPerQ = C.clamp(z, 12, 160);
+  $('#inZoom').value = Math.round(S.view.pxPerQ);
+  layoutTimeline();
+  if (anchorQ != null) sc.scrollLeft = Math.max(0, TL.KW + anchorQ * S.view.pxPerQ - anchorX);
+  draw();
+}
+sc.addEventListener('scroll', () => draw());
+window.addEventListener('resize', () => { layoutTimeline(); draw(); });
+function seek(sec) {
+  const wasPlaying = Player.playing;
+  if (wasPlaying) Player.stop(true);
+  S.pos = sec;
+  updateReadout(); draw();
+  if (wasPlaying) Player.play();
+}
+function select(sel) { S.sel = sel; renderInspector(); renderSections(); draw(); }
+
+// ---------------------------------------------------------------- bölümler
+function addSection(name, a, b) {
+  const overl = S.proj.sections.find((s) => !(b < s.startBar || a > s.endBar));
+  if (overl) { status(`Bölümler çakışamaz (“${overl.name}” ölçü ${overl.startBar}–${overl.endBar}).`, 'err'); return; }
+  if (!name) {
+    const used = new Set(S.proj.sections.map((s) => s.name));
+    name = ['Verse', 'Nakarat', 'Köprü', 'Verse 2', 'Nakarat 2', 'Outro'].find((n) => !used.has(n)) || 'Bölüm ' + (S.proj.sections.length + 1);
+  }
+  const s = { id: uid(), name, startBar: a, endBar: b, tonic: null, mode: null };
+  S.proj.sections.push(s);
+  S.proj.sections.sort((p, q) => p.startBar - q.startBar);
+  S.sel = { type: 'section', id: s.id };
+  refresh();
+  status(`“${name}” bölümü eklendi (ölçü ${a}–${b}). Tonunu 4. adımda seçin.`);
+}
+function renderSections() {
+  const box = $('#sectionList');
+  if (!S.d) { box.innerHTML = ''; return; }
+  const secs = S.d.sections;
+  const tonicOpts = (sel) => '<option value="">öneri</option>' + C.PC_SHARP.map((n, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${n}</option>`).join('');
+  const modeOpts = (sel) => C.MODE_ORDER.map((m) => `<option value="${m}"${sel === m ? ' selected' : ''}>${C.MODES[m].name}</option>`).join('');
+  box.innerHTML = secs.map((s) => {
+    const src = S.proj.sections.find((x) => x.id === s.id);
+    const ki = S.d.keyInfo[s.id] || { candidates: [] };
+    const sel = S.sel && S.sel.type === 'section' && S.sel.id === s.id;
+    const status = s.confirmed ? '<span class="tag ok">onaylı</span>' : ki.candidates.length ? '<span class="tag warn">öneri — onaylanmadı</span>' : '<span class="tag">nota yok</span>';
+    const cands = ki.candidates.map((c) => `<li>
+        <span class="nm">${esc(c.name)}</span>
+        <span class="bar" title="göreli olasılık"><i style="width:${c.confidence}%"></i></span>
+        <span class="sub">${c.confidence}%${c.endsOnTonic ? ' · son nota = ev notası' : ''}${c.sameNotesAs.length ? ' · aynı notalar: ' + esc(c.sameNotesAs.join(', ')) : ''}</span>
+        <button data-act="pickKey" data-id="${s.id}" data-t="${c.tonic}" data-m="${c.mode}">Seç</button></li>`).join('');
+    const head = s.implicit
+      ? `<div class="head"><b>Tüm şarkı</b> <span class="hint">(bölüm tanımlanmadı)</span></div>`
+      : `<div class="head">
+          <input type="text" value="${esc(src.name)}" data-act="secName" data-id="${s.id}" aria-label="bölüm adı">
+          <input type="number" min="1" value="${s.startBar}" data-act="secStart" data-id="${s.id}" title="başlangıç ölçüsü">
+          <input type="number" min="1" value="${s.endBar}" data-act="secEnd" data-id="${s.id}" title="bitiş ölçüsü">
+          <button data-act="secDel" data-id="${s.id}" title="bölümü sil">✕</button></div>`;
+    const keyRow = s.implicit ? '' : `<div class="keyrow">
+          <select data-act="secTonic" data-id="${s.id}" aria-label="merkez nota">${tonicOpts(src.tonic)}</select>
+          <select data-act="secMode" data-id="${s.id}" aria-label="mod">${modeOpts(src.mode || s.mode || 'major')}</select>
+          ${status}</div>`;
+    return `<div class="sec-card${sel ? ' sel' : ''}" data-sec="${s.id}">${head}${keyRow}
+      ${ki.last ? `<div class="hint">Ayırt edici ipucu — bölümün son ağırlıklı notası: <b>${esc(ki.last.name)}</b></div>` : ''}
+      ${cands ? `<ul class="cands">${cands}</ul>` : ''}
+      ${s.implicit && ki.candidates.length ? '<p class="hint">Mod seçmek için önce bir bölüm tanımlayın (tek bölüm için: 1–son ölçü).</p>' : ''}
+    </div>`;
+  }).join('');
+}
+$('#sectionList').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-act]');
+  if (!b) { const card = e.target.closest('.sec-card'); if (card && !e.target.closest('input,select')) select({ type: 'section', id: card.dataset.sec }); return; }
+  const s = S.proj.sections.find((x) => x.id === b.dataset.id);
+  if (b.dataset.act === 'pickKey') {
+    if (!s) { // tek bölüm yokken öneriyi seçmek → tüm şarkıyı bölüm yap
+      S.proj.sections.push({ id: uid(), name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: +b.dataset.t, mode: b.dataset.m });
+    } else { s.tonic = +b.dataset.t; s.mode = b.dataset.m; }
+    refresh();
+    status(`Ton seçildi: ${C.keyName(+b.dataset.t, b.dataset.m)}`);
+  } else if (b.dataset.act === 'secDel' && s) {
+    S.proj.sections = S.proj.sections.filter((x) => x !== s);
+    S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar < s.startBar || l.bar > s.endBar);
+    if (S.sel && S.sel.id === s.id) S.sel = null;
+    refresh();
+  }
+});
+$('#sectionList').addEventListener('change', (e) => {
+  const t = e.target, s = S.proj.sections.find((x) => x.id === t.dataset.id);
+  if (!s) return;
+  if (t.dataset.act === 'secName') s.name = t.value.trim() || s.name;
+  if (t.dataset.act === 'secStart' || t.dataset.act === 'secEnd') {
+    const a = t.dataset.act === 'secStart' ? +t.value : s.startBar, b = t.dataset.act === 'secEnd' ? +t.value : s.endBar;
+    const ov = S.proj.sections.find((x) => x !== s && !(Math.max(a, b) < x.startBar || Math.min(a, b) > x.endBar));
+    if (ov || a < 1 || b < 1) status('Geçersiz/çakışan ölçü aralığı.', 'err');
+    else { s.startBar = Math.min(a, b); s.endBar = Math.max(a, b); }
+  }
+  if (t.dataset.act === 'secTonic') {
+    if (t.value === '') { s.tonic = null; s.mode = null; }
+    else { s.tonic = +t.value; s.mode = s.mode || S.d.sections.find((x) => x.id === s.id).mode || 'major'; }
+  }
+  if (t.dataset.act === 'secMode') {
+    s.mode = t.value;
+    if (s.tonic == null) s.tonic = S.d.sections.find((x) => x.id === s.id).tonic ?? 0;
+  }
+  S.proj.sections.sort((p, q) => p.startBar - q.startBar);
+  refresh();
+});
+$('#btnSecAdd').onclick = () => {
+  const a = +$('#inSecStart').value, b = +$('#inSecEnd').value;
+  if (!(a >= 1 && b >= 1)) return;
+  addSection($('#inSecName').value, Math.min(a, b), Math.max(a, b));
+};
+
+// ---------------------------------------------------------------- denetçi (inspector)
+function renderInspector() {
+  const box = $('#inspector');
+  const d = S.d;
+  if (!S.sel || !d) {
+    box.innerHTML = S.audio
+      ? `<p class="hint">Bir notaya, akora ya da bölüme tıklayın. Kısayollar: <kbd>Boşluk</kbd> çal/durdur · <kbd>↑</kbd>/<kbd>↓</kbd> seçili notayı düzelt (etiket/ses modunda; <kbd>Shift</kbd> = 5 cent) · <kbd>L</kbd> kilit · <kbd>Ctrl</kbd>+tekerlek yakınlaş.</p>`
+      : `<p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p>`;
+    return;
+  }
+  if (S.sel.type === 'note') return renderNoteInspector(box, d.notes.find((n) => n.id === S.sel.id));
+  if (S.sel.type === 'chord') return renderChordInspector(box, d.chords.find((s) => S.sel.q >= s.q0 && S.sel.q < s.q1));
+  if (S.sel.type === 'section') {
+    const s = d.sections.find((x) => x.id === S.sel.id);
+    if (!s) { box.innerHTML = ''; return; }
+    const ki = d.keyInfo[s.id];
+    const hist = ki && ki.hist ? Array.from(ki.hist).map((v, i) => ({ v, i })).filter((x) => x.v > 0.005).sort((p, q) => q.v - p.v).map((x) => `${C.pcName(x.i, C.keyUsesFlats(s.tonic, s.mode))} ${(x.v * 100).toFixed(0)}%`).join(' · ') : '';
+    const chords = d.chords.filter((c) => c.section === s.id).map((c) => C.chordName(c.chord, c.flats)).join(' – ');
+    box.innerHTML = `<h3>${esc(s.name)} · ölçü ${s.startBar}–${s.endBar}</h3>
+      <div class="kv"><span>Ton</span><span>${s.tonic != null ? esc(C.keyName(s.tonic, s.mode)) + (s.provisional ? ' <span class="tag warn">öneri</span>' : ' <span class="tag ok">onaylı</span>') : '—'}</span>
+      <span>Scale notaları</span><span>${s.pcs ? s.pcs.map((p) => C.pcName(p, C.keyUsesFlats(s.tonic, s.mode))).join(' ') : '—'}</span>
+      <span>Ağırlıklı histogram</span><span>${hist || '—'}</span>
+      <span>Son ağırlıklı nota</span><span>${ki && ki.last ? esc(ki.last.name) : '—'}</span>
+      <span>Akorlar</span><span>${esc(chords)}</span></div>
+      <p class="hint">Ton/mod seçimini soldaki 4. adımdan yapın. Son karar her zaman sizde.</p>`;
+  }
+}
+function renderNoteInspector(box, n) {
+  if (!n) { box.innerHTML = ''; return; }
+  const g = S.d.g, sec = S.d.sections.find((s) => s.id === n.section);
+  const flats = sec ? C.keyUsesFlats(sec.tonic, sec.mode) : false;
+  const nn = (m) => C.noteName(m, flats);
+  const mp = C.metricPos(n.q0, g);
+  const beat = (mp.pos / g.pulseQ + 1).toFixed(2);
+  const corr = n.corr || { source: 'none' };
+  let soundDesc;
+  if (corr.source === 'manual') soundDesc = `Manuel: ${nn(corr.target)}${Math.abs(corr.target - Math.round(corr.target)) > 0.001 ? ` ${Math.round((corr.target - Math.round(corr.target)) * 100)}c` : ''} (kaydırma ${Math.round(corr.applied)} cent) — kilitli`;
+  else if (corr.source === 'auto') soundDesc = `Autotune → ${nn(corr.target)} (kaydırma ${Math.round(corr.applied)} cent)`;
+  else if (corr.chromatic) soundDesc = 'Kromatik geçiş notası — autotune dokunmadı';
+  else if (n.locked) soundDesc = 'Kilitli — autotune dokunmaz';
+  else soundDesc = S.proj.autotune.enabled ? 'Düzeltme yok' : 'Düzeltme yok (autotune kapalı)';
+  box.innerHTML = `<h3>Nota ${esc(nn(n.effMidi))}${n.label != null ? ' <span class="tag warn">etiket</span>' : ''}${n.locked ? ' <span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : ''}</h3>
+    <div class="kv">
+      <span>Algılanan</span><span>${esc(nn(n.nearest))} ${n.cents > 0 ? '+' : ''}${n.cents} cent (medyan MIDI ${n.median.toFixed(2)})</span>
+      <span>Konum</span><span>ölçü ${mp.bar + 1}, vuruş ${beat} · ${(n.tl1 - n.tl0).toFixed(2)} s (${((n.q1 - n.q0) / g.pulseQ).toFixed(2)} vuruş)</span>
+      <span>Bölüm</span><span>${sec ? esc(sec.name) + (sec.tonic != null ? ' · ' + esc(C.keyName(sec.tonic, sec.mode)) : '') : '—'} · ${n.inScale ? 'scale içinde' : '<b style="color:var(--note-out)">scale dışı</b>'}</span>
+      <span>Akor ağırlığı</span><span>×${n.cw}</span>
+    </div>
+    <div class="cols">
+      <div class="box a"><h4>a) Etiket düzeltme — ses değişmez</h4>
+        <div class="row">Analizdeki nota: <b>${esc(nn(n.label ?? n.detMidi))}</b>
+          <button data-act="label" data-v="-1">−1</button><button data-act="label" data-v="1">+1</button>
+          <button data-act="labelReset"${n.label == null ? ' disabled' : ''}>Sıfırla</button></div>
+        <p class="hint">Pitch detection yanlış algıladığında kullanın. Akor bulma bu etiketi kullanır.</p></div>
+      <div class="box b"><h4>b) Ses düzeltme — perde kaydırılır</h4>
+        <div class="row">${esc(soundDesc)}</div>
+        <div class="row">Hedef: <button data-act="snd" data-v="-1">−1 yarım ses</button><button data-act="snd" data-v="1">+1 yarım ses</button>
+          <button data-act="snd" data-v="-0.05">−5c</button><button data-act="snd" data-v="0.05">+5c</button>
+          <button data-act="sndSnap">En yakın notaya çek</button>
+          <button data-act="sndReset"${n.manualTarget == null ? ' disabled' : ''}>Sıfırla</button></div>
+        <label class="chk"><input type="checkbox" data-act="lock"${n.locked ? ' checked' : ''}${n.manualTarget != null ? ' disabled' : ''}> Kilitli (autotune dokunmaz)</label></div>
+    </div>`;
+}
+function soundEdit(n, fn) {
+  const ed = editFor(n, true);
+  ed.target = fn(ed.target ?? n.soundMidi);
+  ed.locked = true;
+  cleanupEdits(); refresh(); scheduleRender(true);
+}
+$('#inspector').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-act]');
+  if (!b || !S.sel) return;
+  const act = b.dataset.act;
+  if (S.sel.type === 'note') {
+    const n = S.d.notes.find((x) => x.id === S.sel.id);
+    if (!n) return;
+    if (act === 'label') { const ed = editFor(n, true); ed.label = (n.label ?? n.detMidi) + +b.dataset.v; refresh(); }
+    if (act === 'labelReset') { const ed = editFor(n); if (ed) ed.label = null; cleanupEdits(); refresh(); }
+    if (act === 'snd') soundEdit(n, (t) => { const v = +b.dataset.v; return Math.abs(v) >= 1 ? Math.round(t) + v : Math.round((t + v) * 100) / 100; });
+    if (act === 'sndSnap') soundEdit(n, () => (n.scalePcs ? C.nearestScaleNote(n.median, n.scalePcs) : Math.round(n.median)));
+    if (act === 'sndReset') { const ed = editFor(n); if (ed) { ed.target = null; ed.locked = false; } cleanupEdits(); refresh(); scheduleRender(true); }
+  } else if (S.sel.type === 'chord') {
+    const slot = S.d.chords.find((s) => S.sel.q >= s.q0 && S.sel.q < s.q1);
+    if (!slot) return;
+    const scope = ($('#chScope') && $('#chScope').value) || 'slot';
+    const half = scope === 'slot' ? slot.half : scope === 'bar' ? null : +scope;
+    if (act === 'pickChord') { setLock(slot.bar, half, { root: +b.dataset.r, q: b.dataset.q }); }
+    if (act === 'manualChord') {
+      const ch = C.parseChord($('#chInput').value);
+      if (!ch) { status('Akor anlaşılamadı. Örnek: C#m, Dmaj7, F#m7/A, Bsus2, Eadd9', 'err'); return; }
+      setLock(slot.bar, half, ch);
+    }
+    if (act === 'unlockChord') { S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === slot.bar && (slot.half == null || l.half == null || l.half === slot.half))); refresh(); }
+  }
+});
+$('#inspector').addEventListener('change', (e) => {
+  const t = e.target;
+  if (t.dataset.act === 'lock' && S.sel && S.sel.type === 'note') {
+    const n = S.d.notes.find((x) => x.id === S.sel.id);
+    const ed = editFor(n, true); ed.locked = t.checked; cleanupEdits(); refresh();
+  }
+});
+$('#inspector').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'chInput') $('#inspector button[data-act=manualChord]').click(); });
+function setLock(bar, half, chord) {
+  S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === bar && (half == null || l.half == null || l.half === half)));
+  S.proj.chordLocks.push({ bar, half, chord: { root: chord.root, q: chord.q, bass: chord.bass ?? null } });
+  refresh();
+  status(`Ölçü ${bar}${half != null ? ` (${half + 1}. yarı)` : ''}: ${C.chordName(chord)} kilitlendi.`);
+}
+function renderChordInspector(box, slot) {
+  if (!slot) { box.innerHTML = ''; return; }
+  const g = S.d.g, sec = S.d.sections.find((s) => s.id === slot.section);
+  const nm = (c) => C.chordName(c, slot.flats), pn = (pc) => C.pcName(pc, slot.flats);
+  const roleChips = (roles) => roles.filter((r) => r.w >= 0.5).map((r) => `<span class="role ${r.clash ? 'clash' : r.tone ? 'tone' : ''}">${esc(pn(r.pc))}: ${esc(r.role)} <small>×${r.w}</small></span>`).join('') || '<span class="hint">melodi yok</span>';
+  const rows = slot.candidates.map((c) => `<tr><td><b>${esc(nm(c.chord))}</b>${C.sameChord(c.chord, slot.chord) ? ' ✓' : ''}</td><td>${c.pct}</td><td>${roleChips(c.roles)}</td>
+      <td><button data-act="pickChord" data-r="${c.chord.root}" data-q="${c.chord.q}">Seç + kilitle</button></td></tr>`).join('');
+  const sug = slot.suggest ? `<tr><td><b>${esc(nm(slot.suggest))}</b></td><td>öneri</td><td class="hint">Minör akorda melodi 2'liye basıyor → sus2 varyantı</td><td><button data-act="pickChord" data-r="${slot.suggest.root}" data-q="${slot.suggest.q}">Seç + kilitle</button></td></tr>` : '';
+  const halfTxt = slot.half == null ? 'tüm ölçü' : `${slot.half + 1}. yarı`;
+  const scopeSel = g.split ? `<select id="chScope" aria-label="kapsam" style="width:auto"><option value="slot">bu slot (${halfTxt})</option>${slot.half != null ? '<option value="bar">tüm ölçü</option>' : ''}<option value="0">1. yarı</option><option value="1">2. yarı</option></select>` : '';
+  const disp = Object.assign({}, slot.chord, { bass: slot.chord.bass ?? (slot.inversion ? slot.voicing.bassPc : null) });
+  box.innerHTML = `<h3>Ölçü ${slot.bar} · ${halfTxt} · ${esc(sec ? sec.name : '')}${sec && sec.tonic != null ? ' (' + esc(C.keyName(sec.tonic, sec.mode)) + ')' : ''}</h3>
+    <div class="kv"><span>Akor</span><span><b style="font-size:16px">${esc(C.chordName(disp, slot.flats))}</b> ${slot.locked ? '<span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : '<span class="tag">otomatik</span>'}</span>
+      <span>Neden</span><span>${esc(slot.reason || '')}</span>
+      <span>Melodi notalarının rolü</span><span>${roleChips(slot.roles)}</span>
+      <span>Seslendirme</span><span>bas ${esc(C.noteName(slot.voicing.bass, slot.flats))} · ${slot.voicing.notes.map((m) => esc(C.noteName(m, slot.flats))).join(' ')}${slot.inversion ? ' (çevrim)' : ''}</span></div>
+    <table><thead><tr><th>En iyi adaylar</th><th>puan</th><th>ağırlıklı melodi notalarının rolü (kök/3/5/7/9)</th><th></th></tr></thead><tbody>${rows}${sug}</tbody></table>
+    <div class="row" style="margin-top:8px">Elle yaz: <input type="text" id="chInput" placeholder="ör. Dmaj7, C#m, F#m7/A" style="width:170px"> ${scopeSel}
+      <button data-act="manualChord" class="accent">Uygula + kilitle</button>
+      <button data-act="unlockChord"${slot.locked ? '' : ' disabled'}>Kilidi kaldır (otomatiğe dön)</button></div>`;
+}
+
+// ---------------------------------------------------------------- bilgi satırları
+function renderInfo() {
+  const a = S.audio;
+  $('#audioInfo').textContent = a ? `${a.name} · ${(a.data.length / a.sr).toFixed(1)} s · ${a.sr} Hz${S.proj.audio.source === 'record' ? ` · gecikme telafisi ${S.proj.settings.latencyMs} ms` : ''}` : 'Ses yok';
+  $('#pitchInfo').textContent = S.d && S.rawNotes ? `${S.d.notes.length} nota · ${S.d.notes.filter((n) => !n.inScale).length} scale dışı · ${S.d.notes.filter((n) => n.label != null).length} etiket · ${S.d.notes.filter((n) => n.manualTarget != null).length} manuel` : '';
+  const at = S.proj.autotune;
+  const nAuto = S.d ? S.d.notes.filter((n) => n.corr && n.corr.source === 'auto' && Math.abs(n.corr.applied) >= 1).length : 0;
+  $('#renderInfo').textContent = !a ? '' : (at.enabled ? `Autotune açık · ${nAuto} nota kaydırıldı. ` : 'Autotune kapalı. ') + (renderReady() ? 'Düzeltilmiş iz güncel.' : 'Render bekliyor…');
+  $('#btnAB').textContent = 'A/B: ' + (S.proj.mixer.ab === 'original' ? 'Orijinal' : 'Düzeltilmiş');
+  $('#btnAB').classList.toggle('on', S.proj.mixer.ab === 'original');
+  updateReadout();
+}
+
+// ---------------------------------------------------------------- giriş alanları
+function syncInputs() {
+  const p = S.proj;
+  $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
+  $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
+  if (p.audio.alignMode) $('#inAlign').value = p.audio.alignMode;
+  $('#inFmin').value = p.pitch.fmin; $('#inFmax').value = p.pitch.fmax; $('#inSilence').value = p.pitch.silenceDb;
+  $('#inMinNote').value = p.pitch.minNoteMs; $('#inChange').value = p.pitch.changeSemis;
+  $('#inAmount').value = p.autotune.amount; $('#outAmount').textContent = p.autotune.amount + '%';
+  $('#inRetune').value = p.autotune.retuneMs; $('#outRetune').textContent = p.autotune.retuneMs + ' ms';
+  $('#inKeepVib').checked = p.autotune.keepVibrato; $('#inSkipChrom').checked = p.autotune.skipChromatic;
+  $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
+  $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
+  for (const tr of ['vocal', 'piano']) {
+    const strip = document.querySelector(`.strip[data-track=${tr}]`), m = p.mixer[tr];
+    strip.querySelector('.vol').value = m.vol; strip.querySelector('output').textContent = m.vol + ' dB';
+    strip.querySelector('.mute').classList.toggle('on', m.mute); strip.querySelector('.solo').classList.toggle('on', m.solo);
+  }
+}
+const onNum = (id, fn) => $(id).addEventListener('change', (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) fn(v); });
+onNum('#inBpm', (v) => { S.proj.settings.bpm = C.clamp(v, 30, 300); applyAlign(); syncInputs(); refresh(); });
+$('#inMeter').addEventListener('change', (e) => { S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
+onNum('#inLatency', (v) => { S.proj.settings.latencyMs = v; refresh(); });
+onNum('#inOffset', (v) => { S.proj.audio.offsetSec = v / 1000; S.proj.audio.alignMode = 'none'; $('#inAlign').value = 'none'; refresh(); });
+$('#inAlign').addEventListener('change', (e) => { S.proj.audio.alignMode = e.target.value; if (e.target.value === 'none' && S.proj.audio.source === 'file') S.proj.audio.offsetSec = 0; applyAlign(); syncInputs(); refresh(); });
+$('#btnLatencyGuess').onclick = () => {
+  const ctx = getCtx();
+  const ms = Math.round(((ctx.baseLatency || 0) + (ctx.outputLatency || 0)) * 1000) + 10;
+  S.proj.settings.latencyMs = ms; syncInputs(); refresh();
+  status(`Tahmini gecikme ${ms} ms (çıkış + ~10 ms giriş). En doğrusu: click'e karşı el çırparak kaydedip ofseti ölçmek.`);
+};
+const pitchInput = (id, key) => onNum(id, (v) => { S.proj.pitch[key] = v; });
+pitchInput('#inFmin', 'fmin'); pitchInput('#inFmax', 'fmax'); pitchInput('#inSilence', 'silenceDb'); pitchInput('#inMinNote', 'minNoteMs'); pitchInput('#inChange', 'changeSemis');
+$('#btnAnalyze').onclick = () => analyze();
+$('#inAmount').addEventListener('input', (e) => { S.proj.autotune.amount = +e.target.value; $('#outAmount').textContent = e.target.value + '%'; if (S.proj.autotune.enabled) refresh(); });
+$('#inRetune').addEventListener('input', (e) => { S.proj.autotune.retuneMs = +e.target.value; $('#outRetune').textContent = e.target.value + ' ms'; if (S.proj.autotune.enabled) refresh(); });
+$('#inKeepVib').addEventListener('change', (e) => { S.proj.autotune.keepVibrato = e.target.checked; if (S.proj.autotune.enabled) refresh(); });
+$('#inSkipChrom').addEventListener('change', (e) => { S.proj.autotune.skipChromatic = e.target.checked; if (S.proj.autotune.enabled) refresh(); });
+$('#btnAutoApply').onclick = () => { S.proj.autotune.enabled = true; refresh(); scheduleRender(true); };
+$('#btnAutoOff').onclick = () => { S.proj.autotune.enabled = false; refresh(); scheduleRender(true); };
+$('#btnClearManual').onclick = () => { S.proj.noteEdits.forEach((e) => { e.target = null; e.locked = false; }); cleanupEdits(); refresh(); scheduleRender(true); };
+$('#btnClearLabels').onclick = () => { S.proj.noteEdits.forEach((e) => { e.label = null; }); cleanupEdits(); refresh(); };
+$('#inPct').addEventListener('input', (e) => { S.proj.chordOpts.changePct = +e.target.value; $('#outPct').textContent = '%' + e.target.value; refresh(); });
+onNum('#inMaxBars', (v) => { S.proj.chordOpts.maxBars = Math.max(1, Math.round(v)); refresh(); });
+$('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; refresh(); };
+$('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
+$('#inPlayClick').addEventListener('change', (e) => { S.proj.mixer.click = e.target.checked; });
+$$('input[name=editMode]').forEach((r) => r.addEventListener('change', (e) => setEditMode(e.target.value)));
+function setEditMode(m) {
+  S.editMode = m;
+  $$('input[name=editMode]').forEach((r) => { r.checked = r.value === m; });
+  const b = $('#modeBadge');
+  b.textContent = 'Mod: ' + { select: 'Seç', label: 'Etiket düzelt (ses değişmez)', sound: 'Ses düzelt (sürükle; Shift = cent)' }[m];
+  b.className = 'badge ' + m;
+}
+$$('.strip').forEach((strip) => {
+  const tr = strip.dataset.track, m = () => S.proj.mixer[tr];
+  strip.querySelector('.vol').addEventListener('input', (e) => { m().vol = +e.target.value; strip.querySelector('output').textContent = e.target.value + ' dB'; Player.applyMixer(); });
+  strip.querySelector('.mute').onclick = (e) => { m().mute = !m().mute; e.target.classList.toggle('on', m().mute); Player.applyMixer(); };
+  strip.querySelector('.solo').onclick = (e) => { m().solo = !m().solo; e.target.classList.toggle('on', m().solo); Player.applyMixer(); };
+});
+$('#inZoom').addEventListener('input', (e) => { const W = sc.clientWidth; setZoom(+e.target.value, xToQ(W / 2), W / 2); });
+
+// ---------------------------------------------------------------- üst çubuk
+$('#btnPlay').onclick = () => (Player.playing ? (Player.stop(), updateReadout()) : Player.play());
+$('#btnStop').onclick = () => { Player.stop(); S.pos = 0; sc.scrollLeft = 0; updateReadout(); draw(); };
+$('#btnAB').onclick = () => { S.proj.mixer.ab = S.proj.mixer.ab === 'original' ? 'corrected' : 'original'; Player.applyMixer(); renderInfo(); };
+$('#btnRec').onclick = () => Rec.start();
+$('#btnRecStop').onclick = () => Rec.stop();
+$('#fileAudio').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) loadAudioFile(f); });
+$('#btnTest').onclick = () => loadTest();
+$('#btnNew').onclick = () => {
+  if (S.audio && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
+  Player.stop(true);
+  S.proj = C.newProject(); S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  syncInputs(); refresh(); status('Yeni proje.');
+};
+$('#btnSave').onclick = () => saveProject();
+$('#btnOpen').onclick = () => $('#fileProject').click();
+$('#fileProject').addEventListener('change', async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) await openProject(f); });
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest('input,select,textarea')) return;
+  if (e.code === 'Space') { e.preventDefault(); $('#btnPlay').click(); return; }
+  if (!S.sel) return;
+  if (S.sel.type === 'note') {
+    const n = S.d.notes.find((x) => x.id === S.sel.id);
+    if (!n) return;
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && S.editMode !== 'select') {
+      e.preventDefault();
+      const dir = e.key === 'ArrowUp' ? 1 : -1;
+      if (S.editMode === 'label') { const ed = editFor(n, true); ed.label = (n.label ?? n.detMidi) + dir; refresh(); }
+      else soundEdit(n, (t) => (e.shiftKey ? Math.round((t + dir * 0.05) * 100) / 100 : Math.round(t) + dir));
+    }
+    if (e.key === 'l' || e.key === 'L') { const ed = editFor(n, true); ed.locked = !n.locked; cleanupEdits(); refresh(); }
+  }
+  if (e.key === 'Escape') select(null);
+});
+
+// ---------------------------------------------------------------- test melodisi
+async function loadTest() {
+  Player.stop(true);
+  const t = C.synthTestVocal(44100);
+  S.proj = C.newProject();
+  S.proj.settings.bpm = t.bpm; S.proj.settings.meter = t.meter;
+  S.proj.sections = t.sections.map((s) => ({ id: uid(), name: s.name, startBar: s.startBar, endBar: s.endBar, tonic: null, mode: null }));
+  setAudio(t.signal, t.sr, 'Test melodisi (sentetik vokal)', 'test');
+  S.proj.audio.offsetSec = t.offsetSec;
+  S.sel = null;
+  syncInputs();
+  await analyze();
+  status('Test melodisi hazır → 4. adımda önerileri onaylayın, 5. adımda autotune uygulayın.');
+}
+
+// ---------------------------------------------------------------- proje dosyası
+function download(data, name, type) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+}
+function saveProject() {
+  const p = JSON.parse(JSON.stringify(S.proj));
+  p.savedAt = new Date().toISOString();
+  if ($('#chkEmbed').checked && S.audio) {
+    const wav = C.encodeWav([S.audio.data], S.audio.sr);
+    p.audioData = { name: S.audio.name, sr: S.audio.sr, wavBase64: C.bytesToBase64(new Uint8Array(wav)) };
+  }
+  download(JSON.stringify(p), 'mini-daw-proje.json', 'application/json');
+  status('Proje kaydedildi (ayarlar, bölümler, düzeltmeler, kilitler' + (p.audioData ? ', orijinal ses' : '') + ').');
+}
+function mergeDefaults(base, p) {
+  for (const k of Object.keys(p)) {
+    if (p[k] && typeof p[k] === 'object' && !Array.isArray(p[k]) && base[k] && typeof base[k] === 'object' && !Array.isArray(base[k])) mergeDefaults(base[k], p[k]);
+    else base[k] = p[k];
+  }
+  return base;
+}
+async function openProject(file) {
+  let p;
+  try { p = JSON.parse(await file.text()); } catch (e) { status('Proje dosyası okunamadı: ' + e.message, 'err'); return; }
+  Player.stop(true);
+  const audioData = p.audioData;
+  delete p.audioData; delete p.savedAt;
+  S.proj = mergeDefaults(C.newProject(), p);
+  S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  if (audioData) {
+    const w = C.decodeWav(C.base64ToBytes(audioData.wavBase64).buffer);
+    S.audio = { data: w.data, sr: w.sr, name: audioData.name };
+    Player.buffersDirty = true;
+  }
+  syncInputs();
+  await analyze();
+  status(`Proje açıldı${audioData ? '' : ' (ses gömülü değildi — kaydı yeniden yükleyin)'}.`);
+}
+
+// ---------------------------------------------------------------- dışa aktarım
+function needData() { if (!S.d || !S.audio) { status('Önce ses kaydı/yükleme ve analiz gerekli.', 'err'); return false; } return true; }
+function alignedVocal(src, sr, lenSec) {
+  const n = Math.round(lenSec * sr), out = new Float32Array(n), o = Math.round(S.d.off * sr);
+  for (let i = 0; i < n; i++) { const j = i + o; if (j >= 0 && j < src.length) out[i] = src[j]; }
+  return out;
+}
+const exportLenSec = () => Math.max(S.d.bars * S.d.g.barSec, S.audio.data.length / S.audio.sr - S.d.off) + 1.5;
+async function ensureRendered() {
+  if (!renderReady()) { clearTimeout(renderTimer); await doRender(); }
+}
+$('#btnExpMidi').onclick = () => { if (!needData()) return; download(C.exportMidi(S.proj, S.d), 'akorlar-ve-melodi.mid', 'audio/midi'); status('MIDI dışa aktarıldı (tempo, ölçü, bölüm işaretleri, melodi + piyano izi).'); };
+$('#btnExpChart').onclick = () => { if (!needData()) return; download(C.chordChart(S.proj, S.d), 'akor-semasi.txt', 'text/plain;charset=utf-8'); };
+$('#btnExpVocal').onclick = async () => {
+  if (!needData()) return;
+  await ensureRendered();
+  const v = alignedVocal(S.corrected || S.audio.data, S.audio.sr, exportLenSec());
+  download(new Blob([C.encodeWav([v], S.audio.sr)], { type: 'audio/wav' }), 'duzeltilmis-vokal.wav');
+  status('Düzeltilmiş vokal WAV (1. ölçü başından hizalı) dışa aktarıldı.');
+};
+$('#btnExpMix').onclick = async () => {
+  if (!needData()) return;
+  await ensureRendered();
+  await busy('Mix render ediliyor…', async () => {
+    const piano = await loadPianoSamples();
+    const sr = 44100, lenSec = exportLenSec(), n = Math.round(lenSec * sr);
+    const src = S.proj.mixer.ab === 'original' ? S.audio.data : S.corrected || S.audio.data;
+    const vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec);
+    const ev = C.pianoEvents(S.d.chords, S.d.g);
+    const pno = C.renderPiano(ev, piano.samples, sr, n, 0.35);
+    const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo;
+    const gv = m.vocal.mute || (anySolo && !m.vocal.solo) ? 0 : dbToGain(m.vocal.vol);
+    const gp = m.piano.mute || (anySolo && !m.piano.solo) ? 0 : dbToGain(m.piano.vol);
+    const mix = new Float32Array(n);
+    let peak = 0;
+    for (let i = 0; i < n; i++) { mix[i] = vocal[i] * gv + pno[i] * gp; peak = Math.max(peak, Math.abs(mix[i])); }
+    if (peak > 0.98) for (let i = 0; i < n; i++) mix[i] *= 0.98 / peak;
+    download(new Blob([C.encodeWav([mix, mix], sr)], { type: 'audio/wav' }), 'vokal-piyano-mix.wav');
+  });
+  status('Vokal + piyano mix WAV dışa aktarıldı.');
+};
+
+// ---------------------------------------------------------------- başlangıç
+setEditMode('select');
+syncInputs();
+refresh();
+status('Hazır. Kayıt yapın, dosya yükleyin ya da test melodisi üretin.');
+})();
+</script>
+</body>
+</html>

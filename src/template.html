@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini DAW — Vokal Armoni</title>
+<style>/*__STYLE__*/</style>
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">Mini DAW <small>vokal → armoni</small></div>
+  <div class="group transport">
+    <button id="btnPlay" title="Boşluk tuşu">▶ Çal</button>
+    <button id="btnStop" title="Başa sar">■</button>
+    <span id="posReadout" class="mono">1 · 1</span>
+    <button id="btnAB" class="ab" title="Orijinal / düzeltilmiş vokal">A/B: Düzeltilmiş</button>
+  </div>
+  <div class="group">
+    <button id="btnTest" class="accent">Test melodisi üret</button>
+    <button id="btnNew">Yeni</button>
+    <button id="btnOpen">Proje aç</button>
+    <button id="btnSave">Proje kaydet</button>
+    <label class="chk" title="Orijinal kaydı proje dosyasına WAV olarak göm"><input type="checkbox" id="chkEmbed" checked> sesi göm</label>
+    <input type="file" id="fileProject" accept=".json,application/json" hidden>
+  </div>
+  <div id="status" role="status"></div>
+</header>
+
+<main>
+  <aside id="panels">
+    <details class="step" open>
+      <summary><b>1</b> Proje ayarı</summary>
+      <div class="grid2">
+        <label>BPM <small>(vuruş; 6/8'de ♩.)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
+        <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>6/8</option></select></label>
+        <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
+        <button id="btnLatencyGuess" title="Ses kartının bildirdiği giriş+çıkış gecikmesi">Tahmin et</button>
+      </div>
+      <p class="hint">Gecikme telafisi yalnızca kayıtlara uygulanır: kayıt bu kadar ms öne çekilir.</p>
+    </details>
+
+    <details class="step" open>
+      <summary><b>2</b> Kayıt / yükleme</summary>
+      <div class="row">
+        <button id="btnRec" class="rec">● Kaydet</button>
+        <button id="btnRecStop" disabled>■ Durdur</button>
+        <label class="grow">Click<input type="range" id="inClickVol" min="0" max="1" step="0.05" value="0.6"></label>
+      </div>
+      <p class="hint">Önce 1 ölçü count-in çalar. Click yalnızca çıkışa (kulaklığa) gider, kayda karışmaz — hoparlör değil kulaklık kullanın.</p>
+      <div class="row">
+        <label class="file-btn">WAV/MP3 yükle<input type="file" id="fileAudio" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac" hidden></label>
+        <label class="grow">Hizalama
+          <select id="inAlign">
+            <option value="beat">İlk ses → en yakın vuruş</option>
+            <option value="bar1">İlk ses → 1. ölçü başı</option>
+            <option value="none">Yok (dosya başı = 0)</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid2">
+        <label>Kayıt ofseti (ms)<input type="number" id="inOffset" step="1" value="0"></label>
+        <div id="audioInfo" class="hint"></div>
+      </div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>3</b> Pitch detection</summary>
+      <div class="grid2">
+        <label>Min f0 (Hz)<input type="number" id="inFmin" min="40" max="400" value="65"></label>
+        <label>Max f0 (Hz)<input type="number" id="inFmax" min="200" max="2000" value="1000"></label>
+        <label>Sessizlik eşiği (dB)<input type="number" id="inSilence" min="-80" max="-10" value="-45"></label>
+        <label>Min nota (ms)<input type="number" id="inMinNote" min="30" max="400" value="70"></label>
+        <label>Nota değişim eşiği (yarım ses)<input type="number" id="inChange" min="0.2" max="1.5" step="0.05" value="0.5"></label>
+        <button id="btnAnalyze">Yeniden analiz</button>
+      </div>
+      <div id="pitchInfo" class="hint"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>4</b> Bölümler ve ton</summary>
+      <p class="hint">Zaman çizelgesindeki <b>bölüm şeridinde</b> sürükleyerek ölçü aralığı seçin ya da buradan ekleyin.</p>
+      <div class="row">
+        <select id="inSecName"><option>Verse</option><option>Nakarat</option><option>Köprü</option><option>Intro</option><option>Outro</option><option>Pre-nakarat</option></select>
+        <input type="number" id="inSecStart" min="1" value="1" title="başlangıç ölçüsü">
+        <span>–</span>
+        <input type="number" id="inSecEnd" min="1" value="4" title="bitiş ölçüsü">
+        <button id="btnSecAdd">Ekle</button>
+      </div>
+      <div id="sectionList"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>5</b> Nota düzeltme</summary>
+      <div class="modes" role="radiogroup" aria-label="Fare düzenleme modu">
+        <label><input type="radio" name="editMode" value="select" checked> Seç</label>
+        <label><input type="radio" name="editMode" value="label"> a) Etiket düzelt</label>
+        <label><input type="radio" name="editMode" value="sound"> b) Ses düzelt (manuel)</label>
+      </div>
+      <p class="hint"><b>Etiket</b>: ses değişmez, analizdeki nota değişir. <b>Ses</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
+      <fieldset>
+        <legend>Otomatik (autotune) — bölüm scale'ine göre</legend>
+        <label>Miktar <output id="outAmount">100%</output><input type="range" id="inAmount" min="0" max="100" value="100"></label>
+        <label>Retune hızı <output id="outRetune">30 ms</output><input type="range" id="inRetune" min="0" max="400" step="5" value="30"></label>
+        <label class="chk"><input type="checkbox" id="inKeepVib" checked> Vibratoyu koru</label>
+        <label class="chk"><input type="checkbox" id="inSkipChrom" checked> Kromatik geçiş notalarına dokunma</label>
+        <div class="row">
+          <button id="btnAutoApply" class="accent">Autotune uygula</button>
+          <button id="btnAutoOff">Autotune kapat</button>
+        </div>
+      </fieldset>
+      <div class="row">
+        <button id="btnClearManual">Manuel düzeltmeleri sil</button>
+        <button id="btnClearLabels">Etiketleri sıfırla</button>
+      </div>
+      <div id="renderInfo" class="hint"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>6–7</b> Akor bulma ve düzenleme</summary>
+      <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
+      <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
+      <p class="hint">Akora tıklayın: en iyi 3 aday, melodi notalarının akordaki rolü, elle yazma ve kilitleme.</p>
+      <button id="btnUnlockChords">Tüm akor kilitlerini kaldır</button>
+    </details>
+
+    <details class="step" open>
+      <summary><b>8</b> Piyano ve mikser</summary>
+      <div class="mixer">
+        <div class="strip" data-track="vocal">
+          <b>Vokal</b>
+          <input type="range" min="-40" max="6" step="1" value="0" class="vol" aria-label="Vokal ses seviyesi">
+          <output>0 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
+        <div class="strip" data-track="piano">
+          <b>Piyano</b>
+          <input type="range" min="-40" max="6" step="1" value="-6" class="vol" aria-label="Piyano ses seviyesi">
+          <output>-6 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
+      </div>
+      <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
+      <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
+      <div id="pianoInfo" class="hint"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>9</b> Dışa aktarım</summary>
+      <div class="grid2">
+        <button id="btnExpMidi">MIDI (akor + melodi)</button>
+        <button id="btnExpChart">Akor şeması (.txt)</button>
+        <button id="btnExpVocal">Düzeltilmiş vokal WAV</button>
+        <button id="btnExpMix">Vokal + piyano WAV</button>
+      </div>
+    </details>
+  </aside>
+
+  <section id="work">
+    <div id="tlTools">
+      <label>Yakınlaş <input type="range" id="inZoom" min="12" max="160" value="44"></label>
+      <span class="legend"><i class="lg in"></i>scale içi <i class="lg out"></i>scale dışı <i class="lg raw"></i>ham perde <i class="lg cor"></i>düzeltilmiş perde</span>
+      <span id="modeBadge" class="badge">Mod: Seç</span>
+    </div>
+    <div id="tlScroll"><div id="tlInner"><canvas id="tl"></canvas></div></div>
+    <div id="inspector"><p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p></div>
+  </section>
+</main>
+
+<script id="core">/*__CORE__*/</script>
+<script id="app">/*__APP__*/</script>
+</body>
+</html>
