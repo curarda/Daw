@@ -122,7 +122,25 @@ try {
     return `D4 ${r.cents}c → +${Math.round(r.applied)}c kaydırma`;
   });
 
-  await step('6) akorlar: verse C#m | Dmaj7 | C#m | Dmaj7 C#m, nakarat sonu Bm; M ve renk cezası ayarları', async () => {
+  await step('5) süreli Viterbi (varsayılan): bölüm başına 3 alternatif, seçim zaman çizelgesini değiştirir', async () => {
+    const names = () => S(() => window.__daw.d.chords.map((c) => window.Core.chordName(c.chord, c.flats)));
+    assert.equal(await page.inputValue('#inEngine'), 'viterbi');
+    const v = await names();
+    assert.deepEqual(v.slice(0, 5), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7', 'C#m']);
+    assert.equal(v[v.length - 1], 'Bm');
+    const radios = page.locator('#altBox input[type=radio]');
+    assert.equal(await radios.count(), 6);
+    await radios.nth(1).check();
+    const alt = await names();
+    assert.notDeepEqual(alt.slice(0, 5), v.slice(0, 5));
+    await page.locator('#altBox input[type=radio]').nth(0).check();
+    assert.deepEqual(await names(), v);
+    const texts = await page.locator('#altBox label.alt').allTextContents();
+    return `${v.join(' · ')} · verse alternatif 2: ${alt.slice(0, 5).join(' · ')} · ${texts[0].replace(/\s+/g, ' ').trim()}`;
+  });
+
+  await step('6) akorlar (ölçü ölçü motor): verse C#m | Dmaj7 | C#m | Dmaj7 C#m, nakarat sonu Bm; M ve renk cezası ayarları', async () => {
+    await page.selectOption('#inEngine', 'greedy');
     const names = () => S(() => window.__daw.d.chords.map((c) => window.Core.chordName(c.chord, c.flats)));
     const ch = await names();
     assert.deepEqual(ch.slice(0, 5), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7', 'C#m']);
@@ -136,6 +154,7 @@ try {
     await page.locator('#inColorPen').fill('0');
     await page.fill('#inHomeEvery', '2'); await page.dispatchEvent('#inHomeEvery', 'change');
     assert.deepEqual(await names(), ch);
+    await page.selectOption('#inEngine', 'viterbi');
     return `${ch.join(' · ')} | M=0: ${off.slice(0, 4).join(' · ')} | +ceza 0.1: ${pen.slice(0, 4).join(' · ')}`;
   });
 

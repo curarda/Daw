@@ -563,7 +563,9 @@ function buildStats(dataset) {
       if (!a || a.an.unknown) return;
       info.confirmed++;
       if (a.an.loop) info.loops.push({ section: a.sec.name, ...a.an.loop });
-      for (const b of [bucket(a.key.mode), bucket(ALL)]) {
+      // mod, havuz ve (normalize edilmiş) bölüm tipi kovaları: "phrygian|chorus", "*|chorus"
+      const type = C.normSectionType(a.sec.type || a.sec.name);
+      for (const b of [bucket(a.key.mode), bucket(ALL), bucket(`${a.key.mode}|${type}`), bucket(`${ALL}|${type}`)]) {
         b.songs.add(song.id);
         const nm = a.sec.name;
         for (const it of a.an.items) {
@@ -624,7 +626,8 @@ function modeSongCounts(stats) {
 // ---------------------------------------------------------------- MODEL
 // alpha: geçiş/renk/açılış yumuşatması; alphaDur: harmonik ritim (süre) yumuşatması — ayrı ayarlanır.
 // lambda: "hangi akora" (geçiş) ağırlığı; lambdaRhythm: "değiş mi kal mı" (harmonik ritim) ağırlığı.
-const MODEL_DEFAULTS = { k: 10, alpha: 0.5, alphaDur: 0.5, lambda: 1, lambdaRhythm: 1, chordTemperature: 0, seed: 1, minCtxSongs: 5, secondOrder: true, lowDataSongs: 20 };
+// kType: bölüm tipi düzeyinin moda doğru havuzlanma ağırlığı (mod × tip → mod → havuz)
+const MODEL_DEFAULTS = { k: 10, kType: 5, alpha: 0.5, alphaDur: 0.5, lambda: 1, lambdaRhythm: 1, chordTemperature: 0, seed: 1, minCtxSongs: 5, secondOrder: true, lowDataSongs: 20 };
 // moda uygun (diatonik) core'lar
 function diatonicCores(mode) {
   const sc = MODES[heptaOf(mode)].steps;
@@ -700,13 +703,22 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     for (const [b, x] of w) w.set(b, x / sum);
     return w;
   }
-  function pooled(pm, pp, n) {
+  function pooled(pm, pp, n, k = o.k) {
     const out = new Map();
     const keys = new Set([...pm.keys(), ...pp.keys()]);
-    const den = n + o.k;
-    for (const b of keys) out.set(b, den > 0 ? (n * (pm.get(b) || 0) + o.k * (pp.get(b) || 0)) / den : pm.get(b) || 0);
+    const den = n + k;
+    for (const b of keys) out.set(b, den > 0 ? (n * (pm.get(b) || 0) + k * (pp.get(b) || 0)) / den : pm.get(b) || 0);
     return out;
   }
+  // HİYERARŞİK HAVUZLAMA: mod × bölüm tipi → mod → havuz.
+  //   P_mod     = (n_mod·P̂_mod + k·P_havuz) / (n_mod + k)
+  //   P_mod,tip = (n_mt·P̂_mt + k_tip·P_mod) / (n_mt + k_tip)   (tip verisi yoksa P_mod'a eşit)
+  const BT = (mode, type) => B(`${mode}|${type}`);
+  const typeLevel = (modeDist, mode, type, distOf, nOf) => {
+    if (!type) return modeDist;
+    const bt = BT(mode, type);
+    return pooled(distOf(bt), modeDist, nOf(bt), o.kType);
+  };
   function withFeedback(mode, a, dist) {
     if (!feedback || !feedback.on) return dist;
     let sum = 0;
@@ -717,8 +729,8 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
   }
   const cache = new Map();
   // P(sonraki core | önceki core(lar), mod)
-  function next(mode, a, a2 = null) {
-    const ck = `${mode}|${a2}|${a}`;
+  function next(mode, a, a2 = null, type = null) {
+    const ck = `${mode}|${type}|${a2}|${a}`;
     if (cache.has(ck)) return cache.get(ck);
     const dia = new Set(diatonicCores(mode));
     const support = vocab(mode).filter((b) => b !== a);
@@ -726,17 +738,19 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const distOf = (bk) => (order2(bk)
       ? smooth((b) => nSongs(bk.trans2.get(`${a2}>${a}>${b}`)), support, dia)
       : smooth((b) => nSongs(bk.trans.get(`${a}>${b}`)), support, dia));
-    const d = withFeedback(mode, a, pooled(distOf(B(mode)), distOf(pool), nMode(mode)));
+    const dm = pooled(distOf(B(mode)), distOf(pool), nMode(mode));
+    const d = withFeedback(mode, a, typeLevel(dm, mode, type, distOf, (bk) => bk.songs.size));
     d.order = order2(B(mode)) || order2(pool) ? 2 : 1;
     cache.set(ck, d);
     return d;
   }
-  function edge(mode, which) {
-    const ck = `${mode}|${which}`;
+  function edge(mode, which, type = null) {
+    const ck = `${mode}|${type}|${which}`;
     if (cache.has(ck)) return cache.get(ck);
     const dia = new Set(diatonicCores(mode));
     const support = vocab(mode);
-    const d0 = pooled(smooth((b) => nSongs(B(mode)[which].get(b)), support, dia), smooth((b) => nSongs(pool[which].get(b)), support, dia), nMode(mode));
+    const distOf = (bk) => smooth((b) => nSongs(bk[which].get(b)), support, dia);
+    const d0 = typeLevel(pooled(distOf(B(mode)), distOf(pool), nMode(mode)), mode, type, distOf, (bk) => bk.songs.size);
     const d = which === 'open' ? withFeedback(mode, '^', d0) : d0;
     cache.set(ck, d);
     return d;
@@ -758,16 +772,18 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     return { mode: e ? [...e.songs] : [], pool: ep ? [...ep.songs] : [], refs: (e || ep || { refs: [] }).refs };
   }
   // P(süre sınıfı | mod): süre verisi olan şarkılardan, aynı havuzlama + yumuşatma
-  function dur(mode) {
-    const ck = `${mode}|dur`;
+  function dur(mode, type = null) {
+    const ck = `${mode}|${type}|dur`;
     if (cache.has(ck)) return cache.get(ck);
     const all = new Set(DUR_BINS);
-    const d = pooled(smooth((b) => nSongs(B(mode).dur.get(b)), DUR_BINS, all, o.alphaDur), smooth((b) => nSongs(pool.dur.get(b)), DUR_BINS, all, o.alphaDur), B(mode).durSongs.size);
+    const distOf = (bk) => smooth((b) => nSongs(bk.dur.get(b)), DUR_BINS, all, o.alphaDur);
+    const d = typeLevel(pooled(distOf(B(mode)), distOf(pool), B(mode).durSongs.size), mode, type, distOf, (bk) => bk.durSongs.size);
     cache.set(ck, d);
     return d;
   }
   const durSongs = (m) => B(m).durSongs.size;
-  return { settings: o, stats, vocab, next, open: (m) => edge(m, 'open'), close: (m) => edge(m, 'close'), color, dur, durSongs, nMode, songsFor, feedback: fb, diatonic: diatonicCores };
+  const nType = (m, t) => (t ? BT(m, t).songs.size : 0);
+  return { settings: o, stats, vocab, next, open: (m, t) => edge(m, 'open', t), close: (m, t) => edge(m, 'close', t), color, dur, durSongs, nMode, nType, songsFor, feedback: fb, diatonic: diatonicCores };
 }
 
 // ---------------------------------------------------------------- k ve α önerisi: şarkı bazlı çapraz doğrulama
@@ -856,9 +872,9 @@ function coreToChord(core, color, tonic) {
 // Süre sınıfları aralık olarak alınır (0.5: 0–0.75, 1: 0.75–1.5, 2: 1.5–3, 4: 3–6, 8+: 6–12), içleri düzgün.
 // Süre verisi yoksa null → stil "değiş mi kal mı" kararına katılmaz.
 const BIN_RANGE = { 0.5: [0, 0.75], 1: [0.75, 1.5], 2: [1.5, 3], 4: [3, 6], 8: [6, 12] };
-function changeHazard(model, mode, held, step = 1) {
+function changeHazard(model, mode, held, step = 1, type = null) {
   if (!model.durSongs(ALL)) return null;
-  const d = model.dur(mode);
+  const d = model.dur(mode, type);
   const F = (x) => { let f = 0; for (const [b, p] of d) { const [lo, hi] = BIN_RANGE[b]; f += p * Math.min(1, Math.max(0, (x - lo) / (hi - lo))); } return f; };
   const lo = Math.max(0, held - step / 2), hi = held + step / 2;
   const surv = 1 - F(lo);
@@ -873,6 +889,8 @@ function mulberry32(a) {
 //    ödünç akorlar K'yı değiştirmez. K_renk = o core için moda uygun renk sayısı. Veri yokken ≈ 0.
 //  • "Değiş mi kal mı": changeTerm → λ_ritim·log(h/(1−h)), h = harmonik ritim verisinden bu akor n ölçüdür
 //    çalıyorken bu modda değişme olasılığı. Süre verisi yoksa null (karara katılmaz).
+// bölümün normalize edilmiş tipi (DAW bölümünde adından, şarkı verisinde type/label'dan)
+const typeOf = (sec) => sec.typeNorm || C.normSectionType(sec.type || sec.name);
 function makeStyleScorer(model, opts = {}) {
   const lambda = opts.lambda ?? model.settings.lambda;
   const lambdaRhythm = opts.lambdaRhythm ?? model.settings.lambdaRhythm;
@@ -886,7 +904,7 @@ function makeStyleScorer(model, opts = {}) {
       let trans = 0, color = 0, p = null;
       const pr = prev ? chordToCore(prev, sec.tonic) : null;
       if (!pr || pr.core !== c.core) {
-        const d = pr ? model.next(sec.mode, pr.core, prev2 ? chordToCore(prev2, sec.tonic).core : null) : model.open(sec.mode);
+        const d = pr ? model.next(sec.mode, pr.core, prev2 ? chordToCore(prev2, sec.tonic).core : null, typeOf(sec)) : model.open(sec.mode, typeOf(sec));
         p = d.get(c.core) || 0;
         trans = lambda * Math.log(Math.max(1e-4, p * K));
       }
@@ -897,9 +915,16 @@ function makeStyleScorer(model, opts = {}) {
       }
       return { value: trans + color, trans, color, p, core: c.core };
     },
+    // süreli model için: bu akor dBars ölçü sürerse λ_ritim·log(P(süre sınıfı)·5); veri yoksa null
+    // (5 = sınıf sayısı: tekdüze dağılıma göre normalize, veri yokken 0)
+    durTerm(sec, dBars) {
+      if (!lambdaRhythm || sec.tonic == null || !model.durSongs(ALL)) return null;
+      const p = model.dur(sec.mode, typeOf(sec)).get(durBin(dBars)) || 0;
+      return lambdaRhythm * Math.log(Math.max(1e-4, p * DUR_BINS.length));
+    },
     changeTerm(sec, held, step = 1) {
       if (!lambdaRhythm || sec.tonic == null) return null;
-      const h = changeHazard(model, sec.mode, held, step);
+      const h = changeHazard(model, sec.mode, held, step, typeOf(sec));
       if (h == null) return null;
       return { h, held, value: lambdaRhythm * Math.log(h / (1 - h)) };
     },
@@ -1135,7 +1160,8 @@ function runFinder(item, params, model) {
   const notes = item.notes.map((n) => Object.assign({}, n, { cw: C.chordWeight(n, g) }));
   const secs = item.sections.map((s) => Object.assign({}, s));
   const style = model ? makeStyleScorer(model, { lambda: params.lambda, lambdaRhythm: params.lambdaRhythm, temperature: 0 }) : null;
-  const opts = Object.assign({}, C.CHORD_DEFAULTS, { changePct: params.changePct, homeEvery: params.homeEvery, engine: params.engine || 'greedy' }, style ? { style } : {});
+  // değerlendirmede yalnızca en iyi yol gerekir (ilk 3 metriği slot adaylarından gelir)
+  const opts = Object.assign({}, C.CHORD_DEFAULTS, { changePct: params.changePct, homeEvery: params.homeEvery, engine: params.engine || 'greedy', nBest: 1 }, style ? { style } : {});
   return C.buildChords(notes, secs, g, opts, []);
 }
 function scoreItem(item, slots) {

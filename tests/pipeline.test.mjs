@@ -177,7 +177,20 @@ await step('5b) Autotune notanın kimliğini değiştirmez; scale\'e çekme yaln
   return `B minör seçiliyken G#4: yarım ses modunda hedef G#4 (kayma ${gs.corr.applied.toFixed(1)}c), "mod yanlış olabilir" işaretli · scale modunda hedef ${Core.noteName(gs2.corr.target)} (kimlik değişti, uyarı) · akorlar her durumda aynı`;
 });
 
-await step('6) Akor bulma: verse C#m / Dmaj7, ev akoru her 2 ölçüde; nakarat sonu Bm', () => {
+await step('6) Akor bulma (varsayılan motor: süreli Viterbi): verse C#m / Dmaj7, nakarat sonu Bm', () => {
+  assert.equal(Core.CHORD_DEFAULTS.engine, 'viterbi');
+  const dv = Core.derive(proj, st);
+  const byBar = {};
+  for (const c of dv.chords) (byBar[c.bar] ||= []).push(Core.chordName(c.chord, c.flats));
+  const bars = Object.values(byBar).map((cs) => cs.join(' '));
+  assert.deepEqual(bars.slice(0, 4), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7 C#m']);
+  assert.equal(bars[7], 'Bm');
+  assert.equal(Object.keys(dv.chords.alternatives).length, 2);
+  return bars.map((b, i) => `${i + 1}:${b}`).join(' | ');
+});
+
+await step('6) Akor bulma (ölçü ölçü motor, kurallar): ev akoru her 2 ölçüde; M=0 ve renk cezası', () => {
+  proj.chordOpts = Object.assign({}, proj.chordOpts, { engine: 'greedy' });
   d = Core.derive(proj, st);
   const chart = (dd) => {
     const byBar = {};
@@ -204,6 +217,7 @@ await step('6) Akor bulma: verse C#m / Dmaj7, ev akoru her 2 ölçüde; nakarat 
   assert.equal(Core.chordName(d3.chords[0].chord), 'A');
   assert.ok(d3.chords[0].locked);
   proj.chordLocks = [];
+  proj.chordOpts = Object.assign({}, proj.chordOpts, { engine: 'viterbi' });
   return `${txt}\n    M=0: ${off.join(' | ')}\n    M=0 + renk cezası 0.1: ${pen.join(' | ')}`;
 });
 
@@ -307,6 +321,34 @@ await step('Kişisel akort referansı: genel sapma + kayma; yuvarlama referansa 
   assert.equal(at.notes[3].corr.target, 62);
   assert.ok(at.notes[3].corr.applied > 55, 'uygulanan ' + at.notes[3].corr.applied);
   return `A4 ≈ ${auto.tuning.a4.toFixed(1)} Hz (${auto.tuning.global.toFixed(0)} cent), kayma ${auto.tuning.driftMin.toFixed(0)}…+${auto.tuning.driftMax.toFixed(0)} cent · pes D: A440'a göre ${a440.notes[3].nearest === 61 ? 'C#4 (yanlış)' : '?'} ${a440.notes[3].cents}c, referansa göre D4 ${auto.notes[3].cents}c · akorlar: ${names(auto)}`;
+});
+
+await step('Mod belirsizliği: "ayırt edici nota yok" ve "merkez belirsiz" ayrı; ton sürekliliği yumuşak, onay üstün', () => {
+  const gg = Core.makeGrid({ bpm: 120, meter: '4/4' });
+  const mk = (seq) => seq.map(([m, q0, q1]) => ({ detMidi: m, q0, q1 }));
+  // B merkezli, 6. derece (G / G#) hiç yok: B Dorian ile B minör ayırt edilemez
+  const noSixth = mk([[59, 0, 2], [62, 2, 3], [66, 3, 4], [64, 4, 6], [61, 6, 7], [62, 7, 8], [59, 8, 12]]);
+  const a = Core.suggestKeys(noSixth, gg, 3);
+  const nd = a.ambiguity.find((x) => x.type === 'noDistinct');
+  assert.ok(nd, 'ayırt edici nota yok mesajı çıkmalı: ' + a.candidates.map((c) => c.name).join(', '));
+  assert.match(nd.text, /Ayırt edici nota yok: B (Dorian|minör) ile B (Dorian|minör)/);
+  // aynı nota kümesi, merkez için zayıf kanıt (eşit ağırlıklı, sonu merkezsiz)
+  const flat = mk([[57, 0, 1], [59, 1, 2], [61, 2, 3], [62, 3, 4], [64, 4, 5], [66, 5, 6], [68, 6, 7], [64, 7, 8]]);
+  const b = Core.suggestKeys(flat, gg, 3);
+  assert.ok(b.ambiguity.some((x) => x.type === 'sameSet'), 'merkez belirsiz mesajı çıkmalı: ' + b.candidates.map((c) => `${c.name} ${c.score.toFixed(2)}`).join(', '));
+  // ton sürekliliği: önceki bölüm E Miksolidya ise aynı kümedeki belirsizlikte o öne geçer (+0.08), ama yalnızca itme
+  const withPrior = Core.suggestKeys(flat, gg, 3, { tonic: 4, mode: 'mixolydian' });
+  const em = withPrior.candidates.find((c) => c.tonic === 4 && c.mode === 'mixolydian');
+  assert.ok(em && em.continuity === 'same');
+  // güçlü kanıt varsa süreklilik kazanamaz: B'de biten, B ağırlıklı melodide önceki ton E Miksolidya olsa da B Dorian önde
+  const strong = Core.suggestKeys(mk([[59, 0, 3], [68, 3, 4], [62, 4, 6], [59, 6, 8]]), gg, 3, { tonic: 4, mode: 'mixolydian' });
+  assert.notEqual(strong.candidates[0].name, 'E Miksolidya');
+  // onaylı ton her zaman üstün: derive onaylı bölümün tonunu değiştirmez
+  const p3 = JSON.parse(JSON.stringify(proj));
+  p3.sections[1].tonic = 4; p3.sections[1].mode = 'mixolydian';
+  const d3 = Core.derive(p3, st);
+  assert.deepEqual([d3.sections[1].tonic, d3.sections[1].mode, d3.sections[1].confirmed], [4, 'mixolydian', true]);
+  return `${nd.text}\n    ${b.ambiguity.find((x) => x.type === 'sameSet').text}\n    süreklilik: önceki E Miksolidya → ${withPrior.candidates.map((c) => c.name + (c.continuity ? '*' : '')).join(', ')} (güçlü kanıtta ilk aday: ${strong.candidates[0].name})`;
 });
 
 await step('3/4 ve 6/8 ölçülerinde de akor/voicing üretilir', () => {

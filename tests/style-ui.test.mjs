@@ -207,7 +207,9 @@ try {
     assert.match(head, /melodi payı \+ stil payı/);
     const row = await page.locator('#inspector tbody tr').first().textContent();
     assert.match(row, /melodi.*stil/s);
-    assert.match(await page.textContent('#inspector'), /Değiş mi kal mı\s*harmonik ritim: bu akor \d+ ölçüdür çalıyordu → bu modda değişme olasılığı %\d+/);
+    // varsayılan motor süreli Viterbi: ritim segment süresinden girer
+    assert.match(await page.textContent('#inspector'), /Değiş mi kal mı\s*süreli model: bu akor [\d.]+ ölçü sürüyor — harmonik ritim payı [+-][\d.]+/);
+    assert.equal(await page.locator('#altBox input[type=radio]').count(), 6); // 2 bölüm × 3 alternatif
     await page.click('#inspector button[data-act=fbChord][data-v="1"]');
     assert.match(await page.textContent('#status'), /Beğenildi: i → ♭II/);
     // λ = 0: "hangi akor" payı sıfır, ritim (λ_ritim) hâlâ etkin; ikisi de 0 → saf teori

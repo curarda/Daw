@@ -371,9 +371,13 @@ await step('Akor bulucu: "değiş mi kal mı" harmonik ritimden; "hangi akor" λ
     const x = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'Ritim ' + bars, title: 'Şarkı ' + i, sections: [{ label: 'C', chords: ['Bm', 'E', 'A', 'Bm'], bars: [bars, bars, bars, bars], key_proposals: [{ tonic: 'B', mode: 'dorian' }] }] })).songs[0];
     confirmAll(x); return x;
   }) });
-  const run = (ds2) => Core.derive(proj, Object.assign({}, st, { style: Style.makeStyleScorer(Style.buildModel(ds2), { lambda: 1, lambdaRhythm: 3 }) }));
+  const run = (ds2, engine = 'greedy') => Core.derive(Object.assign({}, proj, { chordOpts: Object.assign({}, proj.chordOpts, { engine }) }), Object.assign({}, st, { style: Style.makeStyleScorer(Style.buildModel(ds2), { lambda: 1, lambdaRhythm: 3 }) }));
   const bar6 = (d) => d.chords.find((c) => c.bar === 6);
   const longD = run(data(8)), shortD = run(data(1));
+  // süreli Viterbi'de ritim segment süresinden girer: uzun süreler → nakarat Bm'de kalır, kısa → değişir
+  const vLong = run(data(8), 'viterbi'), vShort = run(data(1), 'viterbi');
+  assert.equal(Core.chordName(bar6(vLong).chord), 'Bm', 'Viterbi: uzun süreler → kal');
+  assert.notEqual(Core.chordName(bar6(vShort).chord), 'Bm', 'Viterbi: kısa süreler → değiş');
   assert.equal(Style.MODEL_DEFAULTS.alphaDur, 0.5); assert.equal(Style.MODEL_DEFAULTS.alpha, 0.5);
   assert.equal(Core.chordName(bar6(longD).chord), 'Bm', 'uzun akor süreleri → kal');
   assert.notEqual(Core.chordName(bar6(shortD).chord), 'Bm', 'kısa akor süreleri → değiş');
@@ -387,7 +391,8 @@ await step('Akor bulucu: "değiş mi kal mı" harmonik ritimden; "hangi akor" λ
   const empty = Style.makeStyleScorer(Style.buildModel({ songs: [] }, { alpha: 0.5 }), { lambda: 1 });
   const v = empty.score({ root: 11, q: 'm' }, null, { root: 4, q: '' }, { tonic: 11, mode: 'dorian' });
   assert.ok(Math.abs(v.trans - Math.log((1 / 6) * 7)) < 1e-9, 'K=7, 6 hedefe uniform → log(7/6)');
-  return `10 şarkı, α=0.5 · ölçü 6: uzun süreli veride ${Core.chordName(bar6(longD).chord)} (h=${bar6(longD).rhythm.h.toFixed(2)}), kısa süreli veride ${Core.chordName(bar6(shortD).chord)} (h=${bar6(shortD).rhythm.h.toFixed(2)}) · veri yokken geçiş payı λ·log(P·7) = ${v.trans.toFixed(3)}`;
+  const vs = (d) => d.chords.filter((c) => c.bar >= 5).map((c) => Core.chordName(c.chord)).join(' ');
+  return `10 şarkı, α=0.5 · ölçü ölçü motor, ölçü 6: uzun süreli veride ${Core.chordName(bar6(longD).chord)} (h=${bar6(longD).rhythm.h.toFixed(2)}), kısa süreli veride ${Core.chordName(bar6(shortD).chord)} (h=${bar6(shortD).rhythm.h.toFixed(2)}) · Viterbi nakarat: uzun → ${vs(vLong)}, kısa → ${vs(vShort)} · veri yokken geçiş payı λ·log(P·7) = ${v.trans.toFixed(3)}`;
 });
 
 await step('Uygulamanın akorlardan ton tahmini sohbetin önerisini denetler; istem hafızadan tamamlamayı yasaklar', async () => {
@@ -436,6 +441,68 @@ await step('Doğrulama: metrikler, mevcut sistem referansı, şarkı bazlı dı�
   const M = (m) => `core ${pct(m.core)} · kök ${pct(m.root)} · ilk 3 ${pct(m.top3)} · değişim F1 ${pct(m.change)} (${m.units} birim)`;
   evalItems.greedy = res;
   return `test melodisi: ${M(m1)}\n    MEVCUT SİSTEM (greedy, varsayılan ayar): ${M(res.fixed.metrics)}\n    greedy, ayarlı (dışarıda bırakılan şarkılarda): ${M(res.tuned.metrics)}\n    şarkı başına (varsayılan): ${res.fixed.perItem.map((x) => `${x.id} ${pct(x.core)}`).join(', ')}`;
+});
+
+await step('Süreli Viterbi: kısıtlar, 3 farklı alternatif, doğrulama setinde referansa (greedy) göre kazanç', async () => {
+  const G = evalItems.greedy;
+  const res = await Style.evaluateSet(evalItems, { dataset: ds, engine: 'viterbi' });
+  const pct = (x) => Math.round(x * 100) + '%';
+  const d = (a, b) => `${a >= b ? '+' : ''}${Math.round((a - b) * 100)}`;
+  const M = (m, r) => `core ${pct(m.core)} (${d(m.core, r.core)}) · kök ${pct(m.root)} (${d(m.root, r.root)}) · ilk 3 ${pct(m.top3)} (${d(m.top3, r.top3)}) · değişim F1 ${pct(m.change)} (${d(m.change, r.change)})`;
+  for (const f of res.tuned.folds) assert.ok(!f.trainedOn.includes(f.heldOut));
+  // test melodisinde alternatifler ve kısıtlar
+  const it = evalItems[0];
+  const g = Core.makeGrid({ bpm: 120, meter: '4/4' });
+  const notes = it.notes.map((n) => Object.assign({}, n, { cw: Core.chordWeight(n, g) }));
+  const locks = [{ bar: 2, half: null, chord: { root: 9, q: '' } }];
+  const sl = Core.buildChords(notes, it.sections, g, { engine: 'viterbi' }, locks);
+  assert.equal(Core.chordName(sl.find((x) => x.bar === 2).chord), 'A', 'kilit korunmalı');
+  const alts = Core.buildChords(notes, it.sections, g, { engine: 'viterbi' }, []).alternatives;
+  for (const secId of Object.keys(alts)) {
+    const a = alts[secId];
+    assert.equal(a.length, 3);
+    const perBar = (alt) => { const out = []; for (const sgm of alt.segments) for (let k = 0; k < sgm.bars * 2; k++) out.push(Core.chordName(sgm.chord)); return out; };
+    for (let i = 0; i < a.length; i++) for (let j = i + 1; j < a.length; j++) {
+      const x = perBar(a[i]), y = perBar(a[j]);
+      let bars = 0; for (let b = 0; b < x.length / 2; b++) if (x[2 * b] !== y[2 * b] || x[2 * b + 1] !== y[2 * b + 1]) bars++;
+      assert.ok(bars >= 2, `alternatifler ${i + 1}/${j + 1} yalnızca ${bars} ölçüde farklı`);
+    }
+  }
+  // yarım ses sürtünmesi kısıt: ağır vuruşta sürtünen akor seçilmez
+  for (const x of Core.buildChords(notes, it.sections, g, { engine: 'viterbi' }, [])) assert.ok(!x.roles.some((r) => r.clash && r.w >= 2), `ölçü ${x.bar}: sürtünme`);
+  evalItems.viterbi = res;
+  return `REFERANS (greedy), sabit ayar: core ${pct(G.fixed.metrics.core)} · ayarlı: core ${pct(G.tuned.metrics.core)}\n    VITERBI, sabit ayar: ${M(res.fixed.metrics, G.fixed.metrics)}\n    VITERBI, ayarlı (dışarıda bırakılanda): ${M(res.tuned.metrics, G.tuned.metrics)}\n    şarkı başına (sabit): ${res.fixed.perItem.map((x, i) => `${x.id} ${pct(x.core)} (${d(x.core, G.fixed.perItem[i].core)})`).join(', ')}\n    test melodisi alternatifleri: ${Object.values(alts).map((a) => a.map((x) => x.text).join('  |  ')).join('\n      ')}`;
+});
+
+await step('Bölüm tipi normalizasyonu + mod × tip × havuz hiyerarşik havuzlama', () => {
+  const T = Core.normSectionType;
+  assert.deepEqual(['Verse 2', 'Kıta', 'Nakarat', 'Refrain', 'Pre-Chorus', 'Ön Nakarat', 'Post-Chorus', 'Köprü', 'Middle 8', 'Intro', 'Outro', 'Solo', 'Ara', 'xyz'].map(T),
+    ['verse', 'verse', 'chorus', 'chorus', 'prechorus', 'prechorus', 'postchorus', 'bridge', 'bridge', 'intro', 'outro', 'instrumental', 'instrumental', 'other']);
+  // 10 majör şarkı: verse'lerde I→IV, nakaratlarda I→V
+  const songs = Array.from({ length: 10 }, (_, i) => {
+    const x = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'Tip', title: 'Ş' + i, sections: [
+      { label: 'Verse 1', type: 'verse', chords: ['C', 'F', 'C'], key_proposals: [{ tonic: 'C', mode: 'major' }] },
+      { label: 'Chorus', type: 'chorus', chords: ['C', 'G', 'C'], key_proposals: [{ tonic: 'C', mode: 'major' }] }] })).songs[0];
+    confirmAll(x); return x;
+  });
+  const m = Style.buildModel({ songs }, { k: 10, kType: 5, alpha: 0.5 });
+  const pv = m.next('major', '0M', null, 'verse'), pc = m.next('major', '0M', null, 'chorus'), pm = m.next('major', '0M');
+  assert.ok(pv.get('5M') > pv.get('7M') && pc.get('7M') > pc.get('5M'), 'tip düzeyi ayrışmalı');
+  assert.ok(Math.abs(pm.get('5M') - pm.get('7M')) < 1e-12, 'mod düzeyinde eşit');
+  // formül: P_mt = (n_mt·P̂_mt + k_tip·P_mod) / (n_mt + k_tip); n_mt = 10
+  const dia = Style.diatonicCores('major').filter((c) => c !== '0M');
+  const hat = (10 + 0.5) / (10 + 0.5 * dia.length);
+  assert.ok(Math.abs(pv.get('5M') - (10 * hat + 5 * pm.get('5M')) / 15) < 1e-12);
+  // verisi olmayan tip → mod düzeyine eşit
+  assert.deepEqual([...m.next('major', '0M', null, 'bridge')], [...pm]);
+  // DAW bölümü adından tip alır: "Nakarat" → chorus
+  const sc = Style.makeStyleScorer(m, { lambda: 1 });
+  const sv = sc.score({ root: 0, q: '' }, null, { root: 7, q: '' }, { tonic: 0, mode: 'major', name: 'Verse' }).trans;
+  const sn = sc.score({ root: 0, q: '' }, null, { root: 7, q: '' }, { tonic: 0, mode: 'major', name: 'Nakarat' }).trans;
+  assert.ok(sn > sv, 'nakaratta I→V daha olası');
+  const st2 = Style.buildStats({ songs });
+  assert.equal(st2.byMode.get('major|chorus').songs.size, 10); assert.equal(st2.byMode.get('*|verse').songs.size, 10);
+  return `P(IV | I): verse ${pv.get('5M').toFixed(3)}, nakarat ${pc.get('5M').toFixed(3)}, mod ${pm.get('5M').toFixed(3)} · P(V | I): verse ${pv.get('7M').toFixed(3)}, nakarat ${pc.get('7M').toFixed(3)} · DAW "Nakarat" bölümünde I→V payı ${sn.toFixed(2)} > "Verse" ${sv.toFixed(2)}`;
 });
 
 console.log(results.join('\n'));

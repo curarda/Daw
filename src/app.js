@@ -116,7 +116,7 @@ async function analyze() {
 function refresh() {
   // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
   const style = window.StyleUI ? window.StyleUI.scorer() : null;
-  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0, style });
+  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0, style, engineOverride: S.drag ? 'greedy' : null });
   S.d.styleActive = !!style;
   if (S.sel && S.sel.type === 'note' && !S.d.notes.some((n) => n.id === S.sel.id)) S.sel = null;
   renderSections();
@@ -871,7 +871,7 @@ function renderSections() {
     const cands = ki.candidates.map((c) => `<li>
         <span class="nm">${esc(c.name)}</span>
         <span class="bar" title="göreli olasılık"><i style="width:${c.confidence}%"></i></span>
-        <span class="sub">${c.confidence}%${c.endsOnTonic ? ' · son nota = ev notası' : ''}${c.sameNotesAs.length ? ' · aynı notalar: ' + esc(c.sameNotesAs.join(', ')) : ''}</span>
+        <span class="sub">${c.confidence}%${c.endsOnTonic ? ' · son nota = ev notası' : ''}${c.sameNotesAs.length ? ' · aynı notalar: ' + esc(c.sameNotesAs.join(', ')) : ''}${c.continuity ? ` · ton sürekliliği (${c.continuity === 'same' ? 'önceki bölümle aynı ton' : 'önceki bölümle aynı nota kümesi'})` : ''}</span>
         <button data-act="pickKey" data-id="${s.id}" data-t="${c.tonic}" data-m="${c.mode}">Seç</button></li>`).join('');
     const head = s.implicit
       ? `<div class="head"><b>Tüm şarkı</b> <span class="hint">(bölüm tanımlanmadı)</span></div>`
@@ -886,6 +886,7 @@ function renderSections() {
           ${status}</div>`;
     return `<div class="sec-card${sel ? ' sel' : ''}" data-sec="${s.id}">${head}${keyRow}
       ${ki.last ? `<div class="hint">Ayırt edici ipucu — bölümün son ağırlıklı notası: <b>${esc(ki.last.name)}</b></div>` : ''}
+      ${(ki.ambiguity || []).map((a) => `<div class="st-warn amb-${a.type}">${a.type === 'noDistinct' ? '◐' : '◎'} ${esc(a.text)}${s.confirmed ? '' : ' Onayı sen ver.'}</div>`).join('')}
       ${(() => { const sus = S.d.notes.filter((n) => n.section === s.id && n.modeSuspect); return sus.length ? `<div class="st-warn">⚠ Mod yanlış olabilir: ${sus.length} nota tam tonunda söylenmiş ama ${esc(C.keyName(s.tonic, s.mode))} dışında (${[...new Set(sus.map((n) => C.pcName(n.effMidi, C.keyUsesFlats(s.tonic, s.mode))))].join(', ')}).</div>` : ''; })()}
       ${cands ? `<ul class="cands">${cands}</ul>` : ''}
       ${s.implicit && ki.candidates.length ? '<p class="hint">Mod seçmek için önce bir bölüm tanımlayın (tek bölüm için: 1–son ölçü).</p>' : ''}
@@ -1070,6 +1071,7 @@ function renderChordInspector(box, slot) {
     <div class="kv"><span>Akor</span><span><b style="font-size:16px">${esc(C.chordName(disp, slot.flats))}</b> ${slot.locked ? '<span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : '<span class="tag">otomatik</span>'}</span>
       <span>Neden</span><span>${esc(slot.reason || '')}</span>
       <span>Melodi notalarının rolü</span><span>${roleChips(slot.roles)}</span>
+      ${slot.engine === 'viterbi' ? `<span>Değiş mi kal mı</span><span>süreli model: bu akor ${slot.segBars} ölçü sürüyor${slot.segDurTerm != null ? ` — harmonik ritim payı ${slot.segDurTerm >= 0 ? '+' : ''}${slot.segDurTerm.toFixed(2)} (λ_ritim·log(P(süre)·5))` : ' — harmonik ritim verisi yok, süre karara katılmıyor'}</span>` : ''}
       ${slot.rhythm ? `<span>Değiş mi kal mı</span><span>harmonik ritim: bu akor ${slot.rhythm.held} ölçüdür çalıyordu → bu modda değişme olasılığı %${Math.round(slot.rhythm.h * 100)} (payı ${slot.rhythm.value >= 0 ? '+' : ''}${slot.rhythm.value.toFixed(2)})</span>` : sty ? '<span>Değiş mi kal mı</span><span class="hint">harmonik ritim verisi yok — stil bu karara katılmıyor</span>' : ''}
       <span>Seslendirme</span><span>bas ${esc(C.noteName(slot.voicing.bass, slot.flats))} · ${slot.voicing.notes.map((m) => esc(C.noteName(m, slot.flats))).join(' ')}${slot.inversion ? ' (çevrim)' : ''}</span></div>
     <table><thead><tr><th>En iyi adaylar</th><th>${sty ? 'puan = melodi payı + stil payı ("hangi akor")' : 'puan'}</th><th>ağırlıklı melodi notalarının rolü (kök/3/5/7/9)</th><th></th></tr></thead><tbody>${rows}${sug}</tbody></table>
@@ -1091,8 +1093,24 @@ function renderInfo() {
   $('#renderInfo').textContent = !a ? '' : (at.enabled ? `Autotune açık · ${nAuto} nota kaydırıldı. ` : 'Autotune kapalı. ') + (renderReady() ? 'Düzeltilmiş iz güncel.' : 'Render bekliyor…');
   $('#btnAB').textContent = 'A/B: ' + (S.proj.mixer.ab === 'original' ? 'Orijinal' : 'Düzeltilmiş');
   $('#btnAB').classList.toggle('on', S.proj.mixer.ab === 'original');
+  renderAlternatives();
   updateReadout();
 }
+// süreli Viterbi: her bölüm için birbirinden en az 2 ölçüde farklı en iyi 3 progresyon
+function renderAlternatives() {
+  const alts = S.d && S.d.chords && S.d.chords.alternatives;
+  const box = $('#altBox');
+  if (!alts || !Object.keys(alts).length) { box.innerHTML = ''; return; }
+  box.innerHTML = S.d.sections.filter((s) => alts[s.id]).map((s) => `<div class="alt-sec"><b>${esc(s.name)}</b> <span class="hint">alternatif progresyonlar</span>
+    ${alts[s.id].map((a) => `<label class="chk alt"><input type="radio" name="alt-${s.id}" data-sec="${s.id}" value="${a.index}"${a.chosen ? ' checked' : ''}> <span>${esc(a.text)} <small class="hint">puan ${a.score.toFixed(1)}</small></span></label>`).join('')}</div>`).join('');
+}
+$('#altBox').addEventListener('change', (e) => {
+  const t = e.target;
+  if (!t.dataset.sec) return;
+  S.proj.chordOpts.altChoice = Object.assign({}, S.proj.chordOpts.altChoice, { [t.dataset.sec]: +t.value });
+  refresh();
+  status(`Alternatif ${+t.value + 1} seçildi.`);
+});
 
 // ---------------------------------------------------------------- giriş alanları
 function syncInputs() {
@@ -1112,6 +1130,7 @@ function syncInputs() {
   $('#scaleWarn').hidden = p.autotune.target !== 'scale';
   $('#inSkipChrom').disabled = p.autotune.target !== 'scale';
   $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
+  $('#inEngine').value = p.chordOpts.engine || 'greedy';
   $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
   $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
   for (const tr of ['vocal', 'piano']) {
@@ -1155,6 +1174,7 @@ $('#btnClearLabels').onclick = () => { S.proj.noteEdits.forEach((e) => { e.label
 $('#inPct').addEventListener('input', (e) => { S.proj.chordOpts.changePct = +e.target.value; $('#outPct').textContent = '%' + e.target.value; refresh(); });
 onNum('#inMaxBars', (v) => { S.proj.chordOpts.maxBars = Math.max(1, Math.round(v)); refresh(); });
 onNum('#inHomeEvery', (v) => { S.proj.chordOpts.homeEvery = Math.max(0, Math.round(v)); refresh(); });
+$('#inEngine').addEventListener('change', (e) => { S.proj.chordOpts.engine = e.target.value; refresh(); });
 $('#inColorPen').addEventListener('input', (e) => { S.proj.chordOpts.colorPenalty = +e.target.value; $('#outColorPen').textContent = e.target.value; refresh(); });
 $('#btnModeLabel').onclick = () => setEditMode('label');
 $('#btnModeSound').onclick = () => setEditMode('sound');
