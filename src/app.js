@@ -229,6 +229,7 @@ const Player = {
     this.pA = new T.Player().connect(this.gA);
     this.pB = new T.Player().connect(this.gB);
     this.click = new T.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 }, volume: -16 }).toDestination();
+    this.snare = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.02 }, volume: -12 }).toDestination();
     const piano = await loadPianoSamples();
     const urls = {};
     for (const s of piano.samples) urls[s.name] = new T.ToneAudioBuffer(s.buffer);
@@ -283,8 +284,9 @@ const Player = {
     if (S.proj.mixer.click) {
       const endQ = S.d.bars * g.barQ;
       for (let q = Math.ceil(from / g.spq / g.clickQ - 1e-6) * g.clickQ; q < endQ; q += g.clickQ) {
-        const inBar = q % g.barQ, acc = g.accents.some((a) => Math.abs(inBar - a) < 1e-6);
-        T.schedule((time) => this.click.triggerAttackRelease(acc ? (inBar < 1e-6 ? 1760 : 1320) : 990, 0.03, time), q * g.spq);
+        const kind = C.clickKind(g, q % g.barQ, S.proj.settings.clickFeel);
+        if (kind === 'snare') T.schedule((time) => this.snare.triggerAttackRelease(0.09, time), q * g.spq);
+        else T.schedule((time) => this.click.triggerAttackRelease(CLICK_HZ[kind], 0.03, time), q * g.spq);
       }
     }
     T.start(now, from);
@@ -358,6 +360,19 @@ const WORKLET_SRC = `class RecProc extends AudioWorkletProcessor {
 }
 registerProcessor('rec-proc', RecProc);`;
 let workletLoaded = false;
+const CLICK_HZ = { down: 1760, acc: 1320, weak: 990 };
+// "tıss": kısa, tizleştirilmiş gürültü patlaması (yarım zaman desenindeki 3. vuruş)
+function noiseClickAt(ctx, t, gain) {
+  const len = Math.round(ctx.sampleRate * 0.1), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource(), hp = ctx.createBiquadFilter(), g = ctx.createGain();
+  src.buffer = buf; hp.type = 'highpass'; hp.frequency.value = 1800;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.35 * gain, t + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  src.connect(hp).connect(g).connect(ctx.destination); // yalnızca çıkışa — kayıt zincirine bağlı değil
+  src.start(t); src.stop(t + 0.1);
+}
 function clickAt(ctx, t, freq, gain) {
   const o = ctx.createOscillator(), g = ctx.createGain();
   o.type = 'square'; o.frequency.value = freq;
@@ -423,8 +438,9 @@ const Rec = {
     const sched = () => {
       const horizon = ctx.currentTime + 0.25;
       while (t0 + q * g.spq < horizon) {
-        const inBar = q % g.barQ, acc = g.accents.some((a) => Math.abs(inBar - a) < 1e-6);
-        clickAt(ctx, t0 + q * g.spq, inBar < 1e-6 ? 1760 : acc ? 1320 : 990, vol * (acc ? 1 : 0.6));
+        const kind = C.clickKind(g, q % g.barQ, S.proj.settings.clickFeel);
+        if (kind === 'snare') noiseClickAt(ctx, t0 + q * g.spq, vol);
+        else clickAt(ctx, t0 + q * g.spq, CLICK_HZ[kind], vol * (kind === 'weak' ? 0.6 : 1));
         q += g.clickQ;
       }
       const el = ctx.currentTime - t0;
@@ -1117,6 +1133,8 @@ function syncInputs() {
   const p = S.proj;
   $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
   const gq = C.makeGrid(p.settings);
+  $('#inClickFeel').value = p.settings.clickFeel || 'normal';
+  $('#inClickFeel').disabled = p.settings.meter !== '4/4';
   $('#bpmUnit').textContent = p.settings.meter === '6/8' ? `(♩. = noktalı çeyrek; ♩ = ${Math.round(gq.quarterBpm)})` : '(♩ = çeyrek nota)';
   $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
   if (p.audio.alignMode) $('#inAlign').value = p.audio.alignMode;
@@ -1181,6 +1199,7 @@ $('#btnModeSound').onclick = () => setEditMode('sound');
 $('#btnLatencyCal').onclick = () => Cal.run();
 $('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; refresh(); };
 $('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
+$('#inClickFeel').addEventListener('change', (e) => { S.proj.settings.clickFeel = e.target.value; });
 $('#inPlayClick').addEventListener('change', (e) => { S.proj.mixer.click = e.target.checked; });
 $$('input[name=editMode]').forEach((r) => r.addEventListener('change', (e) => setEditMode(e.target.value)));
 function setEditMode(m) {

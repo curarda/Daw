@@ -306,6 +306,7 @@ try {
   await step('2) kayıt: count-in + click, sahte mikrofonla', async () => {
     await page.fill('#inBpm', '120'); await page.dispatchEvent('#inBpm', 'change');
     await page.fill('#inLatency', '20'); await page.dispatchEvent('#inLatency', 'change');
+    await page.selectOption('#inClickFeel', 'halftime'); // kayıt click'i "tık tık tıss tık"
     await page.click('#btnRec');
     await page.waitForFunction(() => /Kayıt — ölçü 2/.test(document.querySelector('#status').textContent), null, { timeout: 15000 });
     await page.click('#btnRecStop');
@@ -328,13 +329,19 @@ try {
     return r.info;
   });
 
-  await step('1) BPM alanı 6/8\'de sayılan birimi gösterir', async () => {
+  await step('1) BPM alanı 6/8\'de sayılan birimi gösterir; 2/4; click deseni', async () => {
     await page.selectOption('#inMeter', '6/8');
     const u = await page.textContent('#bpmUnit');
     assert.match(u, /noktalı çeyrek/);
+    assert.ok(await page.isDisabled('#inClickFeel'), 'yarım zaman deseni yalnızca 4/4');
+    await page.selectOption('#inMeter', '2/4');
+    assert.match(await page.textContent('#bpmUnit'), /çeyrek nota/);
     await page.selectOption('#inMeter', '4/4');
     assert.match(await page.textContent('#bpmUnit'), /çeyrek nota/);
-    return `6/8: ${u}`;
+    assert.ok(!(await page.isDisabled('#inClickFeel')));
+    assert.equal(await page.inputValue('#inClickFeel'), 'halftime');
+    await page.selectOption('#inClickFeel', 'normal');
+    return `6/8: ${u} · 2/4 seçilebilir · click deseni yalnızca 4/4'te`;
   });
 
   assert.deepEqual(errors, [], 'tarayıcı hataları');

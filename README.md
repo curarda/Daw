@@ -6,7 +6,7 @@ Tarayıcıda çalışan, **tek dosyalık** (`index.html`) mini DAW. Tek sesli vo
 
 | Adım | Ne yapar |
 |---|---|
-| 1. Proje ayarı | BPM (4/4 ve 3/4'te ♩, 6/8'de ♩. sayılır; alanın yanında yazar), ölçü 4/4 · 3/4 · 6/8, kayıt gecikmesi telafisi (ms). **Kalibre et**: 8 click çalar, her click'te el çırparsınız; click–alkış ofsetlerinin medyanı gecikme olarak kaydedilir |
+| 1. Proje ayarı | BPM (4/4, 3/4 ve 2/4'te ♩, 6/8'de ♩. sayılır; alanın yanında yazar), ölçü 4/4 · 3/4 · 2/4 · 6/8. **Click deseni** (4/4): 1. vuruş vurgulu ya da yarım zaman — trampet 3. vuruşta, "tık tık tıss tık"; kayıt ve oynatma click'i aynı deseni çalar. Yarım zamanda BPM yine çeyrek notadır, kayıt gecikmesi telafisi (ms). **Kalibre et**: 8 click çalar, her click'te el çırparsınız; click–alkış ofsetlerinin medyanı gecikme olarak kaydedilir |
 | 2. Kayıt / yükleme | 1 ölçü count-in + metronom. Click yalnızca çıkışa gider, kayıt zincirine bağlı değildir (kulaklık kullanın). WAV/MP3 yükleme: ilk ses başlangıcı 1. ölçüye ya da en yakın vuruşa hizalanır, ofset elle de ayarlanır |
 | 3. Pitch detection | pYIN benzeri: FFT'li YIN + Beta(2,18) eşik dağılımı + Viterbi. Nota olayları: başlangıç, süre, cent hassasiyetinde perde, en yakın nota. En yakın nota **kişisel akort referansına** göre bulunur (aşağıda). Vibrato/kaymalarda çekirdek bölgenin medyanı; sessizlik ve nefes atılır. Piano-roll + ince ham perde eğrisi |
 | 3b. Etiket düzeltme | Ses değişmez, yalnızca analizdeki nota değişir. Ton önerisinden **önce** yapılabilir ve histograma girer |

@@ -41,12 +41,22 @@ const yieldTick = () => new Promise((r) => setTimeout(r, 0));
 
 // ---------------------------------------------------------------- ölçü / grid
 // Tüm müzikal zaman "q" (çeyrek nota) biriminde. BPM = vuruş (pulse) temposu:
-// 4/4 ve 3/4'te çeyrek, 6/8'de noktalı çeyrek.
+// 4/4, 3/4 ve 2/4'te çeyrek, 6/8'de noktalı çeyrek.
 const METERS = {
   '4/4': { barQ: 4, pulseQ: 1, strong: [2], split: 2, clickQ: 1, accents: [0] },
+  '2/4': { barQ: 2, pulseQ: 1, strong: [], split: 1, clickQ: 1, accents: [0] },
   '3/4': { barQ: 3, pulseQ: 1, strong: [], split: null, clickQ: 1, accents: [0] },
   '6/8': { barQ: 3, pulseQ: 1.5, strong: [1.5], split: 1.5, clickQ: 0.5, accents: [0, 1.5] },
 };
+// Click deseni. 'normal': 1. vuruş vurgulu. 'halftime' (yalnızca 4/4, yarım zaman hissi):
+// davulun trampeti 3. vuruşta — "tık tık tıss tık"; 1. vuruş diğer tıklarla aynı.
+const CLICK_FEELS = { normal: '1. vuruş vurgulu', halftime: '3. vuruş vurgulu — yarım zaman (tık tık tıss tık)' };
+function clickKind(g, inBarQ, feel = 'normal') {
+  const at = (x) => Math.abs(inBarQ - x) < 1e-6;
+  if (feel === 'halftime' && g.meter === '4/4') return at(2) ? 'snare' : 'weak';
+  if (at(0)) return 'down';
+  return g.accents.some(at) ? 'acc' : 'weak';
+}
 function makeGrid(settings) {
   const m = METERS[settings.meter] || METERS['4/4'];
   const pulseSec = 60 / settings.bpm;
@@ -1579,7 +1589,7 @@ function synthTestVocal(sr = 44100, opts = {}) {
 function newProject() {
   return {
     version: 1,
-    settings: { bpm: 120, meter: '4/4', latencyMs: 0 },
+    settings: { bpm: 120, meter: '4/4', latencyMs: 0, clickFeel: 'normal' },
     audio: { offsetSec: 0, alignMode: 'none' },
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],
@@ -1786,7 +1796,7 @@ const Core = {
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
-  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES,
+  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,

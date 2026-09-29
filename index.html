@@ -235,7 +235,8 @@ td.durbar i { display: block; height: 8px; border-radius: 0 4px 4px 0; backgroun
       <summary><b>1</b> Proje ayarı</summary>
       <div class="grid2">
         <label>BPM <small id="bpmUnit">(♩ = çeyrek nota)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
-        <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>6/8</option></select></label>
+        <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
+        <label title="Yalnızca 4/4'te: yarım zaman hissinde trampet 3. vuruştadır">Click deseni<select id="inClickFeel"><option value="normal">1. vuruş vurgulu</option><option value="halftime">3. vuruş vurgulu — yarım zaman (tık tık tıss tık)</option></select></label>
         <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
         <div class="row" style="margin:0">
           <button id="btnLatencyCal" title="8 click çalar; her click'te el çırpın">Kalibre et</button>
@@ -449,12 +450,22 @@ const yieldTick = () => new Promise((r) => setTimeout(r, 0));
 
 // ---------------------------------------------------------------- ölçü / grid
 // Tüm müzikal zaman "q" (çeyrek nota) biriminde. BPM = vuruş (pulse) temposu:
-// 4/4 ve 3/4'te çeyrek, 6/8'de noktalı çeyrek.
+// 4/4, 3/4 ve 2/4'te çeyrek, 6/8'de noktalı çeyrek.
 const METERS = {
   '4/4': { barQ: 4, pulseQ: 1, strong: [2], split: 2, clickQ: 1, accents: [0] },
+  '2/4': { barQ: 2, pulseQ: 1, strong: [], split: 1, clickQ: 1, accents: [0] },
   '3/4': { barQ: 3, pulseQ: 1, strong: [], split: null, clickQ: 1, accents: [0] },
   '6/8': { barQ: 3, pulseQ: 1.5, strong: [1.5], split: 1.5, clickQ: 0.5, accents: [0, 1.5] },
 };
+// Click deseni. 'normal': 1. vuruş vurgulu. 'halftime' (yalnızca 4/4, yarım zaman hissi):
+// davulun trampeti 3. vuruşta — "tık tık tıss tık"; 1. vuruş diğer tıklarla aynı.
+const CLICK_FEELS = { normal: '1. vuruş vurgulu', halftime: '3. vuruş vurgulu — yarım zaman (tık tık tıss tık)' };
+function clickKind(g, inBarQ, feel = 'normal') {
+  const at = (x) => Math.abs(inBarQ - x) < 1e-6;
+  if (feel === 'halftime' && g.meter === '4/4') return at(2) ? 'snare' : 'weak';
+  if (at(0)) return 'down';
+  return g.accents.some(at) ? 'acc' : 'weak';
+}
 function makeGrid(settings) {
   const m = METERS[settings.meter] || METERS['4/4'];
   const pulseSec = 60 / settings.bpm;
@@ -1987,7 +1998,7 @@ function synthTestVocal(sr = 44100, opts = {}) {
 function newProject() {
   return {
     version: 1,
-    settings: { bpm: 120, meter: '4/4', latencyMs: 0 },
+    settings: { bpm: 120, meter: '4/4', latencyMs: 0, clickFeel: 'normal' },
     audio: { offsetSec: 0, alignMode: 'none' },
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],
@@ -2194,7 +2205,7 @@ const Core = {
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
-  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES,
+  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
@@ -3707,6 +3718,7 @@ const Player = {
     this.pA = new T.Player().connect(this.gA);
     this.pB = new T.Player().connect(this.gB);
     this.click = new T.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 }, volume: -16 }).toDestination();
+    this.snare = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.02 }, volume: -12 }).toDestination();
     const piano = await loadPianoSamples();
     const urls = {};
     for (const s of piano.samples) urls[s.name] = new T.ToneAudioBuffer(s.buffer);
@@ -3761,8 +3773,9 @@ const Player = {
     if (S.proj.mixer.click) {
       const endQ = S.d.bars * g.barQ;
       for (let q = Math.ceil(from / g.spq / g.clickQ - 1e-6) * g.clickQ; q < endQ; q += g.clickQ) {
-        const inBar = q % g.barQ, acc = g.accents.some((a) => Math.abs(inBar - a) < 1e-6);
-        T.schedule((time) => this.click.triggerAttackRelease(acc ? (inBar < 1e-6 ? 1760 : 1320) : 990, 0.03, time), q * g.spq);
+        const kind = C.clickKind(g, q % g.barQ, S.proj.settings.clickFeel);
+        if (kind === 'snare') T.schedule((time) => this.snare.triggerAttackRelease(0.09, time), q * g.spq);
+        else T.schedule((time) => this.click.triggerAttackRelease(CLICK_HZ[kind], 0.03, time), q * g.spq);
       }
     }
     T.start(now, from);
@@ -3836,6 +3849,19 @@ const WORKLET_SRC = `class RecProc extends AudioWorkletProcessor {
 }
 registerProcessor('rec-proc', RecProc);`;
 let workletLoaded = false;
+const CLICK_HZ = { down: 1760, acc: 1320, weak: 990 };
+// "tıss": kısa, tizleştirilmiş gürültü patlaması (yarım zaman desenindeki 3. vuruş)
+function noiseClickAt(ctx, t, gain) {
+  const len = Math.round(ctx.sampleRate * 0.1), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const src = ctx.createBufferSource(), hp = ctx.createBiquadFilter(), g = ctx.createGain();
+  src.buffer = buf; hp.type = 'highpass'; hp.frequency.value = 1800;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.35 * gain, t + 0.001);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.09);
+  src.connect(hp).connect(g).connect(ctx.destination); // yalnızca çıkışa — kayıt zincirine bağlı değil
+  src.start(t); src.stop(t + 0.1);
+}
 function clickAt(ctx, t, freq, gain) {
   const o = ctx.createOscillator(), g = ctx.createGain();
   o.type = 'square'; o.frequency.value = freq;
@@ -3901,8 +3927,9 @@ const Rec = {
     const sched = () => {
       const horizon = ctx.currentTime + 0.25;
       while (t0 + q * g.spq < horizon) {
-        const inBar = q % g.barQ, acc = g.accents.some((a) => Math.abs(inBar - a) < 1e-6);
-        clickAt(ctx, t0 + q * g.spq, inBar < 1e-6 ? 1760 : acc ? 1320 : 990, vol * (acc ? 1 : 0.6));
+        const kind = C.clickKind(g, q % g.barQ, S.proj.settings.clickFeel);
+        if (kind === 'snare') noiseClickAt(ctx, t0 + q * g.spq, vol);
+        else clickAt(ctx, t0 + q * g.spq, CLICK_HZ[kind], vol * (kind === 'weak' ? 0.6 : 1));
         q += g.clickQ;
       }
       const el = ctx.currentTime - t0;
@@ -4595,6 +4622,8 @@ function syncInputs() {
   const p = S.proj;
   $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
   const gq = C.makeGrid(p.settings);
+  $('#inClickFeel').value = p.settings.clickFeel || 'normal';
+  $('#inClickFeel').disabled = p.settings.meter !== '4/4';
   $('#bpmUnit').textContent = p.settings.meter === '6/8' ? `(♩. = noktalı çeyrek; ♩ = ${Math.round(gq.quarterBpm)})` : '(♩ = çeyrek nota)';
   $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
   if (p.audio.alignMode) $('#inAlign').value = p.audio.alignMode;
@@ -4659,6 +4688,7 @@ $('#btnModeSound').onclick = () => setEditMode('sound');
 $('#btnLatencyCal').onclick = () => Cal.run();
 $('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; refresh(); };
 $('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
+$('#inClickFeel').addEventListener('change', (e) => { S.proj.settings.clickFeel = e.target.value; });
 $('#inPlayClick').addEventListener('change', (e) => { S.proj.mixer.click = e.target.checked; });
 $$('input[name=editMode]').forEach((r) => r.addEventListener('change', (e) => setEditMode(e.target.value)));
 function setEditMode(m) {

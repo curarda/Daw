@@ -351,9 +351,23 @@ await step('Mod belirsizliği: "ayırt edici nota yok" ve "merkez belirsiz" ayr�
   return `${nd.text}\n    ${b.ambiguity.find((x) => x.type === 'sameSet').text}\n    süreklilik: önceki E Miksolidya → ${withPrior.candidates.map((c) => c.name + (c.continuity ? '*' : '')).join(', ')} (güçlü kanıtta ilk aday: ${strong.candidates[0].name})`;
 });
 
-await step('3/4 ve 6/8 ölçülerinde de akor/voicing üretilir', () => {
+await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {
+  const pat = (meter, feel) => { const g = Core.makeGrid({ bpm: 120, meter }); const out = []; for (let q = 0; q < g.barQ - 1e-9; q += g.clickQ) out.push(Core.clickKind(g, q, feel)); return out.join(' '); };
+  assert.equal(pat('4/4', 'halftime'), 'weak weak snare weak');
+  assert.equal(pat('4/4', 'normal'), 'down weak weak weak');
+  assert.equal(pat('2/4'), 'down weak');
+  assert.equal(pat('3/4'), 'down weak weak');
+  assert.equal(pat('6/8'), 'down weak weak acc weak weak');
+  assert.equal(pat('2/4', 'halftime'), 'down weak', 'yarım zaman yalnızca 4/4');
+  // 2/4 grid: ölçü 2 çeyrek, yarım ölçü = 1 vuruş; ağırlık: 1. vuruş ×3, 2. vuruş zayıf
+  const g2 = Core.makeGrid({ bpm: 120, meter: '2/4' });
+  assert.deepEqual([g2.barQ, g2.split, g2.barSec], [2, 1, 1]);
+  return `4/4 yarım zaman: ${pat('4/4', 'halftime')} · 2/4: ${pat('2/4')}`;
+});
+
+await step('3/4, 2/4 ve 6/8 ölçülerinde de akor/voicing üretilir', () => {
   const out = [];
-  for (const meter of ['3/4', '6/8']) {
+  for (const meter of ['3/4', '2/4', '6/8']) {
     const p2 = JSON.parse(JSON.stringify(proj));
     p2.settings.meter = meter;
     const bars = Core.totalBars(p2, st.duration);
