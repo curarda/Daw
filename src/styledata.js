@@ -933,15 +933,15 @@ function makeStyleScorer(model, opts = {}) {
 
 // ---------------------------------------------------------------- PROGRESYON ÖNERİCİ
 // changes: akor (değişim) sayısı — 1 = tek akorda kalma / drone; bars: toplam uzunluk (ölçü)
-const PROG_DEFAULTS = { changes: 3, bars: 8, loop: true, ending: 'home', temperature: 0, count: 5, seed: 1 };
+const PROG_DEFAULTS = { changes: 3, bars: 8, loop: true, ending: 'home', temperature: 0, count: 5, seed: 1, type: null };
 const progKey = (mode, cores, loop) => `${mode}|${cores.join(',')}|${loop ? 'L' : ''}`;
 // Değişim sürelerini süre dağılımından seçip toplamı tam olarak `bars`a oturtur (yarım ölçü adımlı DP).
 // Her sınıfın olasılığı kanonik değerine (0.5, 1, 2, 4, 8) gider; ara değerler (1.5, 3…) küçük pay alır,
 // böylece her toplam uzunluk tutturulabilir. Sıcaklık 0 → en olası; > 0 → örnekleme.
-function fitDurations(model, mode, n, bars, temperature = 0, rng = Math.random) {
+function fitDurations(model, mode, n, bars, temperature = 0, rng = Math.random, type = null) {
   const U = Math.round(bars * 2);
   if (n < 1 || n > U) return null;
-  const pb = model.dur(mode);
+  const pb = model.dur(mode, type);
   const maxU = U - (n - 1);
   const cnt = new Map();
   for (let u = 1; u <= maxU; u++) { const b = durBin(u / 2); cnt.set(b, (cnt.get(b) || 0) + 1); }
@@ -1007,23 +1007,27 @@ function suggestProgressions(model, opts) {
     warnings.push(`${N} akor ${fmtDur(o.bars)} ölçüye sığmaz (en kısa süre yarım ölçü).`);
     return { items: [], warnings, home, n, nAll, nd, ndAll };
   }
+  // bölüm tipi (verse / nakarat…) verildiyse mod × tip düzeyi, yoksa mod düzeyi
+  const type = o.type && o.type !== 'other' ? C.normSectionType(o.type) : null;
+  const nt = type ? model.nType(mode, type) : 0;
+  if (type && nt < model.settings.lowDataSongs) warnings.push(`Tip verisi az: ${modeName(mode)} modunda "${C.SECTION_TYPE_NAMES[type]}" tipinde ${nt} şarkı var; tip düzeyi mod düzeyinden k_tip=${model.settings.kType} ağırlıkla destek alıyor.`);
   if (N === 1) warnings.push('Tek akor: ev akorunda kalan drone önerisi.');
   const rng = mulberry32(o.seed * 7919 + N);
   const lp = (d, b) => Math.log(Math.max(1e-9, d.get(b) || 0));
   // Model akor DEĞİŞİMLERİNİ üretir (bir core'dan kendisine geçiş yok); kalma süresi ayrı modellenir.
   // Döngüde son akor ilk akorla aynıysa sınırda değişim yoktur (süreler birleşir), geçiş puanı eklenmez.
   function scoreSeq(seq) {
-    let s = lp(model.open(mode), seq[0]);
+    let s = lp(model.open(mode, type), seq[0]);
     const steps = [];
     for (let i = 1; i < seq.length; i++) {
-      const d = model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null);
+      const d = model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null, type);
       s += lp(d, seq[i]); steps.push({ a: seq[i - 1], b: seq[i], p: d.get(seq[i]) || 0 });
     }
     if (o.loop && seq.length > 1 && seq[N - 1] !== seq[0]) {
-      const d = model.next(mode, seq[N - 1], N >= 2 ? seq[N - 2] : null);
+      const d = model.next(mode, seq[N - 1], N >= 2 ? seq[N - 2] : null, type);
       s += lp(d, seq[0]); steps.push({ a: seq[N - 1], b: seq[0], p: d.get(seq[0]) || 0, loop: true });
     }
-    if (o.ending === 'data') s += lp(model.close(mode), seq[N - 1]);
+    if (o.ending === 'data') s += lp(model.close(mode, type), seq[N - 1]);
     return { logP: s, steps };
   }
   const banned = model.feedback.banned;
@@ -1036,10 +1040,10 @@ function suggestProgressions(model, opts) {
   };
   const found = new Map();
   if (!o.temperature) {
-    let beam = [...model.open(mode)].map(([b, p]) => ({ seq: [b], s: Math.log(p) }));
+    let beam = [...model.open(mode, type)].map(([b, p]) => ({ seq: [b], s: Math.log(p) }));
     for (let i = 1; i < N; i++) {
       const nx = [];
-      for (const it of beam) for (const [b, p] of model.next(mode, it.seq[i - 1], i >= 2 ? it.seq[i - 2] : null)) nx.push({ seq: [...it.seq, b], s: it.s + Math.log(p) });
+      for (const it of beam) for (const [b, p] of model.next(mode, it.seq[i - 1], i >= 2 ? it.seq[i - 2] : null, type)) nx.push({ seq: [...it.seq, b], s: it.s + Math.log(p) });
       nx.sort((a, b) => b.s - a.s);
       beam = nx.slice(0, 400);
     }
@@ -1053,15 +1057,15 @@ function suggestProgressions(model, opts) {
       return arr[arr.length - 1][0];
     };
     for (let tries = 0; tries < 3000 && found.size < o.count * 4; tries++) {
-      const seq = [sample(model.open(mode))];
-      for (let i = 1; i < N; i++) seq.push(sample(model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null)));
+      const seq = [sample(model.open(mode, type))];
+      for (let i = 1; i < N; i++) seq.push(sample(model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null, type)));
       if (valid(seq)) { const k = seq.join(','); if (!found.has(k)) found.set(k, seq); }
     }
   }
   const flats = keyUsesFlats(tonic, mode);
   const items = [...found.values()].map((seq) => {
     const sc = scoreSeq(seq);
-    const fit = fitDurations(model, mode, N, o.bars, o.temperature, rng);
+    const fit = fitDurations(model, mode, N, o.bars, o.temperature, rng, type);
     const colors = seq.map((c) => {
       const d = model.color(mode, c);
       if (!o.temperature) return argmaxKey(d);
@@ -1082,7 +1086,7 @@ function suggestProgressions(model, opts) {
     };
   }).sort((a, b) => b.logP - a.logP).slice(0, o.count);
   if (!items.length) warnings.push('Kurallara uyan progresyon bulunamadı (kapanış tipi / beğenilmeyenler).');
-  return { items, warnings, home, n, nAll, nd, ndAll };
+  return { items, warnings, home, n, nAll, nd, ndAll, type, nt };
 }
 // İki bölüm arası: "verse modu → nakarat modu" için modal kayma istatistiğinden geçiş akoru
 function suggestSectionTransition(model, from, to, top = 3) {

@@ -8,16 +8,43 @@ Tarayıcıda çalışan, **tek dosyalık** (`index.html`) mini DAW. Tek sesli vo
 |---|---|
 | 1. Proje ayarı | BPM (4/4 ve 3/4'te ♩, 6/8'de ♩. sayılır; alanın yanında yazar), ölçü 4/4 · 3/4 · 6/8, kayıt gecikmesi telafisi (ms). **Kalibre et**: 8 click çalar, her click'te el çırparsınız; click–alkış ofsetlerinin medyanı gecikme olarak kaydedilir |
 | 2. Kayıt / yükleme | 1 ölçü count-in + metronom. Click yalnızca çıkışa gider, kayıt zincirine bağlı değildir (kulaklık kullanın). WAV/MP3 yükleme: ilk ses başlangıcı 1. ölçüye ya da en yakın vuruşa hizalanır, ofset elle de ayarlanır |
-| 3. Pitch detection | pYIN benzeri: FFT'li YIN + Beta(2,18) eşik dağılımı + Viterbi. Nota olayları: başlangıç, süre, cent hassasiyetinde perde, en yakın nota. Vibrato/kaymalarda çekirdek bölgenin medyanı; sessizlik ve nefes atılır. Piano-roll + ince ham perde eğrisi |
+| 3. Pitch detection | pYIN benzeri: FFT'li YIN + Beta(2,18) eşik dağılımı + Viterbi. Nota olayları: başlangıç, süre, cent hassasiyetinde perde, en yakın nota. En yakın nota **kişisel akort referansına** göre bulunur (aşağıda). Vibrato/kaymalarda çekirdek bölgenin medyanı; sessizlik ve nefes atılır. Piano-roll + ince ham perde eğrisi |
 | 3b. Etiket düzeltme | Ses değişmez, yalnızca analizdeki nota değişir. Ton önerisinden **önce** yapılabilir ve histograma girer |
-| 4. Bölümler ve ton | Bölüm şeridinde sürükleyerek ölçü aralığı seçilir. Her bölüm için merkez nota + 10 mod. Öneri: süre ve vuruş ağırlıklı histogramdan en olası 3 aday. Histogram etiket düzeltmelerini kullanır, **ses düzeltmelerini (autotune, manuel kaydırma) kullanmaz** — autotune seçili scale'e çektiği için histogram o scale'i kendi kendine doğrulamasın. Aynı notalı modlar ayrı aday, ayırt edici ipucu olarak "son ağırlıklı nota". Onaylanmamış öneriler geçici olarak kullanılır ve "öneri" diye işaretlenir; son karar kullanıcıda |
-| 5. Ses düzeltme | Autotune (miktar, retune hızı, vibratoyu koru, kromatik geçiş notalarına dokunma) veya notayı sürükleyerek manuel (yarım ses; Shift ile cent). Manuel düzeltilen nota kilitlenir. Düzeltilmiş vokal ayrı izde render edilir; A/B düğmesi |
-| 6. Akor bulma | Ağırlıklar: 1. vuruş ×3, diğer güçlü vuruş ×2, vuruştan uzun ×2, kısa geçiş ×0.5. Diatonik triad + maj7/m7/sus2/sus4/add9. Yarım ses sürtünmesine büyük ceza, maj7 istisnası, sus2 önerisi, diminished düşük öncelik, Frig'de ev akoru asla majör değil. Değişim politikası: (a) sürtünme, (b) ≥ %X daha iyi, (c) N ölçü aynı akor, (d) **ev akoru en az her M ölçüde bir** (varsayılan 2; M dolunca ev akoru %X şartı olmadan aday olur, sürtünmüyorsa gelir); bölüm sonunda ev akoruna dönüş, bölüm geçişinde ortak nota tercihi. **Renk notası cezası** (7, 9/2, 11/4, 6'ya kök/3/5'e göre eksik puan) ayarlanabilir, varsayılan 0 |
+| 4. Bölümler ve ton | Bölüm şeridinde sürükleyerek ölçü aralığı seçilir. Her bölüm için merkez nota + 10 mod. Öneri: süre ve vuruş ağırlıklı histogramdan en olası 3 aday. Histogram etiket düzeltmelerini kullanır, **ses düzeltmelerini (autotune, manuel kaydırma) kullanmaz** — autotune seçili scale'e çektiği için histogram o scale'i kendi kendine doğrulamasın. Aynı notalı modlar ayrı aday, ayırt edici ipucu olarak "son ağırlıklı nota". İki belirsizlik ayrı mesajla gösterilir: **"Ayırt edici nota yok"** (ör. B minör ile B Dorian arasındaki G / G# hiç söylenmemiş) ve **"Aynı nota kümesi, merkez belirsiz"** (ör. E Miksolidya ile A majör; merkez kanıtı zayıf). Önceki bölümün tonu küçük bir itme alır (aynı ton +0.08, aynı nota kümesi +0.04); yalnızca adaylar zaten yakınsa sırayı değiştirir, onaylanmış ton her zaman üstündür. Tam tonunda (±20 cent) söylenmiş scale dışı nota mor kesikli çerçeve ve "?" ile **"mod yanlış olabilir"** diye işaretlenir. Onaylanmamış öneriler geçici olarak kullanılır ve "öneri" diye işaretlenir; son karar kullanıcıda |
+| 5. Ses düzeltme | Autotune (varsayılan kapalı; hedef **en yakın yarım ses**: notanın kimliği asla değişmez. "Scale'e çek" yalnızca açıkça seçilirse çalışır ve açıkken uyarı görünür. Miktar, retune hızı, vibratoyu koru, kromatik geçiş notalarına dokunma) veya notayı sürükleyerek manuel (yarım ses; Shift ile cent). Manuel düzeltilen nota kilitlenir. Düzeltilmiş vokal ayrı izde render edilir; A/B düğmesi. **Akor bulucu sesi değil, kastedilen notayı kullanır**: etiket (ve etiket düzeltmeleri) varsa o, yoksa referansa göre en yakın nota. Ses düzeltmesi akor önerisini değiştirmez |
+| 6. Akor bulma | Varsayılan motor **süreli Viterbi** (aşağıda); eski ölçü ölçü (greedy) motor seçilebilir. Ağırlıklar: 1. vuruş ×3, diğer güçlü vuruş ×2, vuruştan uzun ×2, kısa geçiş ×0.5. Diatonik triad + maj7/m7/sus2/sus4/add9. Yarım ses sürtünmesine büyük ceza, maj7 istisnası, sus2 önerisi, diminished düşük öncelik, Frig'de ev akoru asla majör değil. Değişim politikası: (a) sürtünme, (b) ≥ %X daha iyi, (c) N ölçü aynı akor, (d) **ev akoru en az her M ölçüde bir** (varsayılan 2; M dolunca ev akoru %X şartı olmadan aday olur, sürtünmüyorsa gelir); bölüm sonunda ev akoruna dönüş, bölüm geçişinde ortak nota tercihi. **Renk notası cezası** (7, 9/2, 11/4, 6'ya kök/3/5'e göre eksik puan) ayarlanabilir, varsayılan 0 |
 | 7. Akor düzenleme | Akora tıkla → en iyi 3 aday + melodi notalarının rolü (kök/3/5/7/9); seç + kilitle ya da elle yaz (`F#m7/A` gibi) |
 | 8. Piyano | Tone.js Sampler (Salamander). Hangi piyanonun çaldığı (Salamander / yedek sentez) üst çubukta görünür. Bas kökte başlar, basamaklı hareket için çevrim; pedal bas seçeneği. Akorlar vokal aralığının altında, ortak notalar yerinde kalır. Vokal/piyano için ses seviyesi, mute, solo |
 | 9. Dışa aktarım | MIDI (tempo, ölçü, bölüm işaretleri, melodi + piyano izi, akor adları), akor şeması (.txt), düzeltilmiş vokal WAV, vokal + piyano mix WAV, proje JSON (ayarlar, bölümler, düzeltmeler, kilitler, istenirse gömülü orijinal ses) |
 
 Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kilitler ayrı kayıtlar olarak tutulur, her değişiklikte sonraki adımlar yeniden hesaplanır.
+
+### Kişisel akort referansı
+
+Tonda söyleyen biri A440'a göre sabit bir kayma ile söyleyebilir (ör. herkes +30 cent). Bunu "hep diyez" diye düzeltmek yanlış olur. Bu yüzden notalar A440'a değil kişisel referansa göre yuvarlanır:
+- Genel referans: bütün notaların cent sapmasının süre ağırlıklı medyanı (dairesel: +50 ile −50 aynı yerdir).
+- Zamanla kayma: her nota için ±8 saniyelik pencerede kayan medyan. Böylece şarkı boyunca yavaşça pesleşen bir ses de doğru okunur.
+- Denetçi iki ölçüyü birlikte gösterir: referansa göre cent ve A440'a göre cent. Panelde "A4 ≈ … Hz" yazar.
+- Referans "A440" seçilerek kapatılabilir; pencere süresi ayarlanabilir.
+
+### Süreli Viterbi (akor bulma motoru)
+
+Ölçü ölçü karar vermek yerine bölümün tamamı için en olası akor dizisini arar (gizli yarı-Markov model, HSMM). Birim yarım ölçüdür.
+- Akor süreleri sabit bir "değişme olasılığı"ndan değil, stil verisindeki **harmonik ritim dağılımından** gelir: λ_ritim·log(P(süre sınıfı)·5). Süre verisi yoksa bu pay 0'dır.
+- Akor geçişleri stil modelinin "hangi akora" payından gelir (λ). Melodi puanı ve ağırlıklar greedy motorla aynıdır.
+- Kilitler ve yarım ses sürtünmesi **kısıttır**: sürtünen akor seçilmez (yalnızca bir birimde sürtünmesiz aday hiç yoksa gevşer), kilitli akor değişmez.
+- %X eşiği değişim başına sabit bir maliyete, N ölçü kuralı aşım cezasına, M kuralı (ev akoru her M ölçüde bir) her aşılan yarım ölçü için cezaya dönüşür. Bölüm sonunda ev akoru bonusu vardır.
+- Bölüm başına **en iyi 3 progresyon** gösterilir; her biri diğerlerinden en az 2 ölçüde farklıdır. Seçilen alternatif zaman çizelgesine uygulanır. Sıcaklık > 0 iken alternatifler puanla orantılı örneklenir.
+- Nota sürüklenirken hızlı olsun diye geçici olarak greedy motor kullanılır.
+
+### Doğrulama
+
+"Stil verisi ve öneri" görünümündeki **Doğrulama** sekmesi, sistemi gerçek akorları bilinen kayıtlarla ölçer. DAW'daki kaydı gerçek akor şemasıyla eklersiniz (ölçü ölçü, `| C#m | D C#m |`).
+- Metrikler: core tam eşleşme oranı, kök derecesi eşleşme oranı, doğru akorun ilk 3 aday içinde olma oranı, değişim noktası eşleşmesi (F1; akorun değiştiği yarım ölçüler).
+- Ayar (λ, λ_ritim, %X, M) **şarkı bazlı dışarıda bırakma** ile yapılır: her şarkı için ayar kalan şarkılarda seçilir, başarı o şarkıda ölçülür. Raporlanan "ayarlı" sonuç hep ayarda kullanılmamış şarkıdan gelir. Değerlendirilen şarkı stil veri setinde de varsa, o şarkı modelden çıkarılır.
+- Bir sonucu "referans" olarak kaydedip sonraki değişiklikleri onunla karşılaştırabilirsiniz; set JSON olarak dışa/içe aktarılır.
+
+**Sentetik testlerdeki sonuç (gerçek kayıt değil, 6 sentetik şarkı):** greedy referansında sabit ayarla core %71; süreli Viterbi sabit ayarla core %79 (+8), kök +8, ilk 3 +2, değişim F1 −1. Ayarlı (dışarıda bırakılan şarkıda) sonuçta Viterbi core −3, değişim F1 −14 (küçük stil veri setiyle). Hangi motorun sizin sesinizde daha iyi olduğunu kendi kayıtlarınızla Doğrulama sekmesi söyler.
 
 ## Stil verisi ve öneri
 
@@ -45,7 +72,8 @@ Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kil
 }
 ```
 
-- `label` bölüm adıdır (eski `name` de kabul edilir). `type` (verse, chorus…) saklanır ve bölüm geçişi örneklerinde gösterilir.
+- `label` bölüm adıdır (eski `name` de kabul edilir). `type` (verse, chorus…) saklanır, normalize edilir (Türkçe/İngilizce: "Nakarat", "Refrain" → chorus; "Kıta" → verse; "Köprü", "Middle 8" → bridge…) ve mod × tip istatistiğinde kullanılır. `type` yoksa bölüm adından çıkarılır.
+- İstem, sohbetin yalnızca yapıştırılan akor şemasını dönüştürmesini ister: şema yoksa ya da eksikse akor üretmez, hafızadan tamamlamaz, eksiği `warnings`'e yazar; kaynak linki `source_notes.other`'a gider. Uygulama akorlardan kendi ton tahminini yapar; sohbetin önerisiyle uyuşmazsa onay ekranında uyarır.
 - `source_notes` (capo, akort, diğer) şarkı kaydında gösterilir. Akorlar dönüştürülmez: dereceler göreli olduğu için kapo istatistiği etkilemez.
 - `bars` bir dizi ya da `null` olabilir. `null` olan bölüm süre istatistiğine girmez ama değişim istatistiğine girer.
 - `degrees_preview` öğeleri `{core, color, bass}` üç katmanı taşır ve her katman ayrı karşılaştırılır. Eski düz metin biçimi ("IVmaj7") de okunur; o biçimde yalnızca core karşılaştırılır.
@@ -80,22 +108,23 @@ Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kil
 - Birinci derece Markov: P(core | önceki core, mod).
 - İkinci derece yalnızca bağlam en az 5 şarkıda görüldüyse kullanılır; görülmediyse birinci dereceye geri dönülür (backoff).
 - Kısmi havuzlama: `P = (n_mod·P_mod + k·P_havuz)/(n_mod + k)`, varsayılan k = 10.
-- Moda uygun ama hiç görülmemiş her geçişe α = 0.5 şarkı eklenir.
+- Hiyerarşik havuzlama (mod × bölüm tipi → mod → havuz): `P_tip = (n_tip·P̂_tip + k_tip·P_mod)/(n_tip + k_tip)`, varsayılan k_tip = 5. Tipte veri yoksa P_mod'a eşittir. Geçiş, açılış, kapanış ve süre dağılımlarına uygulanır. Akor bulucu DAW bölümünün adından ("Nakarat" → chorus) tipi alır; istatistik panelinde bölüm tipi filtresi, progresyon önericide tip girdisi var.
+- Moda uygun ama hiç görülmemiş her geçişe α = 0.5 şarkı eklenir. Süre dağılımının kendi yumuşatması var: α_ritim = 0.5 (her süre sınıfına).
 - Renk ayrı bir dağılım: P(color | core, mod), aynı havuzlama ve yumuşatmayla.
 - Süre de ayrı bir dağılım: P(süre sınıfı | mod), aynı havuzlama ve yumuşatmayla. Havuzlamadaki n, o modda süre bilgisi olan şarkı sayısıdır.
-- "k ve α öner" düğmesi, bir-şarkı-dışarıda çapraz doğrulamayla log-olabilirliği en yüksek (k, α) çiftini bulur. 20 onaylı şarkıdan az veriyle de çalışır ama "sonuç güvenilir değil" uyarısı verir.
+- "k ve α öner" düğmesi, bir-şarkı-dışarıda çapraz doğrulamayla log-olabilirliği en yüksek (k, α) çiftini ve ayrıca süreler için α_ritim'i bulur. 20 onaylı şarkıdan az veriyle de çalışır ama "sonuç güvenilir değil" uyarısı verir.
 
 **Geri bildirim.** Beğen / beğenme şarkı verisinden ayrı bir katmanda tutulur. Her beğeni ilgili geçişi ×1.1, her beğenmeme ×0.91 ile çarpar; toplam çarpan 0.5 ile 2 arasında sınırlıdır. Beğenilmeyen progresyon bir daha önerilmez. Katman kapatılabilir ve sıfırlanabilir.
 
 **Akor bulucu.** Mevcut kurallar (yarım ses cezası, %X eşiği, N ölçü, ev akoru M ölçü, kilitler) aynen geçerlidir. Stil iki ayrı pay olarak girer:
-- **Değiş mi kal mı:** melodi puanı + mevcut politika + harmonik ritim. Harmonik ritim payı λ·log(h/(1−h)); h, "bu akor n ölçüdür çalıyorken bu modda değişme olasılığı"dır. h, süre dağılımından hesaplanır: sınıflar aralık olarak alınır, içleri düzgün kabul edilir. Süre verisi yoksa stil bu karara katılmaz.
+- **Değiş mi kal mı:** melodi puanı + mevcut politika + harmonik ritim. Ağırlığı ayrıdır: **λ_ritim**. Greedy motorda pay λ_ritim·log(h/(1−h)); h, "bu akor n ölçüdür çalıyorken bu modda değişme olasılığı"dır. h, süre dağılımından hesaplanır: sınıflar aralık olarak alınır, içleri düzgün kabul edilir. Süre verisi yoksa stil bu karara katılmaz. Viterbi motorunda bu pay süre sınıfının olasılığıdır (yukarıda).
 - **Değişirsem hangi akora:** λ·log(P·K) + λ·log(P_renk·K_renk). K = moddaki diatonik core sayısı (7), sabittir; ödünç akorlar K'yı değiştirmez. Veri yokken P uniform olduğu için bu pay yaklaşık 0'dır.
-- λ = 0 saf teoridir; sonuç stil modülü yokkenkiyle birebir aynı çıkar.
+- λ = 0 ve λ_ritim = 0 saf teoridir; sonuç stil modülü yokkenkiyle birebir aynı çıkar.
 - Sıcaklık > 0 olunca en iyi 3 aday arasından puanla orantılı (softmax) örneklenir.
 - Aday tablosu puanı melodi payı ve stil payı olarak ayrı gösterir; denetçide ayrıca "değiş mi kal mı" satırı var.
 
 **Progresyon önerici.**
-- Girdiler: merkez + mod, değişim sayısı (1 = tek akorda kalma / drone), toplam uzunluk (ölçü), döngü, kapanış tipi, sıcaklık, öneri sayısı.
+- Girdiler: merkez + mod, bölüm tipi (isteğe bağlı), değişim sayısı (1 = tek akorda kalma / drone), toplam uzunluk (ölçü), döngü, kapanış tipi, sıcaklık, öneri sayısı.
 - Model akor değişimlerini üretir (bir core'dan kendisine geçiş yoktur); bir akorda kalmak ayrı modellenen bir süre kararıdır. Bu yüzden "aynı akor art arda gelmesin" diye bir kural yok. Döngüde son akor ilk akorla aynıysa sınırda değişim sayılmaz, süreler birleşir.
 - Açılış dağılımından başlar; sıcaklık 0'da ışın araması, üstünde örnekleme yapar.
 - Değişimlerin süreleri süre dağılımından seçilir ve toplam, istenen uzunluğa tam oturtulur (yarım ölçü adımlı dinamik programlama). Sınıf olasılığının %90'ı kanonik değere (0.5, 1, 2, 4, 8), %10'u ara değerlere gider; böylece her uzunluk tutturulabilir. Eşit olasılıkta eşit bölüşüm seçilir, yani süre verisi yokken 4 akor / 8 ölçü → 2-2-2-2. Süreler öneride elle değiştirilebilir.
@@ -135,8 +164,10 @@ npm run test:ui      # arayüz + stil görünümü: Chromium'da uçtan uca (saht
 `Test melodisi üret` düğmesi (ve testler) sentetik bir vokal üretir: 4/4, 120 BPM. Verse (4 ölçü) C# Frig'de her ölçüde C#–D gidip gelir; nakarat (4 ölçü) B Dorian'da B'de biter. 2. ölçünün ilk D'si bilerek 40 cent pes. Vibrato, başta kayma (scoop), portamento ve bir nefes sesi içerir. Beklenen ve doğrulanan sonuçlar:
 
 - 3b/4. adım: verse için **C# Frig**, nakarat için **B Dorian** ilk aday (son ağırlıklı notalar C# ve B); bir D'yi E olarak etiketlemek verse histogramını değiştirir, autotune ve manuel ses kaydırma değiştirmez
-- 5. adım: pes nota −40c algılanır, autotune +40c kaydırır, render sonrası yeniden analizde ±2c
-- 6. adım (M = 2, renk cezası 0): `| C#m | Dmaj7 | C#m | Dmaj7 C#m |` · `| Bm | Eadd9 | Bm/D | Bm |`. M = 0 ile verse 3. ölçüde Dmaj7 cezasız devam eder
+- Kişisel akort: bütün melodi 30 cent pes ve sonuna doğru 20 cent yükseliyor. A440'a göre pes D (−67 cent) C# sanılır; kişisel referansla D (−40 cent) okunur, diğer notalar ±10 cent içinde tam tonundadır ve akorlar tam tonundaki kayıtla aynı çıkar
+- 5. adım: pes nota −40c algılanır, autotune (en yakın yarım ses) +40c kaydırır, render sonrası yeniden analizde ±2c; scale dışı notanın kimliği değişmez
+- 6. adım, süreli Viterbi (varsayılan): `| C#m | Dmaj7 | C#m | Dmaj7 C#m |` · `| Bm | Eadd9 | F#m7 | Bm |`, bölüm başına 3 alternatif
+- 6. adım, greedy (M = 2, renk cezası 0): `| C#m | Dmaj7 | C#m | Dmaj7 C#m |` · `| Bm | Eadd9 | Bm/D | Bm |`. M = 0 ile verse 3. ölçüde Dmaj7 cezasız devam eder
 - 1. adım: kalibrasyon, alkış ofsetlerinin medyanını kaydeder (Node'da sentetik alkışlarla, Chromium'da sahte mikrofona verilen alkış dosyasıyla test edilir)
 
 ## Sınırlar

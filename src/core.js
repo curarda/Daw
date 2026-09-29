@@ -439,6 +439,7 @@ function tuningReference(notes, opts = {}) {
 // ---------------------------------------------------------------- bölüm tipi normalizasyonu
 // Serbest bölüm adlarını ortak tiplere toplar: "Verse 2", "Kıta" → verse; "Nakarat", "Refrain" → chorus …
 const SECTION_TYPES = ['intro', 'verse', 'prechorus', 'chorus', 'postchorus', 'bridge', 'instrumental', 'outro', 'other'];
+const SECTION_TYPE_NAMES = { intro: 'Giriş', verse: 'Verse', prechorus: 'Ön nakarat', chorus: 'Nakarat', postchorus: 'Nakarat sonrası', bridge: 'Köprü', instrumental: 'Enstrümantal', outro: 'Çıkış', other: 'Diğer' };
 const TYPE_PATTERNS = [
   ['prechorus', /(pre\s*-?\s*(chorus|nakarat|hook)|ön\s*-?\s*nakarat|on\s*-?\s*nakarat|build\s*-?\s*up|lift|channel)/],
   ['postchorus', /(post\s*-?\s*(chorus|nakarat)|nakarat\s*sonrasi|tag)/],
@@ -1785,7 +1786,7 @@ const Core = {
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
-  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES,
+  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,

@@ -13,7 +13,7 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } ca
 
 const SS = {
   dataset: St.newDataset(), settings: Object.assign({}, St.MODEL_DEFAULTS), feedback: St.newFeedback(),
-  model: null, tab: 'import', editing: null, statMode: St.ALL, drill: null, importErrors: [], pending: [],
+  model: null, tab: 'import', editing: null, statMode: St.ALL, statType: '', drill: null, importErrors: [], pending: [],
   cv: null, prog: null, evalSet: St.newEvalSet(), evalRes: null, evalBusy: false, evalEngine: 'greedy', progOpts: Object.assign({ tonic: 1, mode: 'phrygian' }, St.PROG_DEFAULTS), trans: null,
 };
 try {
@@ -203,6 +203,7 @@ const ACTIONS = {
   cancelChords: () => { SS.chordEdit = null; render(); },
   // ---- istatistik
   statMode: (b) => { SS.statMode = b.dataset.m; SS.drill = null; render(); },
+  statType: (b) => { SS.statType = b.dataset.t; SS.drill = null; render(); },
   drill: (b) => { SS.drill = { title: b.dataset.title, refs: JSON.parse(b.dataset.refs) }; render(); const d = $('#stDrill'); if (d) d.scrollIntoView({ block: 'nearest' }); },
   // ---- model
   suggestKA: () => {
@@ -239,7 +240,7 @@ const ACTIONS = {
   fromDaw: (b) => {
     const d = A.S.d, s = d && d.sections.find((x) => x.id === b.dataset.sec);
     if (!s || s.tonic == null) return;
-    if (b.dataset.target === 'prog') { SS.progOpts.tonic = s.tonic; SS.progOpts.mode = s.mode; }
+    if (b.dataset.target === 'prog') { SS.progOpts.tonic = s.tonic; SS.progOpts.mode = s.mode; SS.progOpts.type = s.typeNorm || C.normSectionType(s.name); }
     else if (b.dataset.target === 'from') SS.trFrom = { tonic: s.tonic, mode: s.mode };
     else SS.trTo = { tonic: s.tonic, mode: s.mode };
     render();
@@ -305,7 +306,7 @@ const CHANGES = {
     try { const obj = St.checkFile(JSON.parse(await f.text()), 'mini-daw-eval-set'); SS.evalSet = obj; persist(); render(); A.status(`${f.name}: ${obj.items.length} doğrulama şarkısı yüklendi.`); }
     catch (e) { A.status('İçe aktarılamadı: ' + e.message, 'err'); }
   },
-  prog: (t) => { const k = t.dataset.k; SS.progOpts[k] = t.type === 'checkbox' ? t.checked : k === 'mode' || k === 'ending' ? t.value : +t.value; },
+  prog: (t) => { const k = t.dataset.k; SS.progOpts[k] = t.type === 'checkbox' ? t.checked : k === 'type' ? t.value || null : k === 'mode' || k === 'ending' ? t.value : +t.value; },
   // kullanıcı süreleri elle değiştirir (yarım ölçü adımı); gösterim ve toplam güncellenir
   progDur: (t) => {
     const it = SS.prog.items[+t.dataset.i];
@@ -427,13 +428,19 @@ function tabStats() {
   const modes = [St.ALL, ...C.MODE_ORDER.filter((x) => counts[x] > 0)];
   if (!st.byMode.has(SS.statMode)) SS.statMode = St.ALL;
   const mode = SS.statMode;
-  const b = st.byMode.get(mode);
+  // bölüm tipi filtresi: "phrygian|chorus", tüm modlarda "*|chorus"
+  const types = C.SECTION_TYPES.filter((t) => st.byMode.has(`${mode}|${t}`));
+  if (SS.statType && !types.includes(SS.statType)) SS.statType = '';
+  const type = SS.statType;
+  const b = st.byMode.get(type ? `${mode}|${type}` : mode);
   const N = b.songs.size;
+  const typeChips = types.length ? `<div class="row st-types"><span class="hint">Bölüm tipi:</span> <button data-act="statType" data-t="" class="${type ? '' : 'on'}">Hepsi</button>${types.map((t) => `<button data-act="statType" data-t="${t}" class="${t === type ? 'on' : ''}">${esc(C.SECTION_TYPE_NAMES[t])} <b>${st.byMode.get(`${mode}|${t}`).songs.size}</b></button>`).join('')}</div>` : '';
   const dmode = mode === St.ALL ? 'major' : mode;
   const lab = (k) => St.coreLabel(k, dmode);
   const chips = modes.map((x) => `<button data-act="statMode" data-m="${x}" class="${x === mode ? 'on' : ''}">${x === St.ALL ? 'Tüm modlar (havuz)' : esc(C.MODES[x].name)} <b>${counts[x]}</b>${x !== St.ALL && counts[x] < low ? ' <span class="tag warn">az veri</span>' : ''}</button>`).join('');
-  if (!N) return `<div class="row st-modes">${chips}</div><p class="hint">Onaylı bölüm yok. İstatistik yalnızca onaylanan bölümlerden hesaplanır.</p>`;
-  const lowTxt = mode !== St.ALL && N < low ? `<div class="st-warn">⚠ Az veri: bu modda ${N} şarkı (&lt; ${low}). Oranlar güvenilir değil; model havuzdan destek alır.</div>` : '';
+  if (!N) return `<div class="row st-modes">${chips}</div>${typeChips}<p class="hint">Onaylı bölüm yok. İstatistik yalnızca onaylanan bölümlerden hesaplanır.</p>`;
+  const lowTxt = type && N < low ? `<div class="st-warn">⚠ Az veri: bu kapsamda (${esc(C.SECTION_TYPE_NAMES[type])}) ${N} şarkı (&lt; ${low}). Oranlar güvenilir değil; model bu tipi mod düzeyinden k_tip = ${m.settings.kType} ağırlıkla destekler.</div>`
+    : mode !== St.ALL && N < low ? `<div class="st-warn">⚠ Az veri: bu modda ${N} şarkı (&lt; ${low}). Oranlar güvenilir değil; model havuzdan destek alır.</div>` : '';
   // nitelik
   const qual = ['M', 'm', 'd', 'a', '5'].filter((q) => b.qual.has(q)).map((q) => { const e = b.qual.get(q); return `<span class="role clk" data-act="drill" data-click="1" data-title="${esc(St.QUALITY_NAMES[q])}" data-refs="${refsAttr(e)}">${esc(St.QUALITY_NAMES[q])}: ${e.songs.size} şarkı (${e.occ} tekrar)</span>`; }).join(' ');
   // derece tablosu
@@ -472,7 +479,7 @@ function tabStats() {
     return `<tr><td>${esc(St.coreLabel(mt.from, mt.fromMode))} <span class="hint">(${esc(C.MODES[mt.fromMode].short)})</span> → ${esc(St.coreLabel(mt.to, mt.toMode))} <span class="hint">(${esc(C.MODES[mt.toMode].short)}, ${mt.iv > 6 ? mt.iv - 12 : mt.iv} yarım ses)</span></td>${drillCell(e, 'bölümler arası geçiş', e.songs.size)}<td class="hint">${e.examples.map((x) => `${x.from.type || x.from.name}: ${St.keyLabel(x.from)} ${x.from.sym} → ${x.to.type || x.to.name}: ${St.keyLabel(x.to)} ${x.to.sym}`).slice(0, 2).map(esc).join('; ')}</td></tr>`;
   }).join('');
   const drill = SS.drill ? `<div id="stDrill" class="st-drill"><b>${esc(SS.drill.title)}</b> — geldiği şarkılar:<ul>${SS.drill.refs.map((r) => `<li>${esc(songName(songById(r.song)))} <span class="hint">· ${esc(r.section)}</span></li>`).join('')}</ul></div>` : '';
-  return `<div class="row st-modes">${chips}</div>${lowTxt}
+  return `<div class="row st-modes">${chips}</div>${typeChips}${lowTxt}
     <p class="hint">Ana istatistik "kaç şarkıda" (şarkı başına en fazla 1); gri sayılar toplam tekrar — yalnızca bilgi, modele girmez. Hücrelere tıklayınca şarkılar listelenir. "?" = nitelik belirsiz (power / sus): kök derecesi. Aynı kökte kalan akorlar (C → Cmaj7, Csus4 → C) geçiş sayılmaz, süreleri birleşir.${mode === St.ALL ? ' Havuz: dereceler iç temsille (merkezden yarım ses + nitelik) sayılır; yazım majör gamına göre.' : ''}</p>
     <div class="row">Nitelik: ${qual}</div>
     ${drill}
@@ -520,9 +527,10 @@ function tabModel() {
   }).join('');
   return `<div class="st-grid2"><div>
       <h3>Model</h3>
-      <p class="hint">Akor bulucuda stil iki pay: <b>"değiş mi kal mı"</b> = melodi + politika + harmonik ritim (bu akor n ölçüdür çalıyorken değişme olasılığı; süre verisi yoksa katılmaz) ve <b>"değişirsem hangi akora"</b> = λ·log(P·K), K = moddaki diatonik core sayısı (7).<br>Birinci derece Markov P(sonraki core | önceki core, mod); ikinci derece yalnızca bağlam en az "min bağlam" şarkıda görüldüyse (yoksa birinci dereceye geri dönülür). Kısmi havuzlama P = (n_mod·P_mod + k·P_havuz)/(n_mod + k); moda uygun ama görülmemiş her geçişe α eklenir. Renk ayrı dağılım: P(color | core, mod), aynı havuzlama ve yumuşatma.</p>
+      <p class="hint">Akor bulucuda stil iki pay: <b>"değiş mi kal mı"</b> = melodi + politika + harmonik ritim (bu akor n ölçüdür çalıyorken değişme olasılığı; süre verisi yoksa katılmaz) ve <b>"değişirsem hangi akora"</b> = λ·log(P·K), K = moddaki diatonik core sayısı (7).<br>Birinci derece Markov P(sonraki core | önceki core, mod); ikinci derece yalnızca bağlam en az "min bağlam" şarkıda görüldüyse (yoksa birinci dereceye geri dönülür). Kısmi havuzlama P = (n_mod·P_mod + k·P_havuz)/(n_mod + k); bölüm tipi (verse, nakarat…) bir düzey daha: P_tip = (n_tip·P̂_tip + k_tip·P_mod)/(n_tip + k_tip), tipte veri yoksa P_mod'a eşit. Moda uygun ama görülmemiş her geçişe α eklenir. Renk ayrı dağılım: P(color | core, mod), aynı havuzlama ve yumuşatma.</p>
       <div class="grid2">
         ${num('k', 'Havuz ağırlığı k', 1, 0, 1000, 'kısmi havuzlama')}
+        ${num('kType', 'Tip ağırlığı k_tip', 1, 0, 1000, 'mod × bölüm tipi düzeyinin mod düzeyinden aldığı destek')}
         ${num('alpha', 'Geçiş yumuşatması α (şarkı)', 0.05, 0, 10, 'görülmemiş diatonik geçişe eklenen sanal şarkı sayısı')}
         ${num('alphaDur', 'Ritim yumuşatması α_ritim (şarkı)', 0.05, 0, 10, 'her süre sınıfına eklenen sanal şarkı sayısı')}
         ${num('lambda', 'Geçiş ağırlığı λ ("hangi akora")', 0.25, 0, 10, '0 = saf teori')}
@@ -587,6 +595,7 @@ function tabProg() {
       <div class="grid2">
         <label title="Kaç farklı akor (değişim) — 1 = tek akorda kalma / drone">Değişim sayısı (akor)<input type="number" data-act="prog" data-k="changes" value="${o.changes}" min="1" max="32"></label>
         <label title="Değişimlerin süreleri süre dağılımından seçilip bu toplama oturtulur">Toplam uzunluk (ölçü)<input type="number" data-act="prog" data-k="bars" value="${o.bars}" min="0.5" max="128" step="0.5"></label>
+        <label title="Verse / nakarat gibi bir tip seçilirse geçiş, açılış/kapanış ve süreler o tipin (mod × tip) istatistiğinden gelir">Bölüm tipi<select data-act="prog" data-k="type"><option value="">(tüm bölümler)</option>${C.SECTION_TYPES.filter((t) => t !== 'other').map((t) => `<option value="${t}"${o.type === t ? ' selected' : ''}>${esc(C.SECTION_TYPE_NAMES[t])}</option>`).join('')}</select></label>
         <label>Kapanış<select data-act="prog" data-k="ending"><option value="home"${o.ending === 'home' ? ' selected' : ''}>eve dön</option><option value="open"${o.ending === 'open' ? ' selected' : ''}>açık bırak</option><option value="data"${o.ending === 'data' ? ' selected' : ''}>verideki kapanış dağılımı</option></select></label>
         <label>Sıcaklık (0 = en olası)<input type="number" data-act="prog" data-k="temperature" value="${o.temperature}" min="0" max="5" step="0.1"></label>
         <label>Kaç öneri<input type="number" data-act="prog" data-k="count" value="${o.count}" min="1" max="20"></label>
@@ -595,7 +604,7 @@ function tabProg() {
       </div>
       <button class="accent" data-act="runProg">Öner</button>
       ${P ? P.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('') : ''}
-      ${P ? `<p class="hint">${esc(St.keyLabel(P.opts))} · ev akoru ${esc(lab(P.home))} · ${P.opts.changes} akor, ${St.fmtDur(P.opts.bars)} ölçü${P.opts.loop ? ', döngü' : ''} · süre verisi: bu modda ${P.nd}, havuzda ${P.ndAll} şarkı</p><ol class="st-progs">${items}</ol>` : ''}
+      ${P ? `<p class="hint">${esc(St.keyLabel(P.opts))}${P.type ? ` · ${esc(C.SECTION_TYPE_NAMES[P.type])} (${P.nt} şarkı)` : ''} · ev akoru ${esc(lab(P.home))} · ${P.opts.changes} akor, ${St.fmtDur(P.opts.bars)} ölçü${P.opts.loop ? ', döngü' : ''} · süre verisi: bu modda ${P.nd}, havuzda ${P.ndAll} şarkı</p><ol class="st-progs">${items}</ol>` : ''}
     </div><div>
       <h3>İki bölüm arası geçiş</h3>
       <p class="hint">Verideki bölümler arası geçişlerden (bir bölümün son akoru → sonrakinin ilk akoru) aynı mod çiftine ve merkez aralığına göre öneri.</p>

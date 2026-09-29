@@ -128,8 +128,16 @@ try {
     const inter = await page.locator('h3:has-text("modal kayma") + table + table').textContent();
     assert.match(inter, /♭II.*Frig.*→ i.*Dorian/s);
     assert.match(inter, /verse: C# Frig D → chorus: B Dorian Bm/);
+    // bölüm tipi filtresi: Frig modunda yalnızca "Verse" tipi var; seçilince yalnız o tipin kovası
+    await page.click('.st-modes button[data-m=phrygian]');
+    const typeBtns = await page.locator('.st-types button').allTextContents();
+    assert.deepEqual(typeBtns.map((t) => t.trim()), ['Hepsi', 'Verse 1']);
+    await page.click('.st-types button[data-t=verse]');
+    assert.match(await page.textContent('.st-body'), /bu kapsamda \(Verse\) 1 şarkı/);
+    assert.equal(await page.locator('table.heat td.clk').count(), 2);
+    await page.click('.st-types button[data-t=""]');
     if (shotDir) await page.screenshot({ path: path.join(shotDir, 'style-stats.png'), fullPage: false });
-    return titles.join(' · ');
+    return titles.join(' · ') + ' · tip filtresi: ' + typeBtns.join(' / ');
   });
 
   await step('d) aynı sanatçı + şarkı → uyarı (üzerine yaz / vazgeç)', async () => {
@@ -178,6 +186,12 @@ try {
     await page.click('button[data-act=runProg]');
     const after = await page.locator('.st-prog .syms').allTextContents();
     assert.ok(!after.includes(first), 'beğenilmeyen tekrar önerildi');
+    // bölüm tipi girdisi: DAW'daki "Nakarat" bölümünden → tip nakarat; sonuç satırında tip ve şarkı sayısı
+    await page.selectOption('select[data-k=type]', 'chorus');
+    await page.click('button[data-act=runProg]');
+    assert.match(await page.textContent('.st-body'), /Nakarat \(0 şarkı\)/);
+    assert.match(await page.textContent('.st-body'), /Tip verisi az/);
+    await page.selectOption('select[data-k=type]', '');
     // bölümler arası geçiş
     await page.click('button[data-act=runTrans]');
     const tr = await page.locator('h3:has-text("İki bölüm arası") ~ ul').textContent();

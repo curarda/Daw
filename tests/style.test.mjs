@@ -500,9 +500,14 @@ await step('Bölüm tipi normalizasyonu + mod × tip × havuz hiyerarşik havuzl
   const sv = sc.score({ root: 0, q: '' }, null, { root: 7, q: '' }, { tonic: 0, mode: 'major', name: 'Verse' }).trans;
   const sn = sc.score({ root: 0, q: '' }, null, { root: 7, q: '' }, { tonic: 0, mode: 'major', name: 'Nakarat' }).trans;
   assert.ok(sn > sv, 'nakaratta I→V daha olası');
+  // progresyon önericisi tip girdisi: aynı mod, farklı tip → farklı ilk öneri
+  const po = { tonic: 0, mode: 'major', changes: 2, bars: 4, loop: false, ending: 'open', count: 1 };
+  const rv = Style.suggestProgressions(m, Object.assign({ type: 'verse' }, po)), rc = Style.suggestProgressions(m, Object.assign({ type: 'Nakarat' }, po));
+  assert.equal(rv.items[0].symbols.join(' '), 'C F'); assert.equal(rc.items[0].symbols.join(' '), 'C G');
+  assert.equal(rc.type, 'chorus'); assert.ok(rc.warnings.some((w) => /Tip verisi az/.test(w)));
   const st2 = Style.buildStats({ songs });
   assert.equal(st2.byMode.get('major|chorus').songs.size, 10); assert.equal(st2.byMode.get('*|verse').songs.size, 10);
-  return `P(IV | I): verse ${pv.get('5M').toFixed(3)}, nakarat ${pc.get('5M').toFixed(3)}, mod ${pm.get('5M').toFixed(3)} · P(V | I): verse ${pv.get('7M').toFixed(3)}, nakarat ${pc.get('7M').toFixed(3)} · DAW "Nakarat" bölümünde I→V payı ${sn.toFixed(2)} > "Verse" ${sv.toFixed(2)}`;
+  return `P(IV | I): verse ${pv.get('5M').toFixed(3)}, nakarat ${pc.get('5M').toFixed(3)}, mod ${pm.get('5M').toFixed(3)} · P(V | I): verse ${pv.get('7M').toFixed(3)}, nakarat ${pc.get('7M').toFixed(3)} · DAW "Nakarat" bölümünde I→V payı ${sn.toFixed(2)} > "Verse" ${sv.toFixed(2)} · önerici: verse ${rv.items[0].symbols.join(' ')}, nakarat ${rc.items[0].symbols.join(' ')}`;
 });
 
 console.log(results.join('\n'));
