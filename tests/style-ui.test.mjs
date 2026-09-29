@@ -5,6 +5,8 @@ import { readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import { loadCore } from './load-core.mjs';
+import { synthEvalItem, EVAL_SONGS } from './eval-fixtures.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const indexUrl = pathToFileURL(path.join(here, '..', 'index.html')).href;
@@ -239,6 +241,42 @@ try {
     const [a, b, c] = it.symbols;
     assert.deepEqual(placed, [[1, null, a, true], [2, 0, a, true], [2, 1, b, true], [3, null, c, true], [4, null, c, true]]);
     return `${it.displaySymbols} → ölçü 1: ${a} | ölçü 2: ${a} ${b} (yarım) | ölçü 3–4: ${c}`;
+  });
+
+  await step('4) doğrulama: DAW kaydını gerçek akorlarıyla ekle, değerlendir, sentetik seti içe aktar, referans kaydet', async () => {
+    await page.click('.views input[value=style] + span');
+    await tab('Doğrulama');
+    await page.fill('#evArtist', 'Test Sanatçı'); await page.fill('#evTitle', 'Frig–Dorian Testi');
+    const truths = page.locator('input[id^=evTruth-]');
+    assert.equal(await truths.count(), 2);
+    await truths.nth(0).fill('| C#m | D | C#m |'); // bilerek eksik
+    await truths.nth(1).fill('| Bm | E | F#m | Bm |');
+    await page.click('button[data-act=evalAdd]');
+    assert.match(await page.textContent('#styleView .st-err'), /3 ölçü girildi, bölüm 4 ölçü/);
+    await page.locator('input[id^=evTruth-]').nth(0).fill('| C#m | D | C#m | D C#m |');
+    await page.click('button[data-act=evalAdd]');
+    assert.equal(await E(() => window.StyleUI.state.evalSet.items.length), 1);
+    await page.click('button[data-act=evalRun]');
+    await page.waitForFunction(() => /Sonuç — motor/.test(document.querySelector('#styleView').textContent), null, { timeout: 30000 });
+    const body = await page.textContent('#styleView');
+    assert.match(body, /en az 2 doğrulama şarkısı/);
+    const one = await E(() => window.StyleUI.state.evalRes.fixed.metrics);
+    assert.equal(one.units, 16);
+    // sentetik doğrulama seti (+ bu kayıt) içe aktar → şarkı bazlı dışarıda bırakmayla ayar
+    const { Core } = loadCore();
+    const set = { schema: 'mini-daw-eval-set', version: 1, reference: null, items: [...(await E(() => window.StyleUI.state.evalSet.items)), ...EVAL_SONGS.map((x) => synthEvalItem(Core, x))] };
+    const fp = path.join(here, '..', '.tmp-eval.json'); writeFileSync(fp, JSON.stringify(set)); tmp.push(fp);
+    await page.setInputFiles('input[data-act=evalImp]', fp);
+    await page.waitForFunction(() => window.StyleUI.state.evalSet.items.length === 7);
+    await page.click('button[data-act=evalRun]');
+    await page.waitForFunction(() => { const r = window.StyleUI.state.evalRes; return r && r.tuned && !window.StyleUI.state.evalBusy; }, null, { timeout: 60000 });
+    const r = await E(() => window.StyleUI.state.evalRes);
+    assert.equal(r.tuned.folds.length, 7);
+    assert.ok(r.tuned.folds.every((f) => !f.trainedOn.includes(f.heldOut)));
+    await page.click('button[data-act=evalRef]');
+    assert.ok(await E(() => !!window.StyleUI.state.evalSet.reference));
+    const pc = (x) => Math.round(x * 100) + '%';
+    return `test melodisi tek başına core ${pc(one.core)} · 7 şarkı, sabit ayar core ${pc(r.fixed.metrics.core)}, ayarlı (dışarıda bırakılanda) core ${pc(r.tuned.metrics.core)}, ilk 3 ${pc(r.tuned.metrics.top3)}, değişim F1 ${pc(r.tuned.metrics.change)} · referans kaydedildi`;
   });
 
   await step('7) k ve α öner (20 şarkıdan az → "güvenilir değil" uyarısı) + 11) üç ayrı JSON dışa/içe aktarım', async () => {

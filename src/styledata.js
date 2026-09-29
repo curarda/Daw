@@ -1086,6 +1086,136 @@ function suggestSectionTransition(model, from, to, top = 3) {
   return { basis, items: out, iv };
 }
 
+// ---------------------------------------------------------------- DOĞRULAMA (uçtan uca, kendi kayıtlarınla)
+// Öğe: { id, artist, title, meter, sections:[{id,name,startBar,endBar,tonic,mode,type}], notes:[{q0,q1,effMidi}],
+//        truth:{ [sectionId]: "| C#m | D | C#m | D C#m |" } }
+// Metrikler (yarım ölçü birimlerinde; N.C. hariç): core tam eşleşme, kök derecesi eşleşmesi, doğru akor ilk 3 adayda,
+// değişim noktası eşleşmesi (F1). Ayar (λ, λ_ritim, %X, M) şarkı bazlı dışarıda bırakmayla; raporlanan başarı ayarda
+// kullanılmamış şarkıdan gelir.
+const EVAL_GRID = { lambda: [0, 0.5, 1, 2], lambdaRhythm: [0, 1, 2], changePct: [10, 25, 40], homeEvery: [0, 2, 4] };
+function newEvalSet() { return { schema: 'mini-daw-eval-set', version: 1, items: [], reference: null }; }
+function parseTruthChart(text, nBars) {
+  const errors = [];
+  const cells = [];
+  const t = String(text || '').trim();
+  if (t.includes('|')) for (const cell of t.split('|').map((x) => x.trim()).filter(Boolean)) cells.push(cell.split(/\s+/).filter(Boolean));
+  else for (const tok of t.split(/\s+/).filter(Boolean)) cells.push([tok]);
+  if (cells.length !== nBars) errors.push(`${cells.length} ölçü girildi, bölüm ${nBars} ölçü`);
+  const bars = [];
+  let prev = null;
+  cells.forEach((toks, i) => {
+    if (toks.length > 2) errors.push(`ölçü ${i + 1}: en fazla 2 akor (yarım ölçü)`);
+    const chs = toks.slice(0, 2).map((tok) => {
+      if (tok === '%') return prev;
+      if (NC_RE.test(tok)) { prev = null; return null; }
+      const ch = C.parseChord(tok);
+      if (!ch) { errors.push(`ölçü ${i + 1}: "${tok}" tanınmadı`); return null; }
+      prev = ch; return ch;
+    });
+    bars.push(chs.length === 1 ? [chs[0], chs[0]] : chs);
+  });
+  return { bars, errors };
+}
+function evalGrid(item) {
+  const g = C.makeGrid({ bpm: 120, meter: item.meter || '4/4' });
+  const per = g.split ? 2 : 1, unitQ = g.split ? g.split : g.barQ;
+  return { g, per, unitQ };
+}
+function validateEvalItem(item) {
+  const errs = [];
+  for (const sec of item.sections) {
+    const tr = parseTruthChart(item.truth[sec.id], sec.endBar - sec.startBar + 1);
+    for (const e of tr.errors) errs.push(`${sec.name}: ${e}`);
+  }
+  return errs;
+}
+// tek öğe için akor bulucuyu çalıştır (DAW ile aynı kod yolu)
+function runFinder(item, params, model) {
+  const { g } = evalGrid(item);
+  const notes = item.notes.map((n) => Object.assign({}, n, { cw: C.chordWeight(n, g) }));
+  const secs = item.sections.map((s) => Object.assign({}, s));
+  const style = model ? makeStyleScorer(model, { lambda: params.lambda, lambdaRhythm: params.lambdaRhythm, temperature: 0 }) : null;
+  const opts = Object.assign({}, C.CHORD_DEFAULTS, { changePct: params.changePct, homeEvery: params.homeEvery, engine: params.engine || 'greedy' }, style ? { style } : {});
+  return C.buildChords(notes, secs, g, opts, []);
+}
+function scoreItem(item, slots) {
+  const { per, unitQ } = evalGrid(item);
+  const m = { units: 0, core: 0, root: 0, top3: 0, tp: 0, fp: 0, fn: 0 };
+  for (const sec of item.sections) {
+    const tr = parseTruthChart(item.truth[sec.id], sec.endBar - sec.startBar + 1).bars;
+    const coreOf = (ch) => (ch ? chordToCore(ch, sec.tonic).core : null);
+    const truthU = [], predU = [], candU = [];
+    tr.forEach((b, bi) => { for (let h = 0; h < per; h++) {
+      truthU.push(b[per === 2 ? h : 0]);
+      const q = (sec.startBar - 1 + bi) * per * unitQ + (h + 0.5) * unitQ;
+      const sl = slots.find((x) => x.section === sec.id && q >= x.q0 - 1e-9 && q < x.q1 - 1e-9);
+      predU.push(sl ? sl.chord : null);
+      candU.push(sl ? sl.candidates.map((c) => coreOf(c.chord)) : []);
+    } });
+    truthU.forEach((t, u) => {
+      if (!t) return;
+      m.units++;
+      const tc = coreOf(t), pc = coreOf(predU[u]);
+      if (tc === pc) m.core++;
+      if (predU[u] && mod12(predU[u].root) === mod12(t.root)) m.root++;
+      if (candU[u].slice(0, 3).includes(tc)) m.top3++;
+    });
+    for (let u = 1; u < truthU.length; u++) {
+      if (!truthU[u] || !truthU[u - 1] || !predU[u] || !predU[u - 1]) continue;
+      const tChg = coreOf(truthU[u]) !== coreOf(truthU[u - 1]), pChg = coreOf(predU[u]) !== coreOf(predU[u - 1]);
+      if (tChg && pChg) m.tp++; else if (pChg) m.fp++; else if (tChg) m.fn++;
+    }
+  }
+  return m;
+}
+function summarize(ms) {
+  const t = ms.reduce((a, m) => { for (const k of Object.keys(m)) a[k] = (a[k] || 0) + m[k]; return a; }, {});
+  const f1d = 2 * t.tp + t.fp + t.fn;
+  return {
+    units: t.units || 0,
+    core: t.units ? t.core / t.units : 0, root: t.units ? t.root / t.units : 0, top3: t.units ? t.top3 / t.units : 0,
+    change: f1d ? (2 * t.tp) / f1d : 1,
+  };
+}
+// stil modeli: değerlendirilen şarkı veri setinde de varsa (aynı sanatçı + şarkı) modelden çıkarılır (sızıntı yok)
+function modelFor(item, dataset, settings, feedback) {
+  if (!dataset) return null;
+  const songs = dataset.songs.filter((s) => songKey(s) !== songKey(item));
+  return buildModel({ songs }, settings, feedback);
+}
+function paramCombos(grid = EVAL_GRID, engine = 'greedy') {
+  const out = [];
+  for (const lambda of grid.lambda) for (const lambdaRhythm of grid.lambdaRhythm) for (const changePct of grid.changePct) for (const homeEvery of grid.homeEvery) out.push({ lambda, lambdaRhythm, changePct, homeEvery, engine });
+  return out;
+}
+// items için: (1) verilen sabit ayarlarla sonuç, (2) iç içe şarkı-dışarıda ayar + ayarda kullanılmamış şarkıda ölçüm
+async function evaluateSet(items, { dataset = null, settings = {}, feedback = null, params, grid = EVAL_GRID, engine = 'greedy', onProgress } = {}) {
+  const models = items.map((it) => modelFor(it, dataset, settings, feedback));
+  const fixedParams = Object.assign({ lambda: 1, lambdaRhythm: 1, changePct: 25, homeEvery: 2, engine }, params || {});
+  const fixedPer = items.map((it, i) => scoreItem(it, runFinder(it, fixedParams, models[i])));
+  const out = { engine, fixed: { params: fixedParams, metrics: summarize(fixedPer), perItem: fixedPer.map((m, i) => ({ id: items[i].id, ...summarize([m]) })) }, tuned: null, warnings: [] };
+  if (items.length < 2) { out.warnings.push('Şarkı bazlı dışarıda bırakma için en az 2 doğrulama şarkısı gerekli.'); return out; }
+  if (items.length < 5) out.warnings.push(`Yalnızca ${items.length} doğrulama şarkısı var: ayarlı sonuç güvenilir değil.`);
+  const combos = paramCombos(grid, engine);
+  // her kombinasyonun her öğedeki ham sayıları bir kez hesaplanır
+  const table = [];
+  for (let c = 0; c < combos.length; c++) {
+    table.push(items.map((it, i) => scoreItem(it, runFinder(it, combos[c], models[i]))));
+    if (onProgress && c % 6 === 0) { onProgress(c / combos.length); await new Promise((r) => setTimeout(r, 0)); }
+  }
+  const folds = items.map((held, h) => {
+    let best = -1, bestScore = -Infinity;
+    combos.forEach((cb, c) => {
+      const s = summarize(table[c].filter((_, i) => i !== h));
+      const v = s.core + 1e-3 * s.top3; // ölçüt: core eşleşmesi (eşitlikte ilk 3)
+      if (v > bestScore + 1e-12) { bestScore = v; best = c; }
+    });
+    return { heldOut: held.id, trainedOn: items.filter((_, i) => i !== h).map((x) => x.id), params: combos[best], raw: table[best][h] };
+  });
+  out.tuned = { metrics: summarize(folds.map((f) => f.raw)), folds: folds.map((f) => ({ heldOut: f.heldOut, trainedOn: f.trainedOn, params: f.params, ...summarize([f.raw]) })) };
+  return out;
+}
+
 // ---------------------------------------------------------------- saklama
 function newDataset() { return { schema: 'mini-daw-style-dataset', version: 1, songs: [] }; }
 function newFeedback() { return { schema: 'mini-daw-style-feedback', version: 1, on: true, events: [], banned: [] }; }
@@ -1104,6 +1234,7 @@ root.Style = {
   chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,
   fitDurations, progDisplay, durBin, durLabel, fmtDur, DUR_BINS, sectionHasBars,
   romanNumeral, changeHazard, normColor, previewText, FB_LIKE, FB_DISLIKE, estimateKeyFromChords, checkChatKey,
+  EVAL_GRID, newEvalSet, parseTruthChart, validateEvalItem, runFinder, scoreItem, summarize, evaluateSet, paramCombos,
   newDataset, newFeedback, checkFile,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.Style;

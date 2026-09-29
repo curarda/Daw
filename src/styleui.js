@@ -7,23 +7,24 @@
 const St = window.Style, A = window.__dawAPI, C = A.C;
 const $ = (s, r = document) => r.querySelector(s);
 const esc = A.esc;
-const LS = { dataset: 'miniDaw.style.dataset', settings: 'miniDaw.style.settings', feedback: 'miniDaw.style.feedback' };
+const LS = { dataset: 'miniDaw.style.dataset', settings: 'miniDaw.style.settings', feedback: 'miniDaw.style.feedback', evalSet: 'miniDaw.style.evalset' };
 const lsGet = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* depolama kapalı olabilir */ } };
 
 const SS = {
   dataset: St.newDataset(), settings: Object.assign({}, St.MODEL_DEFAULTS), feedback: St.newFeedback(),
   model: null, tab: 'import', editing: null, statMode: St.ALL, drill: null, importErrors: [], pending: [],
-  cv: null, prog: null, progOpts: Object.assign({ tonic: 1, mode: 'phrygian' }, St.PROG_DEFAULTS), trans: null,
+  cv: null, prog: null, evalSet: St.newEvalSet(), evalRes: null, evalBusy: false, evalEngine: 'greedy', progOpts: Object.assign({ tonic: 1, mode: 'phrygian' }, St.PROG_DEFAULTS), trans: null,
 };
 try {
   const d = lsGet(LS.dataset); if (d) SS.dataset = St.checkFile(d, 'mini-daw-style-dataset');
   const s = lsGet(LS.settings); if (s) Object.assign(SS.settings, St.checkFile(s, 'mini-daw-style-settings').settings);
   const f = lsGet(LS.feedback); if (f) SS.feedback = St.checkFile(f, 'mini-daw-style-feedback');
+  const ev = lsGet(LS.evalSet); if (ev) SS.evalSet = St.checkFile(ev, 'mini-daw-eval-set');
 } catch (e) { console.warn('stil verisi yüklenemedi:', e.message); }
 
 const settingsFile = () => ({ schema: 'mini-daw-style-settings', version: 1, settings: SS.settings });
-function persist() { lsSet(LS.dataset, SS.dataset); lsSet(LS.settings, settingsFile()); lsSet(LS.feedback, SS.feedback); }
+function persist() { lsSet(LS.dataset, SS.dataset); lsSet(LS.settings, settingsFile()); lsSet(LS.feedback, SS.feedback); lsSet(LS.evalSet, SS.evalSet); }
 function model() { if (!SS.model) SS.model = St.buildModel(SS.dataset, SS.settings, SS.feedback); return SS.model; }
 const confirmedSongs = () => model().stats.byMode.get(St.ALL).songs.size;
 // veri / ayar / geri bildirim değişti → istatistik + model + DAW akorları anında güncellenir
@@ -58,13 +59,13 @@ function setView(v) {
 }
 document.querySelectorAll('input[name=view]').forEach((r) => r.addEventListener('change', (e) => setView(e.target.value)));
 
-const TABS = [['import', 'İçe aktar'], ['songs', 'Şarkılar ve onay'], ['stats', 'İstatistik'], ['model', 'Model ve geri bildirim'], ['prog', 'Progresyon önerici'], ['store', 'Saklama']];
+const TABS = [['import', 'İçe aktar'], ['songs', 'Şarkılar ve onay'], ['stats', 'İstatistik'], ['model', 'Model ve geri bildirim'], ['prog', 'Progresyon önerici'], ['eval', 'Doğrulama'], ['store', 'Saklama']];
 function render() {
   if (view.hidden) return;
   const n = SS.dataset.songs.length, nc = confirmedSongs();
   view.innerHTML = `<div class="st-tabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-tab="${k}" class="${SS.tab === k ? 'on' : ''}" aria-selected="${SS.tab === k}">${l}</button>`).join('')}
     <span class="hint st-count">${n} şarkı · ${nc} şarkıda onaylı bölüm</span></div>
-    <div class="st-body">${({ import: tabImport, songs: tabSongs, stats: tabStats, model: tabModel, prog: tabProg, store: tabStore })[SS.tab]()}</div>`;
+    <div class="st-body">${({ import: tabImport, songs: tabSongs, stats: tabStats, model: tabModel, prog: tabProg, eval: tabEval, store: tabStore })[SS.tab]()}</div>`;
 }
 view.addEventListener('click', (e) => {
   const t = e.target.closest('[data-tab]');
@@ -73,6 +74,8 @@ view.addEventListener('click', (e) => {
   if (b && ACTIONS[b.dataset.act] && (b.tagName === 'BUTTON' || b.tagName === 'TD' || b.tagName === 'A' || b.tagName === 'TR' || b.dataset.click)) ACTIONS[b.dataset.act](b, e);
 });
 view.addEventListener('change', (e) => { const t = e.target; if (t.dataset.act && CHANGES[t.dataset.act]) CHANGES[t.dataset.act](t, e); });
+// doğrulama formu taslağı: yeniden çizimde (ör. hata mesajı) girilen değerler kaybolmasın
+view.addEventListener('input', (e) => { if (e.target.id && e.target.id.startsWith('ev')) (SS.evDraft ||= {})[e.target.id] = e.target.value; });
 
 // ---------------------------------------------------------------- 1) İÇE AKTARMA
 // tek kaynak: src/import-prompt.txt (derlemede buraya gömülür)
@@ -241,6 +244,34 @@ const ACTIONS = {
     else SS.trTo = { tonic: s.tonic, mode: s.mode };
     render();
   },
+  // ---- doğrulama
+  evalAdd: () => {
+    const snap = A.snapshot();
+    if (!snap || !snap.sections.length) { A.status('Önce DAW\'da kaydı analiz edin ve bölümlerin tonunu belirleyin.', 'err'); return; }
+    const artist = $('#evArtist').value.trim(), title = $('#evTitle').value.trim();
+    if (!artist || !title) { A.status('Sanatçı ve şarkı adı gerekli (stil veri setiyle sızıntı kontrolü için).', 'err'); return; }
+    const truth = {};
+    for (const sec of snap.sections) truth[sec.id] = ($(`#evTruth-${sec.id}`) || {}).value || '';
+    const item = Object.assign({ id: 'eval-' + Date.now().toString(36), artist, title, addedAt: new Date().toISOString() }, snap, { truth });
+    const errs = St.validateEvalItem(item);
+    if (errs.length) { SS.evalErr = errs; render(); A.status('Gerçek akor şemasında hata: ' + errs[0], 'err'); return; }
+    SS.evalErr = null;
+    SS.evalSet.items.push(item); SS.evDraft = {}; persist(); render();
+    A.status(`"${title}" doğrulama setine eklendi (${SS.evalSet.items.length} şarkı).`);
+  },
+  evalDel: (b) => { SS.evalSet.items = SS.evalSet.items.filter((x) => x.id !== b.dataset.id); persist(); render(); },
+  evalRun: async () => {
+    if (SS.evalBusy || !SS.evalSet.items.length) return;
+    SS.evalBusy = true; render();
+    try {
+      SS.evalRes = await St.evaluateSet(SS.evalSet.items, { dataset: SS.dataset, settings: SS.settings, feedback: SS.feedback, engine: SS.evalEngine,
+        params: { lambda: SS.settings.lambda, lambdaRhythm: SS.settings.lambdaRhythm, changePct: A.S.proj.chordOpts.changePct, homeEvery: A.S.proj.chordOpts.homeEvery },
+        onProgress: (x) => A.status(`Doğrulama: ayar taraması %${Math.round(x * 100)}`, 'busy') });
+      A.status('Doğrulama tamam.');
+    } finally { SS.evalBusy = false; render(); }
+  },
+  evalRef: () => { if (!SS.evalRes) return; SS.evalSet.reference = { savedAt: new Date().toISOString(), items: SS.evalSet.items.map((x) => x.id), engine: SS.evalRes.engine, fixed: SS.evalRes.fixed.metrics, tuned: SS.evalRes.tuned ? SS.evalRes.tuned.metrics : null, params: SS.evalRes.fixed.params }; persist(); render(); A.status('Sonuç referans olarak kaydedildi.'); },
+  evalExp: () => download(JSON.stringify(SS.evalSet, null, 1), 'dogrulama-seti.json'),
   // ---- saklama
   exp: (b) => {
     const k = b.dataset.k;
@@ -267,6 +298,13 @@ const CHANGES = {
     SS.settings[t.dataset.k] = v; changed();
   },
   fbOn: (t) => { SS.feedback.on = t.checked; changed(); },
+  evalEngine: (t) => { SS.evalEngine = t.value; },
+  evalImp: async (t) => {
+    const f = t.files[0]; t.value = '';
+    if (!f) return;
+    try { const obj = St.checkFile(JSON.parse(await f.text()), 'mini-daw-eval-set'); SS.evalSet = obj; persist(); render(); A.status(`${f.name}: ${obj.items.length} doğrulama şarkısı yüklendi.`); }
+    catch (e) { A.status('İçe aktarılamadı: ' + e.message, 'err'); }
+  },
   prog: (t) => { const k = t.dataset.k; SS.progOpts[k] = t.type === 'checkbox' ? t.checked : k === 'mode' || k === 'ending' ? t.value : +t.value; },
   // kullanıcı süreleri elle değiştirir (yarım ölçü adımı); gösterim ve toplam güncellenir
   progDur: (t) => {
@@ -567,6 +605,41 @@ function tabProg() {
       <div class="row">${dawSectionButtons('to')}</div>
       <button data-act="runTrans">Geçiş akoru öner</button>
       ${trRes}
+    </div></div>`;
+}
+
+// ---------------------------------------------------------------- DOĞRULAMA
+function tabEval() {
+  const snap = A.snapshot();
+  const dv = (id) => (SS.evDraft && SS.evDraft[id]) || '';
+  const P = (x) => (x == null ? '—' : Math.round(x * 100) + '%');
+  const ref = SS.evalSet.reference;
+  const delta = (v, r) => (r == null ? '' : ` <span class="${v >= r ? 'good' : 'bad'}">(${v >= r ? '+' : ''}${Math.round((v - r) * 100)})</span>`);
+  const row = (name, m, r) => `<tr><td>${name}</td>${['core', 'root', 'top3', 'change'].map((k) => `<td>${P(m[k])}${r ? delta(m[k], r[k]) : ''}</td>`).join('')}<td class="hint">${m.units}</td></tr>`;
+  const R = SS.evalRes;
+  const res = R ? `<h3>Sonuç — motor: ${esc(R.engine)}</h3>${R.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('')}
+    <table class="st-t"><thead><tr><th></th><th>core tam eşleşme</th><th>kök derecesi</th><th>doğru akor ilk 3'te</th><th>değişim noktaları (F1)</th><th>birim</th></tr></thead><tbody>
+      ${row(`Sabit ayar (λ ${R.fixed.params.lambda}, λ_ritim ${R.fixed.params.lambdaRhythm}, %X ${R.fixed.params.changePct}, M ${R.fixed.params.homeEvery}) — tüm şarkılar`, R.fixed.metrics, ref && ref.fixed)}
+      ${R.tuned ? row('Ayarlı — her şarkı, ayarında kullanılmadığı turda ölçüldü', R.tuned.metrics, ref && ref.tuned) : ''}
+    </tbody></table>
+    ${ref ? `<p class="hint">Parantezler referansa göre fark (yüzde puan). Referans: ${esc(ref.engine)}, ${esc(new Date(ref.savedAt).toLocaleString())}${ref.items.join() !== SS.evalSet.items.map((x) => x.id).join() ? ' — <b class="bad">doğrulama seti o zamandan değişti, karşılaştırma birebir değil</b>' : ''}.</p>` : ''}
+    <button data-act="evalRef">Bu sonucu referans olarak kaydet</button>
+    ${R.tuned ? `<h4>Katlar (dışarıda bırakılan şarkı → diğerleriyle seçilen ayar)</h4><table class="st-t"><thead><tr><th>şarkı</th><th>λ</th><th>λ_ritim</th><th>%X</th><th>M</th><th>core</th><th>ilk 3</th><th>değişim</th></tr></thead><tbody>${R.tuned.folds.map((f) => { const it = SS.evalSet.items.find((x) => x.id === f.heldOut); return `<tr><td>${esc(it ? it.title : f.heldOut)}</td><td>${f.params.lambda}</td><td>${f.params.lambdaRhythm}</td><td>${f.params.changePct}</td><td>${f.params.homeEvery}</td><td>${P(f.core)}</td><td>${P(f.top3)}</td><td>${P(f.change)}</td></tr>`; }).join('')}</tbody></table>` : ''}` : '';
+  return `<div class="st-grid2"><div>
+      <h3>Doğrulama seti (${SS.evalSet.items.length} şarkı)</h3>
+      <p class="hint">Akorlarını kesin bildiğin şarkıları kendin söyle, DAW'da analiz et, bölümlerin tonunu onayla; burada gerçek akorları gir. Ölçüm aracın senin sesinle ne kadar doğru çalıştığını gösterir; ayarlar bu setle, her şarkı kendi ayarında kullanılmadan seçilir.</p>
+      ${SS.evalSet.items.length ? `<ul class="st-list">${SS.evalSet.items.map((it) => `<li>${esc(it.artist)} – ${esc(it.title)} <span class="hint">${it.sections.length} bölüm · ${it.sections.reduce((a, s) => a + s.endBar - s.startBar + 1, 0)} ölçü</span> <button data-act="evalDel" data-id="${it.id}" class="small danger">sil</button></li>`).join('')}</ul>` : '<p class="hint">Henüz doğrulama şarkısı yok.</p>'}
+      <div class="row"><label>Motor <select data-act="evalEngine" style="width:auto">${[['greedy', 'ölçü ölçü (mevcut)'], ...(C.CHORD_ENGINES && C.CHORD_ENGINES.includes('viterbi') ? [['viterbi', 'süreli Viterbi']] : [])].map(([v, l]) => `<option value="${v}"${SS.evalEngine === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+        <button class="accent" data-act="evalRun"${SS.evalBusy || !SS.evalSet.items.length ? ' disabled' : ''}>${SS.evalBusy ? 'Çalışıyor…' : 'Değerlendir'}</button>
+        <button data-act="evalExp">Dışa aktar</button><label class="file-btn">İçe aktar<input type="file" data-act="evalImp" accept=".json" hidden></label></div>
+      ${res}
+    </div><div>
+      <h3>DAW'daki kaydı ekle</h3>
+      ${snap && snap.sections.length ? `<div class="grid2"><label>Sanatçı<input type="text" id="evArtist" value="${esc(dv('evArtist'))}"></label><label>Şarkı<input type="text" id="evTitle" value="${esc(dv('evTitle'))}"></label></div>
+        ${snap.sections.map((sec) => `<label>${esc(sec.name)} · ${esc(C.keyName(sec.tonic, sec.mode))}${sec.confirmed ? '' : ' <span class="tag warn">ton onaylanmadı</span>'} — gerçek akorlar (${sec.endBar - sec.startBar + 1} ölçü)<input type="text" id="evTruth-${sec.id}" value="${esc(dv('evTruth-' + sec.id))}" placeholder="| ${Array.from({ length: sec.endBar - sec.startBar + 1 }, () => '…').join(' | ')} |"></label>`).join('')}
+        <p class="hint">Ölçü başına bir akor; yarım ölçüler için aynı hücreye iki akor ("| D C#m |"), tekrar için "%", akor yoksa "N.C.".</p>
+        ${SS.evalErr ? `<div class="st-err">${SS.evalErr.map(esc).join('<br>')}</div>` : ''}
+        <button class="accent" data-act="evalAdd">Doğrulama setine ekle</button>` : '<p class="hint">DAW\'da analiz edilmiş, tonu belirlenmiş bölümleri olan bir kayıt yok.</p>'}
     </div></div>`;
 }
 

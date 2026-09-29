@@ -1,6 +1,7 @@
 // Stil verisi ve öneri modülü: şartnamedeki a–e testleri + model kuralları (Node).
 import assert from 'node:assert/strict';
 import { loadCore } from './load-core.mjs';
+import { synthEvalItem, EVAL_SONGS } from './eval-fixtures.mjs';
 
 const { Core, Style } = loadCore();
 const results = [];
@@ -405,6 +406,36 @@ await step('Uygulamanın akorlardan ton tahmini sohbetin önerisini denetler; is
   assert.ok(html.includes('Sadece yapıştırılan akor şemasını dönüştür. Şema yapıştırılmamışsa ya da eksikse akor üretme, hafızandan tamamlama; eksik kısmı warnings'));
   assert.ok(html.includes('Kaynak linkini source_notes.other alanına yaz.'));
   return `Verse: ${v.text}\n    Chorus: ${c.text}\n    C F G C (sohbet: D majör): ${dv.text}`;
+});
+
+let evalItems;
+await step('Doğrulama: metrikler, mevcut sistem referansı, şarkı bazlı dışarıda bırakmayla ayar', async () => {
+  // test melodisi: kendi kaydın gibi analiz edilir; gerçek akorlar elle girilir
+  const test = Core.synthTestVocal(44100);
+  const proj = Core.newProject();
+  proj.audio.offsetSec = test.offsetSec;
+  proj.sections = [{ id: 'v', name: 'Verse', type: 'verse', startBar: 1, endBar: 4, tonic: 1, mode: 'phrygian' }, { id: 'c', name: 'Nakarat', type: 'chorus', startBar: 5, endBar: 8, tonic: 11, mode: 'dorian' }];
+  const st = { duration: test.signal.length / test.sr };
+  st.track = await Core.detectPitch(test.signal, test.sr, proj.pitch);
+  st.rawNotes = Core.segmentNotes(st.track, proj.pitch);
+  const d = Core.derive(proj, st);
+  const melodyItem = { id: 'test-melodisi', artist: 'Test Sanatçı', title: 'Frig–Dorian Testi', meter: '4/4',
+    sections: d.sections.map((s) => ({ id: s.id, name: s.name, type: s.type, startBar: s.startBar, endBar: s.endBar, tonic: s.tonic, mode: s.mode })),
+    notes: d.notes.map((n) => ({ q0: n.q0, q1: n.q1, effMidi: n.effMidi })),
+    truth: { v: '| C#m | D | C#m | D C#m |', c: '| Bm | E | F#m | Bm |' } };
+  evalItems = [melodyItem, ...EVAL_SONGS.map((x) => synthEvalItem(Core, x))];
+  for (const it of evalItems) assert.deepEqual(Style.validateEvalItem(it), [], it.id);
+  assert.deepEqual(Style.parseTruthChart('| C | G |', 3).errors, ['2 ölçü girildi, bölüm 3 ölçü']);
+  // test melodisi, varsayılan ayarlarla: nakaratın 3. ölçüsü (F#m yerine Bm) dışında doğru
+  const m1 = Style.summarize([Style.scoreItem(melodyItem, Style.runFinder(melodyItem, { lambda: 0, lambdaRhythm: 0, changePct: 25, homeEvery: 2 }, null))]);
+  assert.equal(m1.units, 16); assert.equal(m1.core, 14 / 16);
+  // sızıntı yok: doğrulama şarkısı stil veri setinde de varsa o şarkı modelden çıkarılır
+  const res = await Style.evaluateSet(evalItems, { dataset: ds, engine: 'greedy' });
+  for (const f of res.tuned.folds) assert.ok(!f.trainedOn.includes(f.heldOut));
+  const pct = (x) => Math.round(x * 100) + '%';
+  const M = (m) => `core ${pct(m.core)} · kök ${pct(m.root)} · ilk 3 ${pct(m.top3)} · değişim F1 ${pct(m.change)} (${m.units} birim)`;
+  evalItems.greedy = res;
+  return `test melodisi: ${M(m1)}\n    MEVCUT SİSTEM (greedy, varsayılan ayar): ${M(res.fixed.metrics)}\n    greedy, ayarlı (dışarıda bırakılan şarkılarda): ${M(res.tuned.metrics)}\n    şarkı başına (varsayılan): ${res.fixed.perItem.map((x) => `${x.id} ${pct(x.core)}`).join(', ')}`;
 });
 
 console.log(results.join('\n'));

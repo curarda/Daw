@@ -30,6 +30,15 @@ window.__dawAPI = {
   S, C, status, esc, getCtx,
   refresh: () => refresh(),
   preview: (chords, tonic, mode, durs) => Player.previewChords(chords, tonic, mode, durs),
+  // doğrulama öğesi için mevcut analiz: kastedilen notalar + tonu belli bölümler
+  snapshot() {
+    if (!S.d || !S.rawNotes) return null;
+    return {
+      meter: S.proj.settings.meter,
+      sections: S.d.sections.filter((s) => !s.implicit && s.tonic != null).map((s) => ({ id: s.id, name: s.name, type: s.type || null, startBar: s.startBar, endBar: s.endBar, tonic: s.tonic, mode: s.mode, confirmed: !!s.confirmed })),
+      notes: S.d.notes.map((n) => ({ q0: n.q0, q1: n.q1, effMidi: n.effMidi })),
+    };
+  },
   stop: () => Player.stop(),
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir; durs: ölçü cinsinden süreler
