@@ -1102,6 +1102,9 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       else lockU[b * per + l.half] = l.chord;
     }
     const sameLock = (a, b) => sameChord(a, b) && (a.bass ?? null) === (b.bass ?? null);
+    const lockPre = [0];
+    for (let u = 0; u < U; u++) lockPre.push(lockPre[u] + (lockU[u] ? 1 : 0));
+    const hasLock = (a, b) => lockPre[b] - lockPre[a] > 0;
     const cands = diatonicChords(sec.tonic, sec.mode).map((c) => ({ root: c.root, q: c.q, deg: c.deg }));
     for (const l of lockU) if (l && !cands.some((c) => sameLock(c, l))) cands.push(Object.assign({ deg: -1 }, l));
     const nC = cands.length;
@@ -1187,10 +1190,17 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
           const mid = s % per !== 0 ? 0.5 * kappa : 0;
           for (const [key, arr] of table[s]) {
             const pci = Math.floor(key / H), ph = key % H;
-            if (coreK[pci] === coreK[ci]) continue; // aynı core art arda: tek akor sayılır
+            // aynı core art arda: tek akor sayılır (C → Cmaj7 ayrı değişim değil). Ama kullanıcı ikisinden
+            // birini kilitlediyse (ör. D kilitli, ardından Dmaj7 kilitli) buna izin verilir — yoksa yol kalmaz.
+            const sameCore = coreK[pci] === coreK[ci];
+            if (sameCore && pci === ci) continue;
+            const segLocked = sameCore && hasLock(s, e);
             const hp = hStep(ph, d, ci);
             const base = sg.val + trans[pci][ci] - kappa - mid - hp.pen;
-            for (const nd of arr) push(e, ci * H + hp.h, { score: nd.score + base, s, e, ci, prev: nd });
+            for (const nd of arr) {
+              if (sameCore && !segLocked && !hasLock(nd.s, nd.e)) continue;
+              push(e, ci * H + hp.h, { score: nd.score + base, s, e, ci, prev: nd });
+            }
           }
         }
       }
@@ -1207,7 +1217,14 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       if (alts.every((a) => barsDiff(a.u, r.u) >= 2)) alts.push(Object.assign(r, { score: nd.score }));
       if (alts.length >= (o.nBest ?? 3)) break;
     }
-    if (!alts.length) return;
+    if (!alts.length) {
+      // Kısıtlar (kilitler, sürtünme) hiçbir yola izin vermediyse bölüm asla akorsuz kalmasın:
+      // bu bölüm ölçü ölçü (greedy) motorla doldurulur.
+      const fb = buildChords(notes, [sec], g, Object.assign({}, o, { engine: 'greedy' }), locks);
+      for (const x of fb) { x.reason = `${x.reason || ''} · süreli Viterbi bu kilitlerle yol bulamadı, ölçü ölçü motor kullanıldı`; slots.push(x); }
+      if (fb.length) prevChord = fb[fb.length - 1].chord;
+      return;
+    }
     // alternatif seçimi: kullanıcının açık seçimi üstün; yoksa sıcaklık > 0 ise puanla orantılı (softmax) örnekle
     let choice = 0;
     if (o.altChoice && o.altChoice[sec.id] != null) choice = Math.min(alts.length - 1, o.altChoice[sec.id]);

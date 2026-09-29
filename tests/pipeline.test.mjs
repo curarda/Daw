@@ -351,6 +351,40 @@ await step('Mod belirsizliği: "ayırt edici nota yok" ve "merkez belirsiz" ayr�
   return `${nd.text}\n    ${b.ambiguity.find((x) => x.type === 'sameSet').text}\n    süreklilik: önceki E Miksolidya → ${withPrior.candidates.map((c) => c.name + (c.continuity ? '*' : '')).join(', ')} (güçlü kanıtta ilk aday: ${strong.candidates[0].name})`;
 });
 
+await step('Kilitler hiçbir ölçüyü akorsuz bırakmaz (aynı köklü art arda kilitler, rastgele kilit kombinasyonları)', () => {
+  const p4 = JSON.parse(JSON.stringify(proj));
+  p4.sections.forEach((x) => { x.tonic = null; x.mode = null; });
+  const base = Core.derive(p4, st);
+  const bars = (d) => new Set(d.chords.map((c) => c.bar));
+  // kullanıcının yaşadığı durum: D | Dmaj7 | D C#m — önceden verse tamamen siliniyordu
+  p4.chordLocks = [
+    { bar: 2, half: null, chord: { root: 2, q: '', bass: null } },
+    { bar: 3, half: null, chord: { root: 2, q: 'maj7', bass: null } },
+    { bar: 4, half: 0, chord: { root: 2, q: '', bass: null } },
+    { bar: 4, half: 1, chord: { root: 1, q: 'm', bass: null } },
+  ];
+  const d = Core.derive(p4, st);
+  const names = d.chords.filter((c) => c.bar <= 4).map((c) => Core.chordName(c.chord));
+  assert.deepEqual(names, ['C#m', 'D', 'Dmaj7', 'D', 'C#m']);
+  // rastgele kilitler: her ölçüde en az bir akor, her kilit aynen uygulanmış
+  let r = 7; const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const pool = [[1, 'm'], [2, ''], [2, 'maj7'], [11, 'm'], [4, 'add9'], [6, 'm7'], [9, ''], [1, 'sus4'], [7, 'dim']];
+  for (let t = 0; t < 60; t++) {
+    p4.chordLocks = [];
+    for (let b = 1; b <= 8; b++) if (rnd() < 0.5) {
+      const halves = rnd() < 0.3 ? [0, 1] : [null];
+      for (const h of halves) { const [root, q] = pool[Math.floor(rnd() * pool.length)]; p4.chordLocks.push({ bar: b, half: h, chord: { root, q, bass: null } }); }
+    }
+    const dd = Core.derive(p4, st);
+    assert.deepEqual([...bars(dd)], [...bars(base)], 'deneme ' + t + ': ölçü eksik');
+    for (const l of p4.chordLocks) {
+      const sl = dd.chords.find((c) => c.bar === l.bar && (l.half == null || c.half == null || c.half === l.half));
+      assert.ok(sl && Core.sameChord(sl.chord, l.chord), 'deneme ' + t + ': kilit uygulanmadı');
+    }
+  }
+  return `D | Dmaj7 | D C#m kilitli → ${names.join(' · ')} · 60 rastgele kilit kombinasyonunda hiçbir ölçü boş kalmadı`;
+});
+
 await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {
   const pat = (meter, feel) => { const g = Core.makeGrid({ bpm: 120, meter }); const out = []; for (let q = 0; q < g.barQ - 1e-9; q += g.clickQ) out.push(Core.clickKind(g, q, feel)); return out.join(' '); };
   assert.equal(pat('4/4', 'halftime'), 'weak weak snare weak');

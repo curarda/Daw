@@ -1108,7 +1108,7 @@ function setLock(bar, half, chord) {
   status(`Ölçü ${bar}${half != null ? ` (${half + 1}. yarı)` : ''}: ${C.chordName(chord)} kilitlendi.`);
 }
 function renderChordInspector(box, slot) {
-  if (!slot) { box.innerHTML = ''; return; }
+  if (!slot) { box.innerHTML = '<p class="hint">Bu konumda akor yok. Bölümün tonu belirlenmemiş olabilir (4. adım); başka bir akora tıklayın.</p>'; return; }
   const g = S.d.g, sec = S.d.sections.find((s) => s.id === slot.section);
   const nm = (c) => C.chordName(c, slot.flats), pn = (pc) => C.pcName(pc, slot.flats);
   const roleChips = (roles) => roles.filter((r) => r.w >= 0.5).map((r) => `<span class="role ${r.clash ? 'clash' : r.tone ? 'tone' : ''}">${esc(pn(r.pc))}: ${esc(r.role)} <small>×${r.w}</small></span>`).join('') || '<span class="hint">melodi yok</span>';
