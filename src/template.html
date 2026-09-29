@@ -9,6 +9,10 @@
 <body>
 <header id="topbar">
   <div class="brand">Mini DAW <small>vokal → armoni</small></div>
+  <nav class="seg views" role="tablist" aria-label="Görünüm">
+    <label><input type="radio" name="view" value="daw" checked><span>DAW</span></label>
+    <label><input type="radio" name="view" value="style"><span>Stil verisi ve öneri</span></label>
+  </nav>
   <div class="group transport">
     <button id="btnPlay" title="Boşluk tuşu">▶ Çal</button>
     <button id="btnStop" title="Başa sar">■</button>
@@ -27,7 +31,7 @@
   <div id="status" role="status"></div>
 </header>
 
-<main>
+<main id="dawView">
   <aside id="panels">
     <details class="step" open>
       <summary><b>1</b> Proje ayarı</summary>
@@ -135,6 +139,13 @@
       <label title="7, 9/2, 11/4, 6 renk notalarının kök/3/5'e göre eksik puanı. 0 = ceza yok">Renk notası cezası <output id="outColorPen">0</output><input type="range" id="inColorPen" min="0" max="0.5" step="0.05" value="0"></label>
       <p class="hint">Akora tıklayın: en iyi 3 aday, melodi notalarının akordaki rolü, elle yazma ve kilitleme.</p>
       <button id="btnUnlockChords">Tüm akor kilitlerini kaldır</button>
+      <fieldset id="styleBox">
+        <legend>Stil modeli (sevdiğin şarkılardan)</legend>
+        <div id="styleInfo" class="hint">Stil verisi yok — "Stil verisi ve öneri" görünümünden şarkı ekleyin.</div>
+        <label title="0 = saf teori (stil modeli etkisiz)">Stil ağırlığı λ <output id="outLambda">1</output><input type="range" id="inLambda" min="0" max="5" step="0.25" value="1"></label>
+        <label title="0 = hep en iyi aday; artınca en iyi 3 aday arasından puanla orantılı örnekler">Sıcaklık <output id="outChordTemp">0</output><input type="range" id="inChordTemp" min="0" max="3" step="0.1" value="0"></label>
+        <button id="btnReseed" title="Sıcaklık > 0 iken yeni örnek">Yeniden örnekle</button>
+      </fieldset>
     </details>
 
     <details class="step" open>
@@ -184,7 +195,11 @@
   </section>
 </main>
 
+<section id="styleView" hidden></section>
+
 <script id="core">/*__CORE__*/</script>
+<script id="stylecore">/*__STYLECORE__*/</script>
 <script id="app">/*__APP__*/</script>
+<script id="styleapp">/*__STYLEAPP__*/</script>
 </body>
 </html>

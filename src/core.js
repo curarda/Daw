@@ -809,6 +809,29 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
     const home = homeChord(sec.tonic, sec.mode);
     const flats = keyUsesFlats(sec.tonic, sec.mode);
     let cur = null, curBars = 0, sinceHome = 0;
+    // stil modeli (isteğe bağlı): toplam = melodi uyumu + λ·log P(geçiş) + renk puanı
+    const sty = o.style || null;
+    const hist = []; // bu bölümde çalınan ardışık farklı akorlar (stil bağlamı)
+    const ctxFor = (pending) => {
+      const h = pending && !sameChord(hist[hist.length - 1], pending) ? [...hist, pending] : hist;
+      return [h[h.length - 1] || null, h[h.length - 2] || null];
+    };
+    const styleOf = (c, pending) => {
+      if (!sty) return { value: 0, trans: 0, color: 0 };
+      const [p1, p2] = ctxFor(pending);
+      return sty.score(p1, p2, c, sec);
+    };
+    // sıcaklık > 0: en iyi 3 aday arasından puanla orantılı (softmax) örnekle
+    const pick = (list) => {
+      if (!sty || !sty.temperature || list.length < 2) return list[0];
+      let pool = list.slice(0, 3).filter((x) => !x.friction);
+      if (!pool.length) pool = list.slice(0, 3);
+      const mx = Math.max(...pool.map((x) => x.total));
+      const w = pool.map((x) => Math.exp((x.total - mx) / sty.temperature));
+      let r = sty.rng() * w.reduce((a, b) => a + b, 0);
+      for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
+      return pool[pool.length - 1];
+    };
     // ev akoru sayılır: tonik kökte ve ev üçlüsünü içeren akor (ör. C#m, C#m7)
     const homeThird = CHORD_Q[home.q].find((i) => i === 3 || i === 4);
     const isHome = (c) => !!c && c.root === home.root && (homeThird == null || CHORD_Q[c.q].includes(homeThird));
@@ -816,7 +839,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const q0 = (bar - 1) * g.barQ, q1 = q0 + g.barQ;
       const isFirst = bar === sec.startBar, isLast = bar === sec.endBar;
       const bn = slotNotes(notes, q0, q1, g);
-      const evalAll = (sn, extra) => {
+      const evalAll = (sn, extra, pending) => {
         const Wt = sn.reduce((a, b) => a + b.w, 0);
         return cands.map((c) => {
           const r = scoreChord(c, sn, o.colorPenalty);
@@ -824,15 +847,17 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           if (sameChord(c, home)) bonus += 0.06 * Wt;
           if (c.deg === 3 || c.deg === 4) bonus += 0.02 * Wt;
           if (extra) bonus += extra(c, Wt);
-          return Object.assign({ chord: c, total: r.score + bonus }, r);
+          const st = styleOf(c, pending);
+          return Object.assign({ chord: c, melody: r.score + bonus, style: st.value, styleTrans: st.trans, styleColor: st.color, total: r.score + bonus + st.value }, r);
         }).sort((p, q) => q.total - p.total);
       };
-      const evalOne = (c, sn, extra) => {
+      const evalOne = (c, sn, extra, pending) => {
         const r = scoreChord(c, sn, o.colorPenalty);
         const Wt = r.W;
         let bonus = sameChord(c, home) ? 0.06 * Wt : 0;
         if (extra) bonus += extra(c, Wt);
-        return Object.assign({ chord: c, total: r.score + bonus }, r);
+        const st = styleOf(c, pending);
+        return Object.assign({ chord: c, melody: r.score + bonus, style: st.value, styleTrans: st.trans, styleColor: st.color, total: r.score + bonus + st.value }, r);
       };
       const firstExtra = (c, Wt) => {
         let b = 0;
@@ -854,7 +879,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         barChord = cur && !homeDue ? cur : home; barReason = cur && !homeDue ? 'melodi yok — devam' : 'melodi yok — ev akoru';
       } else {
         barCands = evalAll(bn, extraBar);
-        const best = barCands[0];
+        const best = pick(barCands);
         if (!cur) { barChord = best.chord; barReason = isFirst && prevChord ? 'bölüm başı (ortak nota tercihli)' : 'en iyi puan'; }
         else {
           const cs = evalOne(cur, bn, extraBar);
@@ -883,11 +908,12 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           let chord = hc, reason = null, hc2 = null;
           if (hn.length) {
             const ex = endHalf ? homeExtra : null;
-            const cs = evalOne(hc, hn, ex);
-            hc2 = evalAll(hn, ex);
-            const hs = homeDue && !isHome(hc) && !isHome(barChord) ? evalOne(home, hn, ex) : null;
+            const pend = h === 1 ? hc : null;
+            const cs = evalOne(hc, hn, ex, pend);
+            hc2 = evalAll(hn, ex, pend);
+            const hs = homeDue && !isHome(hc) && !isHome(barChord) ? evalOne(home, hn, ex, pend) : null;
             if (hs && !hs.friction && hs.score > 0) { chord = home; reason = homeReason; homeDue = false; }
-            else if (cs.friction) { chord = hc2[0].chord; reason = '(a) yarım ölçüde sürtünme'; }
+            else if (cs.friction) { chord = pick(hc2).chord; reason = '(a) yarım ölçüde sürtünme'; }
             else if (endHalf && !sameChord(hc, home)) {
               const hs = hc2.find((c) => sameChord(c.chord, home));
               if (hs && !hs.friction && hs.total - cs.total >= pct * Math.max(Math.abs(cs.total), 0.25 * cs.W)) { chord = home; reason = 'bölüm sonu — ev akoruna dönüş'; }
@@ -899,7 +925,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       }
       const pushSlot = (sq0, sq1, chord, reason, locked, sn, cList) => {
         const scored = (cList || evalAll(sn)).slice(0, 12);
-        const top = scored.slice(0, 3).map((c) => ({ chord: c.chord, score: c.total, pct: c.W > 0 ? Math.round((100 * c.total) / c.W) : 0, roles: c.roles, friction: c.friction }));
+        const top = scored.slice(0, 3).map((c) => ({ chord: c.chord, score: c.total, melody: c.melody ?? c.total, style: c.style || 0, styleTrans: c.styleTrans || 0, styleColor: c.styleColor || 0, pct: c.W > 0 ? Math.round((100 * c.total) / c.W) : 0, roles: c.roles, friction: c.friction }));
         const curEval = scoreChord(chord, sn, o.colorPenalty);
         const heavy = sn.filter((x) => x.w >= 2);
         const slot = {
@@ -925,6 +951,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         cur = ch;
       }
       sinceHome = slots.some((sl) => sl.bar === bar && sl.section === sec.id && isHome(sl.chord)) ? 0 : sinceHome + 1;
+      for (const sl of slots) if (sl.bar === bar && sl.section === sec.id && !sameChord(hist[hist.length - 1], sl.chord)) hist.push(sl.chord);
     }
     prevChord = cur;
   });
@@ -1332,7 +1359,8 @@ function derive(proj, st) {
   }
   for (const n of notes) n.cw = chordWeight(n, g);
   // 6) akorlar
-  const chords = buildChords(notes, sections, g, proj.chordOpts, proj.chordLocks);
+  const chordOpts = st.style ? Object.assign({}, proj.chordOpts, { style: st.style }) : proj.chordOpts;
+  const chords = buildChords(notes, sections, g, chordOpts, proj.chordLocks);
   // 8) voicing
   voiceChords(chords, notes, sections, { pedal: proj.mixer.pedal });
   return { g, off, bars, sections, notes, keyInfo, correction, chords };

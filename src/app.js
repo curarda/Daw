@@ -25,6 +25,35 @@ const S = {
 };
 window.__daw = S; // hata ayıklama / testler için
 window.__dawCal = () => Cal.last;
+// stil modülünün (styleui.js) kullandığı arayüz
+window.__dawAPI = {
+  S, C, status, esc, getCtx,
+  refresh: () => refresh(),
+  preview: (chords, tonic, mode) => Player.previewChords(chords, tonic, mode),
+  stop: () => Player.stop(),
+  // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
+  placeChords(chords, startBar, key) {
+    const end = startBar + chords.length - 1;
+    const covering = S.proj.sections.filter((s) => !(end < s.startBar || startBar > s.endBar));
+    let note = '';
+    if (!covering.length) {
+      S.proj.sections.push({ id: uid(), name: 'Öneri', startBar, endBar: end, tonic: key.tonic, mode: key.mode });
+      S.proj.sections.sort((a, b) => a.startBar - b.startBar);
+      note = ` "Öneri" bölümü (${C.keyName(key.tonic, key.mode)}) oluşturuldu.`;
+    } else if (covering.some((s) => s.startBar > startBar || s.endBar < end)) {
+      status(`Ölçü ${startBar}–${end} birden fazla bölüme ya da bölüm dışına taşıyor; tek bir bölümün içine yerleştirin.`, 'err');
+      return false;
+    }
+    chords.forEach((ch, i) => {
+      const bar = startBar + i;
+      S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar !== bar);
+      S.proj.chordLocks.push({ bar, half: null, chord: { root: ch.root, q: ch.q, bass: null } });
+    });
+    refresh();
+    status(`${chords.length} akor ölçü ${startBar}–${end} arasına kilitli şablon olarak yerleştirildi.${note}`);
+    return true;
+  },
+};
 
 // ---------------------------------------------------------------- durum satırı
 function status(msg, kind) { const s = $('#status'); s.textContent = msg; s.className = kind || ''; s.title = msg; }
@@ -67,7 +96,10 @@ async function analyze() {
   status(`Analiz tamam: ${S.rawNotes.length} nota.`);
 }
 function refresh() {
-  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0 });
+  // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
+  const style = window.StyleUI ? window.StyleUI.scorer() : null;
+  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0, style });
+  S.d.styleActive = !!style;
   if (S.sel && S.sel.type === 'note' && !S.d.notes.some((n) => n.id === S.sel.id)) S.sel = null;
   renderSections();
   renderInspector();
@@ -250,6 +282,25 @@ const Player = {
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+  },
+  // melodisiz akor önizleme (progresyon önericisi): 1 akor = 1 ölçü, DAW temposunda
+  async previewChords(chords, tonic, mode) {
+    try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
+    this.stop(true);
+    const g = C.makeGrid(S.proj.settings);
+    const sec = { id: 'preview', tonic, mode };
+    const slots = chords.map((ch, i) => ({ chord: ch, section: 'preview', q0: i * g.barQ, q1: (i + 1) * g.barQ }));
+    C.voiceChords(slots, [], [sec]);
+    const T = this.transport();
+    T.cancel(0);
+    for (const e of C.pianoEvents(slots, g)) {
+      const name = Tone.Frequency(e.midi, 'midi').toNote();
+      T.schedule((time) => this.sampler.triggerAttackRelease(name, e.dur, time, e.vel / 127), e.t);
+    }
+    T.start(Tone.now() + 0.1, 0);
+    clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => { T.stop(); T.cancel(0); }, (chords.length * g.barSec + 2) * 1000);
+    status(`Önizleme: ${chords.map((c) => C.chordName(c)).join(' – ')} (${S.proj.settings.bpm} BPM, akor başına 1 ölçü)`);
   },
   stop(silent) {
     if (!this.ready) return;
@@ -953,6 +1004,12 @@ $('#inspector').addEventListener('click', (e) => {
       setLock(slot.bar, half, ch);
     }
     if (act === 'unlockChord') { S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === slot.bar && (slot.half == null || l.half == null || l.half === slot.half))); refresh(); }
+    if (act === 'fbChord' && window.StyleUI) {
+      const sec = S.d.sections.find((x) => x.id === slot.section);
+      const same = S.d.chords.filter((x) => x.section === slot.section && x.q0 < slot.q0 && !C.sameChord(x.chord, slot.chord));
+      const prev = same.length ? same[same.length - 1].chord : null;
+      window.StyleUI.feedbackChord(prev, slot.chord, sec, +b.dataset.v);
+    }
   }
 });
 $('#inspector').addEventListener('change', (e) => {
@@ -974,7 +1031,9 @@ function renderChordInspector(box, slot) {
   const g = S.d.g, sec = S.d.sections.find((s) => s.id === slot.section);
   const nm = (c) => C.chordName(c, slot.flats), pn = (pc) => C.pcName(pc, slot.flats);
   const roleChips = (roles) => roles.filter((r) => r.w >= 0.5).map((r) => `<span class="role ${r.clash ? 'clash' : r.tone ? 'tone' : ''}">${esc(pn(r.pc))}: ${esc(r.role)} <small>×${r.w}</small></span>`).join('') || '<span class="hint">melodi yok</span>';
-  const rows = slot.candidates.map((c) => `<tr><td><b>${esc(nm(c.chord))}</b>${C.sameChord(c.chord, slot.chord) ? ' ✓' : ''}</td><td>${c.pct}</td><td>${roleChips(c.roles)}</td>
+  const sty = !!S.d.styleActive;
+  const fx = (v) => (v >= 0 ? '+' : '') + v.toFixed(2);
+  const rows = slot.candidates.map((c) => `<tr><td><b>${esc(nm(c.chord))}</b>${C.sameChord(c.chord, slot.chord) ? ' ✓' : ''}</td><td>${sty ? `<span title="toplam">${c.score.toFixed(2)}</span> = <span title="melodi uyumu">${fx(c.melody)}</span> <span class="hint">melodi</span> ${fx(c.style)} <span class="hint" title="stil: geçiş ${fx(c.styleTrans)}, renk ${fx(c.styleColor)}">stil</span>` : c.pct}</td><td>${roleChips(c.roles)}</td>
       <td><button data-act="pickChord" data-r="${c.chord.root}" data-q="${c.chord.q}">Seç + kilitle</button></td></tr>`).join('');
   const sug = slot.suggest ? `<tr><td><b>${esc(nm(slot.suggest))}</b></td><td>öneri</td><td class="hint">Minör akorda melodi 2'liye basıyor → sus2 varyantı</td><td><button data-act="pickChord" data-r="${slot.suggest.root}" data-q="${slot.suggest.q}">Seç + kilitle</button></td></tr>` : '';
   const halfTxt = slot.half == null ? 'tüm ölçü' : `${slot.half + 1}. yarı`;
@@ -985,7 +1044,9 @@ function renderChordInspector(box, slot) {
       <span>Neden</span><span>${esc(slot.reason || '')}</span>
       <span>Melodi notalarının rolü</span><span>${roleChips(slot.roles)}</span>
       <span>Seslendirme</span><span>bas ${esc(C.noteName(slot.voicing.bass, slot.flats))} · ${slot.voicing.notes.map((m) => esc(C.noteName(m, slot.flats))).join(' ')}${slot.inversion ? ' (çevrim)' : ''}</span></div>
-    <table><thead><tr><th>En iyi adaylar</th><th>puan</th><th>ağırlıklı melodi notalarının rolü (kök/3/5/7/9)</th><th></th></tr></thead><tbody>${rows}${sug}</tbody></table>
+    <table><thead><tr><th>En iyi adaylar</th><th>${sty ? 'puan = melodi payı + stil payı' : 'puan'}</th><th>ağırlıklı melodi notalarının rolü (kök/3/5/7/9)</th><th></th></tr></thead><tbody>${rows}${sug}</tbody></table>
+    ${sec && sec.tonic != null && window.StyleUI ? `<div class="row" style="margin-top:6px"><span class="hint">Bu akor seçimi (önceki akordan geçiş) — kişisel geri bildirim:</span>
+      <button data-act="fbChord" data-v="1" title="beğen">👍</button><button data-act="fbChord" data-v="-1" title="beğenme">👎</button></div>` : ''}
     <div class="row" style="margin-top:8px">Elle yaz: <input type="text" id="chInput" placeholder="ör. Dmaj7, C#m, F#m7/A" style="width:170px"> ${scopeSel}
       <button data-act="manualChord" class="accent">Uygula + kilitle</button>
       <button data-act="unlockChord"${slot.locked ? '' : ' disabled'}>Kilidi kaldır (otomatiğe dön)</button></div>`;

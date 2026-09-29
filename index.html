@@ -133,11 +133,79 @@ main { flex: 1; display: flex; min-height: 0; }
   #panels { width: 100%; max-height: 45vh; border-right: 0; border-bottom: 1px solid var(--line); }
   #status { text-align: left; }
 }
+
+/* ---------------------------------------------------------------- görünüm sekmeleri + stil verisi */
+[hidden] { display: none !important; }
+.views span { font-size: 13px; padding: 5px 12px; }
+#styleView { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.st-tabs { display: flex; gap: 4px; padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; align-items: center; }
+.st-tabs button.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.st-count { margin-left: auto; }
+.st-body { flex: 1; overflow: auto; padding: 12px 16px 40px; }
+.st-body h3 { font-size: 14px; margin: 14px 0 6px; }
+.st-body h4 { margin: 0 0 4px; }
+.st-body textarea { width: 100%; background: #111318; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; }
+.st-body input[type=text] { width: 100%; }
+.st-grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 8px 24px; }
+.st-grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.st-split { display: grid; grid-template-columns: 260px 1fr; gap: 20px; }
+@media (max-width: 860px) { .st-split { grid-template-columns: 1fr; } .st-grid2 { grid-template-columns: 1fr; } }
+.st-list { list-style: none; margin: 0; padding: 0; }
+.st-list li { padding: 5px 6px; border-bottom: 1px solid var(--line); }
+.st-list li.on { background: var(--panel2); border-radius: 5px; }
+.st-list a { color: var(--text); text-decoration: none; display: block; }
+.st-list a:hover { color: var(--accent); }
+.st-pre { white-space: pre-wrap; background: #111318; border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 11.5px; max-height: 420px; overflow: auto; }
+.st-err { border: 1px solid var(--rec); background: rgba(255, 90, 95, 0.08); border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+.st-err ul { margin: 4px 0 0; padding-left: 18px; }
+.st-err code { color: #ffb3b9; }
+.st-warn { border: 1px solid var(--warn); background: rgba(255, 180, 84, 0.08); border-radius: 6px; padding: 6px 10px; margin: 6px 0; }
+.bad { color: #ff8a8f; } .good { color: var(--ok); }
+button.danger { color: #ff8a8f; }
+button.small { padding: 2px 7px; font-size: 12px; }
+.st-sec { border: 1px solid var(--line); border-left: 3px solid var(--warn); border-radius: 7px; padding: 8px 10px; margin: 10px 0; background: var(--panel); }
+.st-sec.ok { border-left-color: var(--ok); }
+.st-keys { display: flex; flex-wrap: wrap; gap: 6px 24px; align-items: flex-start; margin: 6px 0; }
+.st-keys .chk { margin: 2px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.chip { display: inline-flex; flex-direction: column; align-items: center; min-width: 46px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); line-height: 1.25; }
+.chip small { color: var(--muted); font-size: 11px; text-align: center; }
+.chip.bad { border-color: var(--rec); background: rgba(255, 90, 95, 0.18); }
+.chip.bad small { color: #ffb3b9; }
+.chip.borrow { border-style: dashed; border-color: var(--warn); }
+.chip.nc { opacity: 0.6; }
+.chip.unk { border: 1px dashed var(--rec); }
+.st-modes button.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.st-t { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.st-t td, .st-t th { text-align: left; padding: 4px 8px; border-top: 1px solid var(--line); }
+.st-t th { color: var(--muted); font-weight: 500; }
+td.clk, .role.clk { cursor: pointer; }
+td.clk:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
+.heat { border-collapse: separate; border-spacing: 2px; font-size: 12px; }
+.heat th { color: var(--muted); font-weight: 500; padding: 2px 6px; text-align: center; }
+.heat tbody th { text-align: right; }
+.heat td { width: 40px; height: 30px; text-align: center; border-radius: 3px; font-variant-numeric: tabular-nums; }
+.heat td.empty { background: #15181f; color: #3a4152; }
+.heat td.unsure { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.18) 0 2px, transparent 2px 6px); }
+.heat-legend { display: flex; gap: 8px; align-items: center; margin: 6px 0 12px; font-size: 12px; }
+.heat-legend .bar { display: inline-flex; }
+.heat-legend .bar i { width: 18px; height: 10px; }
+.st-drill { border: 1px solid var(--accent); border-radius: 7px; padding: 6px 10px; margin: 8px 0; background: var(--panel2); }
+.st-drill ul { margin: 4px 0 0; padding-left: 18px; }
+.st-progs { padding-left: 20px; }
+.st-prog { border: 1px solid var(--line); border-radius: 7px; padding: 6px 10px; margin: 8px 0; background: var(--panel); }
+.st-prog.liked { border-color: var(--ok); } .st-prog.disliked { opacity: 0.55; }
+.st-prog .syms { font-size: 16px; font-weight: 600; }
+.st-store { border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: var(--panel); }
 </style>
 </head>
 <body>
 <header id="topbar">
   <div class="brand">Mini DAW <small>vokal → armoni</small></div>
+  <nav class="seg views" role="tablist" aria-label="Görünüm">
+    <label><input type="radio" name="view" value="daw" checked><span>DAW</span></label>
+    <label><input type="radio" name="view" value="style"><span>Stil verisi ve öneri</span></label>
+  </nav>
   <div class="group transport">
     <button id="btnPlay" title="Boşluk tuşu">▶ Çal</button>
     <button id="btnStop" title="Başa sar">■</button>
@@ -156,7 +224,7 @@ main { flex: 1; display: flex; min-height: 0; }
   <div id="status" role="status"></div>
 </header>
 
-<main>
+<main id="dawView">
   <aside id="panels">
     <details class="step" open>
       <summary><b>1</b> Proje ayarı</summary>
@@ -264,6 +332,13 @@ main { flex: 1; display: flex; min-height: 0; }
       <label title="7, 9/2, 11/4, 6 renk notalarının kök/3/5'e göre eksik puanı. 0 = ceza yok">Renk notası cezası <output id="outColorPen">0</output><input type="range" id="inColorPen" min="0" max="0.5" step="0.05" value="0"></label>
       <p class="hint">Akora tıklayın: en iyi 3 aday, melodi notalarının akordaki rolü, elle yazma ve kilitleme.</p>
       <button id="btnUnlockChords">Tüm akor kilitlerini kaldır</button>
+      <fieldset id="styleBox">
+        <legend>Stil modeli (sevdiğin şarkılardan)</legend>
+        <div id="styleInfo" class="hint">Stil verisi yok — "Stil verisi ve öneri" görünümünden şarkı ekleyin.</div>
+        <label title="0 = saf teori (stil modeli etkisiz)">Stil ağırlığı λ <output id="outLambda">1</output><input type="range" id="inLambda" min="0" max="5" step="0.25" value="1"></label>
+        <label title="0 = hep en iyi aday; artınca en iyi 3 aday arasından puanla orantılı örnekler">Sıcaklık <output id="outChordTemp">0</output><input type="range" id="inChordTemp" min="0" max="3" step="0.1" value="0"></label>
+        <button id="btnReseed" title="Sıcaklık > 0 iken yeni örnek">Yeniden örnekle</button>
+      </fieldset>
     </details>
 
     <details class="step" open>
@@ -312,6 +387,8 @@ main { flex: 1; display: flex; min-height: 0; }
     <div id="inspector"><p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p></div>
   </section>
 </main>
+
+<section id="styleView" hidden></section>
 
 <script id="core">/* =====================================================================
    MINI DAW ÇEKİRDEĞİ — DOM'dan bağımsız. Tarayıcıda window.Core,
@@ -1124,6 +1201,29 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
     const home = homeChord(sec.tonic, sec.mode);
     const flats = keyUsesFlats(sec.tonic, sec.mode);
     let cur = null, curBars = 0, sinceHome = 0;
+    // stil modeli (isteğe bağlı): toplam = melodi uyumu + λ·log P(geçiş) + renk puanı
+    const sty = o.style || null;
+    const hist = []; // bu bölümde çalınan ardışık farklı akorlar (stil bağlamı)
+    const ctxFor = (pending) => {
+      const h = pending && !sameChord(hist[hist.length - 1], pending) ? [...hist, pending] : hist;
+      return [h[h.length - 1] || null, h[h.length - 2] || null];
+    };
+    const styleOf = (c, pending) => {
+      if (!sty) return { value: 0, trans: 0, color: 0 };
+      const [p1, p2] = ctxFor(pending);
+      return sty.score(p1, p2, c, sec);
+    };
+    // sıcaklık > 0: en iyi 3 aday arasından puanla orantılı (softmax) örnekle
+    const pick = (list) => {
+      if (!sty || !sty.temperature || list.length < 2) return list[0];
+      let pool = list.slice(0, 3).filter((x) => !x.friction);
+      if (!pool.length) pool = list.slice(0, 3);
+      const mx = Math.max(...pool.map((x) => x.total));
+      const w = pool.map((x) => Math.exp((x.total - mx) / sty.temperature));
+      let r = sty.rng() * w.reduce((a, b) => a + b, 0);
+      for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
+      return pool[pool.length - 1];
+    };
     // ev akoru sayılır: tonik kökte ve ev üçlüsünü içeren akor (ör. C#m, C#m7)
     const homeThird = CHORD_Q[home.q].find((i) => i === 3 || i === 4);
     const isHome = (c) => !!c && c.root === home.root && (homeThird == null || CHORD_Q[c.q].includes(homeThird));
@@ -1131,7 +1231,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const q0 = (bar - 1) * g.barQ, q1 = q0 + g.barQ;
       const isFirst = bar === sec.startBar, isLast = bar === sec.endBar;
       const bn = slotNotes(notes, q0, q1, g);
-      const evalAll = (sn, extra) => {
+      const evalAll = (sn, extra, pending) => {
         const Wt = sn.reduce((a, b) => a + b.w, 0);
         return cands.map((c) => {
           const r = scoreChord(c, sn, o.colorPenalty);
@@ -1139,15 +1239,17 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           if (sameChord(c, home)) bonus += 0.06 * Wt;
           if (c.deg === 3 || c.deg === 4) bonus += 0.02 * Wt;
           if (extra) bonus += extra(c, Wt);
-          return Object.assign({ chord: c, total: r.score + bonus }, r);
+          const st = styleOf(c, pending);
+          return Object.assign({ chord: c, melody: r.score + bonus, style: st.value, styleTrans: st.trans, styleColor: st.color, total: r.score + bonus + st.value }, r);
         }).sort((p, q) => q.total - p.total);
       };
-      const evalOne = (c, sn, extra) => {
+      const evalOne = (c, sn, extra, pending) => {
         const r = scoreChord(c, sn, o.colorPenalty);
         const Wt = r.W;
         let bonus = sameChord(c, home) ? 0.06 * Wt : 0;
         if (extra) bonus += extra(c, Wt);
-        return Object.assign({ chord: c, total: r.score + bonus }, r);
+        const st = styleOf(c, pending);
+        return Object.assign({ chord: c, melody: r.score + bonus, style: st.value, styleTrans: st.trans, styleColor: st.color, total: r.score + bonus + st.value }, r);
       };
       const firstExtra = (c, Wt) => {
         let b = 0;
@@ -1169,7 +1271,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         barChord = cur && !homeDue ? cur : home; barReason = cur && !homeDue ? 'melodi yok — devam' : 'melodi yok — ev akoru';
       } else {
         barCands = evalAll(bn, extraBar);
-        const best = barCands[0];
+        const best = pick(barCands);
         if (!cur) { barChord = best.chord; barReason = isFirst && prevChord ? 'bölüm başı (ortak nota tercihli)' : 'en iyi puan'; }
         else {
           const cs = evalOne(cur, bn, extraBar);
@@ -1198,11 +1300,12 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           let chord = hc, reason = null, hc2 = null;
           if (hn.length) {
             const ex = endHalf ? homeExtra : null;
-            const cs = evalOne(hc, hn, ex);
-            hc2 = evalAll(hn, ex);
-            const hs = homeDue && !isHome(hc) && !isHome(barChord) ? evalOne(home, hn, ex) : null;
+            const pend = h === 1 ? hc : null;
+            const cs = evalOne(hc, hn, ex, pend);
+            hc2 = evalAll(hn, ex, pend);
+            const hs = homeDue && !isHome(hc) && !isHome(barChord) ? evalOne(home, hn, ex, pend) : null;
             if (hs && !hs.friction && hs.score > 0) { chord = home; reason = homeReason; homeDue = false; }
-            else if (cs.friction) { chord = hc2[0].chord; reason = '(a) yarım ölçüde sürtünme'; }
+            else if (cs.friction) { chord = pick(hc2).chord; reason = '(a) yarım ölçüde sürtünme'; }
             else if (endHalf && !sameChord(hc, home)) {
               const hs = hc2.find((c) => sameChord(c.chord, home));
               if (hs && !hs.friction && hs.total - cs.total >= pct * Math.max(Math.abs(cs.total), 0.25 * cs.W)) { chord = home; reason = 'bölüm sonu — ev akoruna dönüş'; }
@@ -1214,7 +1317,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       }
       const pushSlot = (sq0, sq1, chord, reason, locked, sn, cList) => {
         const scored = (cList || evalAll(sn)).slice(0, 12);
-        const top = scored.slice(0, 3).map((c) => ({ chord: c.chord, score: c.total, pct: c.W > 0 ? Math.round((100 * c.total) / c.W) : 0, roles: c.roles, friction: c.friction }));
+        const top = scored.slice(0, 3).map((c) => ({ chord: c.chord, score: c.total, melody: c.melody ?? c.total, style: c.style || 0, styleTrans: c.styleTrans || 0, styleColor: c.styleColor || 0, pct: c.W > 0 ? Math.round((100 * c.total) / c.W) : 0, roles: c.roles, friction: c.friction }));
         const curEval = scoreChord(chord, sn, o.colorPenalty);
         const heavy = sn.filter((x) => x.w >= 2);
         const slot = {
@@ -1240,6 +1343,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         cur = ch;
       }
       sinceHome = slots.some((sl) => sl.bar === bar && sl.section === sec.id && isHome(sl.chord)) ? 0 : sinceHome + 1;
+      for (const sl of slots) if (sl.bar === bar && sl.section === sec.id && !sameChord(hist[hist.length - 1], sl.chord)) hist.push(sl.chord);
     }
     prevChord = cur;
   });
@@ -1647,7 +1751,8 @@ function derive(proj, st) {
   }
   for (const n of notes) n.cw = chordWeight(n, g);
   // 6) akorlar
-  const chords = buildChords(notes, sections, g, proj.chordOpts, proj.chordLocks);
+  const chordOpts = st.style ? Object.assign({}, proj.chordOpts, { style: st.style }) : proj.chordOpts;
+  const chords = buildChords(notes, sections, g, chordOpts, proj.chordLocks);
   // 8) voicing
   voiceChords(chords, notes, sections, { pedal: proj.mixer.pedal });
   return { g, off, bars, sections, notes, keyInfo, correction, chords };
@@ -1769,6 +1874,789 @@ if (typeof module !== 'undefined' && module.exports) module.exports = Core;
 root.Core = Core;
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
+<script id="stylecore">/* =====================================================================
+   STİL VERİSİ VE ÖNERİ — DOM'dan bağımsız (Node testleri de kullanır).
+   Şarkı akor verisi → derece istatistiği → Markov modeli → öneri.
+   Temel sayım birimi ŞARKIDIR: her derece/geçiş/açılış/kapanış bir şarkıda
+   en fazla 1 kez sayılır; toplam tekrar sayısı yalnızca bilgi amaçlıdır.
+   ===================================================================== */
+(function (root) {
+'use strict';
+const C = root.Core;
+const { mod12, MODES, MODE_ORDER, scalePcs, parsePc, pcName, keyUsesFlats } = C;
+
+// ---------------------------------------------------------------- akor sembolü
+// tq (core niteliği): M majör, m minör, d dim, a aug, 5 power (belirsiz), s sus (moddan çıkarılır)
+const SUFFIX = {
+  '': ['M', ''], 'M': ['M', ''], 'maj': ['M', ''], 'major': ['M', ''],
+  'm': ['m', ''], 'min': ['m', ''], '-': ['m', ''], 'minor': ['m', ''],
+  '5': ['5', ''], 'no3': ['5', ''],
+  'dim': ['d', ''], '°': ['d', ''], 'o': ['d', ''],
+  'aug': ['a', ''], '+': ['a', ''], '#5': ['a', ''], '+5': ['a', ''],
+  '7': ['M', '7'], 'dom7': ['M', '7'],
+  'maj7': ['M', 'maj7'], 'M7': ['M', 'maj7'], 'ma7': ['M', 'maj7'], 'Maj7': ['M', 'maj7'], 'j7': ['M', 'maj7'],
+  'm7': ['m', '7'], 'min7': ['m', '7'], '-7': ['m', '7'],
+  'mmaj7': ['m', 'maj7'], 'mMaj7': ['m', 'maj7'], 'mM7': ['m', 'maj7'], 'minmaj7': ['m', 'maj7'], '-maj7': ['m', 'maj7'],
+  '6': ['M', '6'], 'm6': ['m', '6'], '-6': ['m', '6'], '69': ['M', '6/9'], '6/9': ['M', '6/9'], 'm69': ['m', '6/9'], 'm6/9': ['m', '6/9'],
+  '9': ['M', '9'], 'maj9': ['M', 'maj9'], 'M9': ['M', 'maj9'], 'm9': ['m', '9'], 'min9': ['m', '9'], 'mmaj9': ['m', 'maj9'],
+  '11': ['M', '11'], 'm11': ['m', '11'], 'maj11': ['M', 'maj11'],
+  '13': ['M', '13'], 'maj13': ['M', 'maj13'], 'm13': ['m', '13'],
+  'add9': ['M', 'add9'], 'add2': ['M', 'add9'], '2': ['M', 'add9'],
+  'madd9': ['m', 'add9'], 'madd2': ['m', 'add9'], 'm2': ['m', 'add9'],
+  'add11': ['M', 'add11'], 'add4': ['M', 'add11'], 'madd11': ['m', 'add11'], 'madd4': ['m', 'add11'],
+  'sus2': ['s', 'sus2'], 'sus4': ['s', 'sus4'], 'sus': ['s', 'sus4'],
+  '7sus4': ['s', '7sus4'], '7sus': ['s', '7sus4'], '9sus4': ['s', '9sus4'], '9sus': ['s', '9sus4'], '7sus2': ['s', '7sus2'], 'sus2sus4': ['s', 'sus2sus4'], 'sus24': ['s', 'sus2sus4'],
+  'dim7': ['d', '°7'], '°7': ['d', '°7'], 'o7': ['d', '°7'],
+  'm7b5': ['d', 'ø7'], 'ø': ['d', 'ø7'], 'ø7': ['d', 'ø7'], 'm7-5': ['d', 'ø7'], 'min7b5': ['d', 'ø7'], '-7b5': ['d', 'ø7'],
+  '7b9': ['M', '7b9'], '7#9': ['M', '7#9'], '7b5': ['M', '7b5'], '7#11': ['M', '7#11'], '7b13': ['M', '7b13'], '7alt': ['M', '7alt'], '9#11': ['M', '9#11'], '13b9': ['M', '13b9'],
+  'aug7': ['a', '7'], '+7': ['a', '7'], '7#5': ['a', '7'], '7+5': ['a', '7'], '7+': ['a', '7'],
+  'augmaj7': ['a', 'maj7'], '+maj7': ['a', 'maj7'], 'maj7#5': ['a', 'maj7'],
+  'maj7#11': ['M', 'maj7#11'], 'maj9#11': ['M', 'maj9#11'],
+};
+const NC_RE = /^(n\.?\s*c\.?|no\s*chord)$/i;
+function normSuffix(s) {
+  return s.replace(/\s+/g, '').replace(/[()]/g, '').replace(/♯/g, '#').replace(/♭/g, 'b').replace(/−/g, '-')
+    .replace(/^Δ7?/, 'maj7').replace(/^min(?=maj)/, 'm');
+}
+// Sembol → { ok, nc, repeat, root, bass, tq, color, sym } ; tanınmazsa { ok:false }
+function parseSymbol(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  if (!s) return { ok: false, raw: s, why: 'boş' };
+  if (NC_RE.test(s)) return { ok: true, nc: true, sym: 'N.C.', raw: s };
+  if (s === '%' || s === '/' || s === '-') return { ok: true, repeat: true, sym: '%', raw: s };
+  const r = /^([A-Ga-g])([#b♯♭]?)/.exec(s);
+  if (!r) return { ok: false, raw: s, why: 'kök nota yok' };
+  const rootPc = parsePc(r[0]).pc;
+  let rest = s.slice(r[0].length);
+  let bass = null;
+  const bm = /\/\s*([A-Ga-g][#b♯♭]?)\s*$/.exec(rest);
+  if (bm) { bass = parsePc(bm[1]).pc; rest = rest.slice(0, bm.index); }
+  const suf = normSuffix(rest);
+  const hit = SUFFIX[suf];
+  if (!hit) return { ok: false, raw: s, why: `tanınmayan ek "${rest}"` };
+  return { ok: true, root: rootPc, bass: bass === rootPc ? null : bass, tq: hit[0], color: hit[1], sym: s, raw: s };
+}
+
+// ---------------------------------------------------------------- mod adları
+const MODE_ALIASES = {
+  major: 'major', ionian: 'major', majör: 'major', majr: 'major', iyonyen: 'major', maj: 'major',
+  minor: 'minor', aeolian: 'minor', naturalminor: 'minor', minör: 'minor', eolyen: 'minor', doğalminör: 'minor', dogalminor: 'minor', min: 'minor',
+  harmonicminor: 'harmonicMinor', harmonikminör: 'harmonicMinor', harmonikminor: 'harmonicMinor',
+  dorian: 'dorian', dor: 'dorian',
+  phrygian: 'phrygian', frig: 'phrygian', frigyen: 'phrygian', phryg: 'phrygian',
+  lydian: 'lydian', lidya: 'lydian', lidyen: 'lydian',
+  mixolydian: 'mixolydian', miksolidya: 'mixolydian', miksolidyen: 'mixolydian', mixo: 'mixolydian',
+  locrian: 'locrian', lokriyen: 'locrian',
+  majorpentatonic: 'majorPent', pentatonicmajor: 'majorPent', majörpentatonik: 'majorPent', majorpent: 'majorPent', majörpent: 'majorPent',
+  minorpentatonic: 'minorPent', pentatonicminor: 'minorPent', minörpentatonik: 'minorPent', minorpent: 'minorPent', minörpent: 'minorPent',
+};
+function parseMode(s) {
+  if (s == null) return null;
+  if (MODES[s]) return s;
+  const k = String(s).toLocaleLowerCase('tr').replace(/[^a-zçğıöşü]/g, '').replace(/ı/g, 'i');
+  return MODE_ALIASES[k] || MODE_ALIASES[k.replace(/i/g, 'ı')] || null;
+}
+// "C# phrygian", "B Dorian", "C#m" (→ minör), "A" (→ majör)
+function parseKeyText(s) {
+  const t = String(s || '').trim();
+  const r = parsePc(t);
+  if (!r) return null;
+  let rest = t.slice(r.len).trim();
+  if (rest === '' || rest === 'M') return { tonic: r.pc, mode: 'major' };
+  if (rest === 'm') return { tonic: r.pc, mode: 'minor' };
+  const mode = parseMode(rest);
+  return mode ? { tonic: r.pc, mode } : null;
+}
+const modeName = (m) => (MODES[m] ? MODES[m].short : m);
+const keyLabel = (k) => (k ? `${pcName(k.tonic, keyUsesFlats(k.tonic, k.mode))} ${modeName(k.mode)}` : '—');
+const sameKey = (a, b) => !!a && !!b && a.tonic === b.tonic && a.mode === b.mode;
+
+// ---------------------------------------------------------------- dereceler
+const ROMAN = ['I', '♭II', 'II', '♭III', 'III', 'IV', '♭V', 'V', '♭VI', 'VI', '♭VII', 'VII'];
+const MAJOR_IV = { I: 0, II: 2, III: 4, IV: 5, V: 7, VI: 9, VII: 11 };
+const heptaOf = (mode) => MODES[mode].hepta || mode;
+const TQ_IV = { M: [0, 4, 7], m: [0, 3, 7], d: [0, 3, 6], a: [0, 4, 8], 5: [0, 7] };
+// Romen rakamı merkezin MAJÖR gamına göre; büyük harf majör, küçük minör, ° dim, + aug, 5 power (belirsiz)
+function romanOf(iv, tq, mode) {
+  let r = ROMAN[mod12(iv)];
+  if (iv === 6 && mode === 'lydian') r = '♯IV';
+  const acc = /^[♭♯]/.test(r) ? r[0] : '';
+  let num = acc ? r.slice(1) : r;
+  if (tq === 'm' || tq === 'd') num = num.toLowerCase();
+  return acc + num + (tq === 'd' ? '°' : tq === 'a' ? '+' : tq === '5' ? '5' : '');
+}
+const coreKey = (iv, tq) => `${mod12(iv)}${tq}`;
+function coreParts(key) { const m = /^(\d+)(.)$/.exec(key); return { iv: +m[1], tq: m[2] }; }
+const coreLabel = (key, mode) => { if (key === '^') return 'başlangıç'; const p = coreParts(key); return romanOf(p.iv, p.tq, mode); };
+// core + renk eki: "IVmaj7", "vø7" (yarım dim), "vii°7"
+function degreeLabel(core, color, mode) {
+  const lab = coreLabel(core, mode);
+  if (color === 'ø7' || color === '°7') return lab.replace('°', '') + color;
+  return lab + (color || '');
+}
+// eşitlikte (kayan nokta toleransıyla) öndeki anahtarı — düz triad'ı ('') — tercih et
+function argmaxKey(dist) {
+  let best = null, bv = -Infinity;
+  for (const [k, v] of dist) if (v > bv + 1e-9 || (Math.abs(v - bv) <= 1e-9 && k === '')) { best = k; bv = Math.max(bv, v); }
+  return best;
+}
+function parseRoman(s) {
+  const t = String(s || '').trim();
+  if (NC_RE.test(t)) return { nc: true };
+  const m = /^([♭b#♯]?)(VII|VI|V|IV|III|II|I|vii|vi|v|iv|iii|ii|i)(°|o|ø|\+|5)?/.exec(t);
+  if (!m) return null;
+  const up = m[2] === m[2].toUpperCase();
+  const iv = mod12(MAJOR_IV[m[2].toUpperCase()] + (/[b♭]/.test(m[1]) ? -1 : /[#♯]/.test(m[1]) ? 1 : 0));
+  const tq = m[3] === '5' ? '5' : m[3] === '+' ? 'a' : m[3] ? 'd' : up ? 'M' : 'm';
+  return { iv, tq };
+}
+// sus akorunun core niteliği: moddaki diatonik üçlüden çıkarılır (yoksa majör)
+function susQuality(ivRoot, tonic, mode) {
+  const pcs = scalePcs(tonic, heptaOf(mode));
+  const r = mod12(tonic + ivRoot);
+  if (pcs.includes(mod12(r + 3)) && !pcs.includes(mod12(r + 4))) return 'm';
+  return 'M';
+}
+const SUS_TONES = { sus2: [2], sus4: [5], '7sus4': [5, 10], '9sus4': [5, 10, 2], '7sus2': [2, 10], sus2sus4: [2, 5] };
+// Tek akorun derece analizi (üç katman: core, color, bass)
+function analyzeChord(p, tonic, mode) {
+  if (!p || !p.ok) return { unknown: true };
+  if (p.nc) return { nc: true, sym: 'N.C.' };
+  const iv = mod12(p.root - tonic);
+  let tq = p.tq, susTones = null;
+  if (tq === 's') { tq = susQuality(iv, tonic, mode); susTones = SUS_TONES[p.color] || [5]; }
+  const pcsScale = scalePcs(tonic, heptaOf(mode));
+  const corePcs = susTones ? [0, 7, ...susTones.filter((x) => x !== 10)] : TQ_IV[tq];
+  const borrowed = !corePcs.every((i) => pcsScale.includes(mod12(p.root + i)));
+  const bassIv = p.bass == null ? null : mod12(p.bass - tonic);
+  return {
+    sym: p.sym, root: p.root, iv, tq, color: p.color, core: coreKey(iv, tq), bassIv, borrowed,
+    power: tq === '5', label: degreeLabel(coreKey(iv, tq), p.color, mode),
+    bassLabel: bassIv == null ? null : ROMAN[bassIv],
+    ident: `${p.root}|${tq}|${p.color}|${p.bass}`,
+  };
+}
+const QUALITY_NAMES = { M: 'majör', m: 'minör', d: 'dim', a: 'aug', 5: 'belirsiz (power)' };
+
+// ---------------------------------------------------------------- şema doğrulama (schema_version 1)
+function validateSongJson(obj, path = '') {
+  const errs = [];
+  const P = (k) => (path ? `${path}.${k}` : k);
+  const isStr = (v) => typeof v === 'string' && v.trim() !== '';
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) { errs.push(`${path || 'kök'}: nesne olmalı`); return errs; }
+  if (!isStr(obj.artist)) errs.push(`${P('artist')}: boş olmayan metin olmalı`);
+  if (!isStr(obj.title)) errs.push(`${P('title')}: boş olmayan metin olmalı`);
+  if (obj.warnings != null && !(Array.isArray(obj.warnings) && obj.warnings.every((w) => typeof w === 'string'))) errs.push(`${P('warnings')}: metin dizisi olmalı`);
+  if (!Array.isArray(obj.sections) || !obj.sections.length) { errs.push(`${P('sections')}: boş olmayan dizi olmalı`); return errs; }
+  obj.sections.forEach((s, i) => {
+    const sp = `${P('sections')}[${i}]`;
+    if (!s || typeof s !== 'object') { errs.push(`${sp}: nesne olmalı`); return; }
+    if (!isStr(s.name)) errs.push(`${sp}.name: boş olmayan metin olmalı`);
+    if (!Array.isArray(s.chords) || !s.chords.length) errs.push(`${sp}.chords: boş olmayan dizi olmalı`);
+    else s.chords.forEach((c, j) => { if (typeof c !== 'string' || !c.trim()) errs.push(`${sp}.chords[${j}]: boş olmayan metin olmalı (${JSON.stringify(c)})`); });
+    if (s.key_proposals != null) {
+      if (!Array.isArray(s.key_proposals)) errs.push(`${sp}.key_proposals: dizi olmalı`);
+      else s.key_proposals.forEach((k, j) => {
+        const kp = `${sp}.key_proposals[${j}]`;
+        if (!k || typeof k !== 'object') { errs.push(`${kp}: nesne olmalı`); return; }
+        if (k.key != null && k.tonic == null) { if (!parseKeyText(k.key)) errs.push(`${kp}.key: tanınmayan ton "${k.key}"`); }
+        else {
+          if (!parsePc(String(k.tonic ?? ''))) errs.push(`${kp}.tonic: tanınmayan merkez nota ${JSON.stringify(k.tonic)}`);
+          if (!parseMode(k.mode)) errs.push(`${kp}.mode: tanınmayan mod ${JSON.stringify(k.mode)}`);
+        }
+        if (k.confidence != null && !(typeof k.confidence === 'number' && k.confidence >= 0 && k.confidence <= 1)) errs.push(`${kp}.confidence: 0–1 arası sayı olmalı`);
+        if (k.degrees_preview != null && !(Array.isArray(k.degrees_preview) && k.degrees_preview.every((d) => typeof d === 'string'))) errs.push(`${kp}.degrees_preview: metin dizisi olmalı`);
+      });
+    }
+    if (s.degrees_preview != null && !(Array.isArray(s.degrees_preview) && s.degrees_preview.every((d) => typeof d === 'string'))) errs.push(`${sp}.degrees_preview: metin dizisi olmalı`);
+    if (s.warnings != null && !(Array.isArray(s.warnings) && s.warnings.every((w) => typeof w === 'string'))) errs.push(`${sp}.warnings: metin dizisi olmalı`);
+  });
+  return errs;
+}
+// JSON metni → { songs:[kayıt], errors:[yol: mesaj] }
+function parseImportJson(text) {
+  let obj;
+  try { obj = JSON.parse(text); } catch (e) { return { songs: [], errors: [`JSON sözdizimi: ${e.message}`] }; }
+  const errors = [];
+  if (!obj || typeof obj !== 'object') return { songs: [], errors: ['kök: nesne olmalı'] };
+  if (obj.schema_version !== 1) errors.push(`schema_version: 1 olmalı (${JSON.stringify(obj.schema_version)} geldi)`);
+  const list = Array.isArray(obj.songs) ? obj.songs : [obj];
+  if (Array.isArray(obj.songs) && !obj.songs.length) errors.push('songs: boş olmayan dizi olmalı');
+  list.forEach((s, i) => errors.push(...validateSongJson(s, Array.isArray(obj.songs) ? `songs[${i}]` : '')));
+  if (errors.length) return { songs: [], errors };
+  return { songs: list.map((s) => songFromJson(s)), errors: [] };
+}
+function proposalFrom(k) {
+  const kk = k.tonic == null && k.key != null ? parseKeyText(k.key) : { tonic: parsePc(String(k.tonic)).pc, mode: parseMode(k.mode) };
+  return { tonic: kk.tonic, mode: kk.mode, confidence: k.confidence ?? null, reason: k.reason ?? k.rationale ?? null, degreesPreview: k.degrees_preview || null };
+}
+function songFromJson(o) {
+  return {
+    id: newId(), artist: o.artist.trim(), title: o.title.trim(), source: 'json', importedAt: new Date().toISOString(),
+    warnings: o.warnings || [], fixes: {},
+    sections: o.sections.map((s) => {
+      const proposals = (s.key_proposals || []).map(proposalFrom);
+      return {
+        name: s.name.trim(), chords: s.chords.map((c) => c.trim()), proposals,
+        degreesPreview: s.degrees_preview || null, warnings: s.warnings || [],
+        selected: proposals[0] ? { tonic: proposals[0].tonic, mode: proposals[0].mode } : null, confirmed: false,
+      };
+    }),
+  };
+}
+// Yedek düz metin: başlık satırları + "[Verse] C#m D ..." ya da DAW'ın akor şeması
+function parseImportText(text, meta = {}) {
+  const errors = [];
+  let artist = meta.artist || '', title = meta.title || '';
+  const sections = [];
+  let cur = null;
+  text.split(/\r?\n/).forEach((line, li) => {
+    const l = line.trim();
+    if (!l) return;
+    const hm = /^(sanatçı|sanatci|artist|şarkı|sarki|title|başlık|baslik)\s*:\s*(.+)$/i.exec(l);
+    if (hm) { if (/sanat|artist/i.test(hm[1])) artist = hm[2].trim(); else title = hm[2].trim(); return; }
+    if (/^tempo\s*:/i.test(l)) return;
+    const sm = /^\[([^\]]+)\]\s*(.*)$/.exec(l);
+    let body = l;
+    if (sm) {
+      const inner = sm[1].split(/[:|]/);
+      cur = { name: inner[0].trim(), chords: [], proposals: [], degreesPreview: null, warnings: [], selected: null, confirmed: false };
+      // anahtar: "[Chorus: B dorian]" ya da başlıktan sonra mod adıyla "B Dorian — ölçü 5–8"
+      // (başlıktan sonraki "A" / "C#m" tek başına akordur, ton sayılmaz)
+      let k = inner[1] ? parseKeyText(inner[1].replace(/\(öneri\)/, '').trim()) : null;
+      if (!k) {
+        const tail = (/^(.*?)(?:\s*[—-]\s*ölçü.*)?$/.exec(sm[2]) || [])[1] || '';
+        const pk = parsePc(tail.trim());
+        const rest = pk ? tail.trim().slice(pk.len).replace(/\(öneri\)/, '').trim() : '';
+        if (pk && rest.length > 1 && parseMode(rest)) { k = { tonic: pk.pc, mode: parseMode(rest) }; body = ''; }
+        else body = sm[2];
+      } else body = sm[2];
+      if (k) { cur.proposals.push({ tonic: k.tonic, mode: k.mode, confidence: null, reason: 'metin başlığından', degreesPreview: null }); cur.selected = { tonic: k.tonic, mode: k.mode }; }
+      if (/^\s*[—-]\s*ölçü/.test(body)) body = '';
+      sections.push(cur);
+    }
+    if (!body) return;
+    if (!cur) { cur = { name: 'Bölüm', chords: [], proposals: [], degreesPreview: null, warnings: [], selected: null, confirmed: false }; sections.push(cur); }
+    for (const tok of body.split(/[\s|]+/)) if (tok) cur.chords.push(tok);
+    void li;
+  });
+  if (!artist.trim()) errors.push('artist: sanatçı adı gerekli (başlık satırı "Sanatçı: …" ya da form alanı)');
+  if (!title.trim()) errors.push('title: şarkı adı gerekli (başlık satırı "Şarkı: …" ya da form alanı)');
+  if (!sections.length) errors.push('sections: en az bir "[Bölüm] akorlar" satırı gerekli');
+  sections.forEach((s, i) => { if (!s.chords.length) errors.push(`sections[${i}] (${s.name}): akor yok`); });
+  if (errors.length) return { songs: [], errors };
+  return { songs: [{ id: newId(), artist: artist.trim(), title: title.trim(), source: 'text', importedAt: new Date().toISOString(), warnings: [], fixes: {}, sections }], errors: [] };
+}
+let idCounter = 0;
+function newId() { idCounter++; return 'song-' + Date.now().toString(36) + '-' + idCounter.toString(36) + Math.random().toString(36).slice(2, 5); }
+const normText = (s) => String(s || '').toLocaleLowerCase('tr').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ığüşöç]+/g, ' ').trim();
+const songKey = (s) => `${normText(s.artist)}|${normText(s.title)}`;
+function findDuplicate(dataset, song) { return dataset.songs.find((x) => x.id !== song.id && songKey(x) === songKey(song)) || null; }
+
+// ---------------------------------------------------------------- bölüm analizi
+// Düzeltilmiş semboller (song.fixes) uygulanır; "%" önceki akoru tekrarlar.
+function sectionSymbols(song, sec) { return sec.chords.map((c) => (song.fixes && song.fixes[c] != null ? song.fixes[c] : c)); }
+function unknownSymbols(song) {
+  const out = new Map();
+  song.sections.forEach((sec, si) => sectionSymbols(song, sec).forEach((c, ci) => {
+    const p = parseSymbol(c);
+    if (!p.ok) { const raw = sec.chords[ci]; if (!out.has(raw)) out.set(raw, { raw, why: p.why, where: [] }); out.get(raw).where.push(`${sec.name} #${ci + 1}`); void si; }
+  }));
+  return [...out.values()];
+}
+function analyzeSection(song, sec, key) {
+  const syms = sectionSymbols(song, sec);
+  const items = [];
+  let prev = null;
+  for (const s of syms) {
+    let p = parseSymbol(s);
+    if (p.ok && p.repeat) p = prev || { ok: true, nc: true, sym: 'N.C.' };
+    items.push(key ? analyzeChord(p, key.tonic, key.mode) : (p.ok ? { sym: p.sym, nc: !!p.nc } : { unknown: true }));
+    if (p.ok && !p.nc) prev = p;
+    if (p.ok && p.nc) prev = null;
+  }
+  const unknown = items.some((x) => x.unknown);
+  // aynı akor art arda → tek akor; N.C. segmentleri böler
+  const segments = [];
+  let seg = [];
+  const chordSeq = [];
+  for (const it of items) {
+    if (it.unknown) continue;
+    if (it.nc) { if (seg.length) segments.push(seg); seg = []; chordSeq.push(it); continue; }
+    if (seg.length && seg[seg.length - 1].ident === it.ident) continue;
+    seg.push(it);
+    if (!(chordSeq.length && chordSeq[chordSeq.length - 1].ident === it.ident)) chordSeq.push(it);
+  }
+  if (seg.length) segments.push(seg);
+  // core geçişleri: aynı core'a geçiş (ör. C → Cmaj7) harmonik değişim sayılmaz
+  const coreSegs = segments.map((sg) => sg.reduce((a, it) => { if (!a.length || a[a.length - 1].core !== it.core) a.push(it); return a; }, []));
+  const nonNc = items.filter((x) => !x.nc && !x.unknown);
+  return {
+    items, segments, coreSegs, unknown,
+    first: nonNc[0] || null, last: nonNc[nonNc.length - 1] || null,
+    startsNc: !!items[0] && !!items[0].nc, endsNc: !!items[items.length - 1] && !!items[items.length - 1].nc,
+    loop: key ? detectLoop(chordSeq.filter((x) => !x.nc)) : null,
+  };
+}
+// Tekrar eden döngü: en kısa periyot p (≥2) ile dizinin tamamı kendini tekrarlıyorsa
+function detectLoop(seq) {
+  const n = seq.length;
+  for (let p = 2; p <= Math.floor(n / 2); p++) {
+    let ok = true;
+    for (let i = p; i < n; i++) if (seq[i].ident !== seq[i - p].ident) { ok = false; break; }
+    if (ok) return { period: p, repeats: Math.round((n / p) * 10) / 10, pattern: seq.slice(0, p).map((x) => x.label), symbols: seq.slice(0, p).map((x) => x.sym) };
+  }
+  return null;
+}
+// degrees_preview karşılaştırması: yalnızca seçili ton, önizlemenin ait olduğu önerinin tonuyla aynıysa
+function previewFor(sec, key) {
+  if (!key) return null;
+  const withOwn = sec.proposals.find((p) => sameKey(p, key) && p.degreesPreview);
+  if (withOwn) return withOwn.degreesPreview;
+  if (sec.degreesPreview && sec.proposals[0] && sameKey(sec.proposals[0], key)) return sec.degreesPreview;
+  return null;
+}
+function comparePreview(song, sec, key) {
+  const prev = previewFor(sec, key);
+  if (!prev) return { valid: false, mismatches: [], lengthMismatch: false };
+  const an = analyzeSection(song, sec, key);
+  const mismatches = [];
+  an.items.forEach((it, i) => {
+    if (i >= prev.length || it.unknown) return;
+    const pr = parseRoman(prev[i]);
+    let ok;
+    if (!pr) ok = false;
+    else if (it.nc || pr.nc) ok = !!it.nc === !!pr.nc;
+    else if (it.power || pr.tq === '5' || it.color.startsWith('sus') || /sus/.test(it.color)) ok = pr.iv === it.iv; // nitelik belirsiz: yalnız kök
+    else ok = pr.iv === it.iv && pr.tq === it.tq;
+    if (!ok) mismatches.push({ index: i, chord: it.sym, expected: it.nc ? 'N.C.' : it.label, preview: prev[i] });
+  });
+  return { valid: true, mismatches, lengthMismatch: prev.length !== an.items.length, previewLength: prev.length };
+}
+
+// ---------------------------------------------------------------- istatistik
+const ALL = '*';
+function emptyBucket() {
+  return { songs: new Set(), degrees: new Map(), colors: new Map(), trans: new Map(), trans2: new Map(), ctx1: new Map(), ctx2: new Map(), open: new Map(), close: new Map(), qual: new Map() };
+}
+// map: key → { songs:Set, occ, refs:[{song, section}] }
+function bump(map, key, songId, secName, occ = 1) {
+  let e = map.get(key);
+  if (!e) { e = { songs: new Set(), occ: 0, refs: [] }; map.set(key, e); }
+  e.occ += occ;
+  if (!e.songs.has(songId)) e.songs.add(songId);
+  if (!e.refs.some((r) => r.song === songId && r.section === secName)) e.refs.push({ song: songId, section: secName });
+}
+function confirmedKey(sec) { return sec.confirmed && sec.selected ? sec.selected : null; }
+function buildStats(dataset) {
+  const byMode = new Map();
+  const bucket = (m) => { if (!byMode.has(m)) byMode.set(m, emptyBucket()); return byMode.get(m); };
+  bucket(ALL);
+  const inter = new Map(), shifts = new Map();
+  const songInfo = new Map();
+  for (const song of dataset.songs) {
+    const info = { loops: [], confirmed: 0, sections: song.sections.length, unknown: unknownSymbols(song).length };
+    songInfo.set(song.id, info);
+    const analyzed = song.sections.map((sec) => { const k = confirmedKey(sec); return k ? { sec, key: k, an: analyzeSection(song, sec, k) } : null; });
+    analyzed.forEach((a) => {
+      if (!a || a.an.unknown) return;
+      info.confirmed++;
+      if (a.an.loop) info.loops.push({ section: a.sec.name, ...a.an.loop });
+      for (const b of [bucket(a.key.mode), bucket(ALL)]) {
+        b.songs.add(song.id);
+        const nm = a.sec.name;
+        for (const it of a.an.items) {
+          if (it.nc || it.unknown) continue;
+          bump(b.qual, it.tq, song.id, nm);
+        }
+        for (const sg of a.an.segments) for (const it of sg) {
+          bump(b.degrees, it.core, song.id, nm);
+          let cm = b.colors.get(it.core);
+          if (!cm) { cm = new Map(); b.colors.set(it.core, cm); }
+          bump(cm, it.color, song.id, nm);
+        }
+        for (const cs of a.an.coreSegs) {
+          for (let i = 1; i < cs.length; i++) {
+            bump(b.trans, `${cs[i - 1].core}>${cs[i].core}`, song.id, nm);
+            bump(b.ctx1, cs[i - 1].core, song.id, nm);
+            if (i >= 2) {
+              bump(b.trans2, `${cs[i - 2].core}>${cs[i - 1].core}>${cs[i].core}`, song.id, nm);
+              bump(b.ctx2, `${cs[i - 2].core}>${cs[i - 1].core}`, song.id, nm);
+            }
+          }
+        }
+        if (a.an.first) bump(b.open, a.an.first.core, song.id, nm);
+        if (a.an.last) bump(b.close, a.an.last.core, song.id, nm);
+      }
+    });
+    // bölümler arası geçiş (N.C. sınırında sayılmaz); iki bölümün merkez+modu da kaydedilir
+    for (let i = 1; i < analyzed.length; i++) {
+      const A = analyzed[i - 1], B = analyzed[i];
+      if (!A || !B || A.an.unknown || B.an.unknown || A.an.endsNc || B.an.startsNc || !A.an.last || !B.an.first) continue;
+      const iv = mod12(B.key.tonic - A.key.tonic);
+      const k = `${A.key.mode}|${B.key.mode}|${iv}|${A.an.last.core}>${B.an.first.core}`;
+      bump(inter, k, song.id, `${A.sec.name} → ${B.sec.name}`);
+      const e = inter.get(k);
+      e.meta = { fromMode: A.key.mode, toMode: B.key.mode, iv, from: A.an.last.core, to: B.an.first.core };
+      (e.examples ||= []).push({ song: song.id, from: { ...A.key, sym: A.an.last.sym }, to: { ...B.key, sym: B.an.first.sym } });
+      bump(shifts, `${A.key.mode}|${B.key.mode}|${iv}`, song.id, `${A.sec.name} → ${B.sec.name}`);
+      shifts.get(`${A.key.mode}|${B.key.mode}|${iv}`).meta = { fromMode: A.key.mode, toMode: B.key.mode, iv };
+    }
+  }
+  return { byMode, inter, shifts, songInfo, songs: new Map(dataset.songs.map((s) => [s.id, s])) };
+}
+const nSongs = (e) => (e ? e.songs.size : 0);
+function modeSongCounts(stats) {
+  const out = {};
+  for (const m of MODE_ORDER) out[m] = stats.byMode.has(m) ? stats.byMode.get(m).songs.size : 0;
+  out[ALL] = stats.byMode.get(ALL).songs.size;
+  return out;
+}
+
+// ---------------------------------------------------------------- MODEL
+const MODEL_DEFAULTS = { k: 10, alpha: 0.5, lambda: 1, chordTemperature: 0, seed: 1, minCtxSongs: 5, secondOrder: true, lowDataSongs: 20 };
+// moda uygun (diatonik) core'lar
+function diatonicCores(mode) {
+  const sc = MODES[heptaOf(mode)].steps;
+  const out = [];
+  for (let d = 0; d < 7; d++) {
+    const r = sc[d], i3 = mod12(sc[(d + 2) % 7] - r), i5 = mod12(sc[(d + 4) % 7] - r);
+    const tq = i3 === 4 && i5 === 7 ? 'M' : i3 === 3 && i5 === 7 ? 'm' : i3 === 3 && i5 === 6 ? 'd' : i3 === 4 && i5 === 8 ? 'a' : null;
+    if (tq) out.push(coreKey(r, tq));
+  }
+  return out;
+}
+const COLOR_TONES = { '': [], '7': [10], 'maj7': [11], '6': [9], 'add9': [2], '9': [10, 2], 'sus2': [2], 'sus4': [5], 'ø7': [10], '°7': [9] };
+function modeColors(core, mode) {
+  const { iv, tq } = coreParts(core);
+  const sc = MODES[heptaOf(mode)].steps;
+  const out = [];
+  for (const [col, tones] of Object.entries(COLOR_TONES)) {
+    if ((col === 'ø7' || col === '°7') !== (tq === 'd')) continue;
+    if (tq === '5' && col !== '') continue;
+    if (tq === 'd' && col === '') { out.push(col); continue; }
+    if (tones.every((t) => sc.includes(mod12(iv + t)))) out.push(col);
+  }
+  return out;
+}
+const homeCore = (mode) => { const h = C.homeChord(0, mode); return coreKey(0, h.q === 'm' ? 'm' : h.q === 'dim' ? 'd' : 'M'); };
+
+function feedbackIndex(fb) {
+  const net = new Map();
+  if (!fb || !fb.on) return { mult: () => 1, banned: new Set() };
+  for (const e of fb.events || []) for (const [a, b] of e.transitions || []) {
+    const k = `${e.mode}|${a}>${b}`;
+    net.set(k, (net.get(k) || 0) + (e.like > 0 ? 1 : -1));
+  }
+  return {
+    mult: (mode, a, b) => { const n = net.get(`${mode}|${a}>${b}`) || 0; return Math.min(2, Math.max(0.5, Math.pow(1.25, n))); },
+    banned: new Set(fb.banned || []),
+    net,
+  };
+}
+function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = null) {
+  const o = Object.assign({}, MODEL_DEFAULTS, settings);
+  const stats = prebuiltStats || buildStats(dataset);
+  const fb = feedbackIndex(feedback);
+  const B = (m) => stats.byMode.get(m) || emptyBucket();
+  const pool = B(ALL);
+  const nMode = (m) => B(m).songs.size;
+  const vocabCache = new Map();
+  function vocab(mode) {
+    if (vocabCache.has(mode)) return vocabCache.get(mode);
+    const set = new Set(diatonicCores(mode));
+    for (const k of B(mode).degrees.keys()) set.add(k);
+    for (const k of pool.degrees.keys()) set.add(k);
+    const v = [...set];
+    vocabCache.set(mode, v);
+    return v;
+  }
+  // sayım haritasından yumuşatılmış dağılım
+  function smooth(countOf, support, dia) {
+    const w = new Map();
+    let sum = 0;
+    for (const b of support) { const x = countOf(b) + (dia.has(b) ? o.alpha : 0); if (x > 0) { w.set(b, x); sum += x; } }
+    if (sum <= 0) { const d = support.filter((b) => dia.has(b)); for (const b of d) w.set(b, 1 / d.length); return w; }
+    for (const [b, x] of w) w.set(b, x / sum);
+    return w;
+  }
+  function pooled(pm, pp, n) {
+    const out = new Map();
+    const keys = new Set([...pm.keys(), ...pp.keys()]);
+    const den = n + o.k;
+    for (const b of keys) out.set(b, den > 0 ? (n * (pm.get(b) || 0) + o.k * (pp.get(b) || 0)) / den : pm.get(b) || 0);
+    return out;
+  }
+  function withFeedback(mode, a, dist) {
+    if (!feedback || !feedback.on) return dist;
+    let sum = 0;
+    const out = new Map();
+    for (const [b, p] of dist) { const q = p * fb.mult(mode, a, b); out.set(b, q); sum += q; }
+    for (const [b, q] of out) out.set(b, q / sum);
+    return out;
+  }
+  const cache = new Map();
+  // P(sonraki core | önceki core(lar), mod)
+  function next(mode, a, a2 = null) {
+    const ck = `${mode}|${a2}|${a}`;
+    if (cache.has(ck)) return cache.get(ck);
+    const dia = new Set(diatonicCores(mode));
+    const support = vocab(mode).filter((b) => b !== a);
+    const order2 = (bk) => o.secondOrder && a2 != null && nSongs(bk.ctx2.get(`${a2}>${a}`)) >= o.minCtxSongs;
+    const distOf = (bk) => (order2(bk)
+      ? smooth((b) => nSongs(bk.trans2.get(`${a2}>${a}>${b}`)), support, dia)
+      : smooth((b) => nSongs(bk.trans.get(`${a}>${b}`)), support, dia));
+    const d = withFeedback(mode, a, pooled(distOf(B(mode)), distOf(pool), nMode(mode)));
+    d.order = order2(B(mode)) || order2(pool) ? 2 : 1;
+    cache.set(ck, d);
+    return d;
+  }
+  function edge(mode, which) {
+    const ck = `${mode}|${which}`;
+    if (cache.has(ck)) return cache.get(ck);
+    const dia = new Set(diatonicCores(mode));
+    const support = vocab(mode);
+    const d0 = pooled(smooth((b) => nSongs(B(mode)[which].get(b)), support, dia), smooth((b) => nSongs(pool[which].get(b)), support, dia), nMode(mode));
+    const d = which === 'open' ? withFeedback(mode, '^', d0) : d0;
+    cache.set(ck, d);
+    return d;
+  }
+  function color(mode, core) {
+    const ck = `${mode}|c|${core}`;
+    if (cache.has(ck)) return cache.get(ck);
+    const fit = modeColors(core, mode);
+    const cm = B(mode).colors.get(core) || new Map(), cp = pool.colors.get(core) || new Map();
+    const support = [...new Set([...fit, ...cm.keys(), ...cp.keys(), ''])];
+    const dia = new Set(fit.length ? fit : ['']);
+    const d = pooled(smooth((c) => nSongs(cm.get(c)), support, dia), smooth((c) => nSongs(cp.get(c)), support, dia), nMode(mode));
+    cache.set(ck, d);
+    return d;
+  }
+  function songsFor(mode, key, kind = 'trans') {
+    const e = B(mode)[kind].get(key);
+    const ep = pool[kind].get(key);
+    return { mode: e ? [...e.songs] : [], pool: ep ? [...ep.songs] : [], refs: (e || ep || { refs: [] }).refs };
+  }
+  return { settings: o, stats, vocab, next, open: (m) => edge(m, 'open'), close: (m) => edge(m, 'close'), color, nMode, songsFor, feedback: fb, diatonic: diatonicCores };
+}
+
+// ---------------------------------------------------------------- k ve α önerisi: şarkı bazlı çapraz doğrulama
+function songTransitions(song) {
+  const out = [];
+  for (const sec of song.sections) {
+    const k = confirmedKey(sec);
+    if (!k) continue;
+    const an = analyzeSection(song, sec, k);
+    if (an.unknown) continue;
+    const seen = new Set();
+    for (const cs of an.coreSegs) for (let i = 1; i < cs.length; i++) {
+      const key = `${cs[i - 1].core}>${cs[i].core}`;
+      if (seen.has(key)) continue; // şarkı başına 1
+      seen.add(key);
+      out.push({ mode: k.mode, a: cs[i - 1].core, b: cs[i].core });
+    }
+  }
+  return out;
+}
+function suggestKAlpha(dataset, base = {}, grid = {}) {
+  const ks = grid.k || [0, 1, 2, 5, 10, 20, 50];
+  const alphas = grid.alpha || [0.05, 0.1, 0.25, 0.5, 1, 2];
+  const songs = dataset.songs.filter((s) => songTransitions(s).length);
+  if (songs.length < 3) return { ok: false, reason: `Çapraz doğrulama için geçişi olan en az 3 onaylı şarkı gerekli (${songs.length} var).`, table: [] };
+  const folds = songs.map((s) => ({ held: s, trans: songTransitions(s), stats: buildStats({ songs: dataset.songs.filter((x) => x.id !== s.id) }) }));
+  const table = [];
+  for (const k of ks) for (const alpha of alphas) {
+    let ll = 0, n = 0;
+    for (const f of folds) {
+      const m = buildModel(null, Object.assign({}, base, { k, alpha, secondOrder: false }), null, f.stats);
+      for (const t of f.trans) { ll += Math.log(Math.max(1e-4, m.next(t.mode, t.a).get(t.b) || 0)); n++; }
+    }
+    table.push({ k, alpha, meanLL: ll / n, n });
+  }
+  table.sort((a, b) => b.meanLL - a.meanLL);
+  return { ok: true, best: table[0], table, songs: songs.length };
+}
+
+// ---------------------------------------------------------------- akor bulucu entegrasyonu
+const Q2TC = { '': ['M', ''], m: ['m', ''], dim: ['d', ''], aug: ['a', ''], maj7: ['M', 'maj7'], m7: ['m', '7'], 7: ['M', '7'], sus2: ['s', 'sus2'], sus4: ['s', 'sus4'], add9: ['M', 'add9'], madd9: ['m', 'add9'], m7b5: ['d', 'ø7'], dim7: ['d', '°7'], 6: ['M', '6'], m6: ['m', '6'], mMaj7: ['m', 'maj7'], 9: ['M', '9'], m9: ['m', '9'], maj9: ['M', 'maj9'], 5: ['5', ''] };
+function chordToCore(ch, tonic, mode) {
+  const tc = Q2TC[ch.q] || ['M', ''];
+  const iv = mod12(ch.root - tonic);
+  const tq = tc[0] === 's' ? susQuality(iv, tonic, mode) : tc[0];
+  return { core: coreKey(iv, tq), color: tc[1] };
+}
+function coreToChord(core, color, tonic) {
+  const { iv, tq } = coreParts(core);
+  const root = mod12(tonic + iv);
+  const pick = Object.entries(Q2TC).find(([, v]) => (v[0] === tq || (v[0] === 's' && (tq === 'M' || tq === 'm'))) && v[1] === color);
+  const q = pick ? pick[0] : { M: '', m: 'm', d: 'dim', a: 'aug', 5: '5' }[tq];
+  return { root, q };
+}
+function mulberry32(a) {
+  return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+// Core.buildChords için stil puanlayıcı: λ × log P(geçiş) + λ × log P(renk)
+// log olasılıklar uniform'a göre normalize edilir (veri yokken etkisi 0; akorda kalmak 0).
+function makeStyleScorer(model, opts = {}) {
+  const lambda = opts.lambda ?? model.settings.lambda;
+  const rng = mulberry32((opts.seed ?? model.settings.seed) * 9973 + 17);
+  return {
+    lambda, temperature: opts.temperature ?? model.settings.chordTemperature, rng,
+    score(prev, prev2, ch, sec) {
+      if (!lambda || sec.tonic == null) return { value: 0, trans: 0, color: 0 };
+      const c = chordToCore(ch, sec.tonic, sec.mode);
+      let trans = 0, color = 0, p = null;
+      const pr = prev ? chordToCore(prev, sec.tonic, sec.mode) : null;
+      if (!pr || pr.core !== c.core) {
+        const d = pr ? model.next(sec.mode, pr.core, prev2 ? chordToCore(prev2, sec.tonic, sec.mode).core : null) : model.open(sec.mode);
+        p = d.get(c.core) || 0;
+        trans = lambda * Math.log(Math.max(1e-4, p * d.size));
+      }
+      if (!pr || pr.core !== c.core || pr.color !== c.color) {
+        const dc = model.color(sec.mode, c.core);
+        color = lambda * Math.log(Math.max(1e-4, (dc.get(c.color) || 0) * dc.size));
+      }
+      return { value: trans + color, trans, color, p, core: c.core };
+    },
+  };
+}
+
+// ---------------------------------------------------------------- PROGRESYON ÖNERİCİ
+const PROG_DEFAULTS = { length: 4, loop: true, ending: 'home', temperature: 0, count: 5, seed: 1 };
+const progKey = (mode, cores, loop) => `${mode}|${cores.join(',')}|${loop ? 'L' : ''}`;
+function suggestProgressions(model, opts) {
+  const o = Object.assign({}, PROG_DEFAULTS, opts);
+  const { tonic, mode } = o;
+  const L = o.length;
+  const home = homeCore(mode);
+  const V = model.vocab(mode);
+  const warnings = [];
+  const n = model.nMode(mode), nAll = model.stats.byMode.get(ALL).songs.size;
+  if (n < model.settings.lowDataSongs) warnings.push(`Az veri: ${modeName(mode)} modunda ${n} şarkı var (${model.settings.lowDataSongs}'den az). Öneriler havuzdan (${nAll} şarkı) ve yumuşatmadan (α=${model.settings.alpha}) besleniyor.`);
+  const rng = mulberry32(o.seed * 7919 + L);
+  const lp = (d, b) => Math.log(Math.max(1e-9, d.get(b) || 0));
+  function scoreSeq(seq) {
+    let s = lp(model.open(mode), seq[0]);
+    const steps = [];
+    for (let i = 1; i < seq.length; i++) {
+      const d = model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null);
+      s += lp(d, seq[i]); steps.push({ a: seq[i - 1], b: seq[i], p: d.get(seq[i]) || 0 });
+    }
+    if (o.loop) {
+      const d = model.next(mode, seq[L - 1], L >= 2 ? seq[L - 2] : null);
+      s += lp(d, seq[0]); steps.push({ a: seq[L - 1], b: seq[0], p: d.get(seq[0]) || 0, loop: true });
+    }
+    if (o.ending === 'data') s += lp(model.close(mode), seq[L - 1]);
+    return { logP: s, steps };
+  }
+  const banned = model.feedback.banned;
+  const valid = (seq) => {
+    if (!seq.includes(home)) return false;
+    for (let i = 1; i < seq.length; i++) if (seq[i] === seq[i - 1]) return false;
+    if (o.loop && seq.length > 1 && seq[seq.length - 1] === seq[0]) return false;
+    if (o.ending === 'home' && seq[seq.length - 1] !== home) return false;
+    if (o.ending === 'open' && seq[seq.length - 1] === home) return false;
+    if (banned.has(progKey(mode, seq, o.loop))) return false;
+    return true;
+  };
+  const found = new Map();
+  if (!o.temperature) {
+    // ışın araması (sıcaklık 0 = hep en olası)
+    let beam = [...model.open(mode)].map(([b, p]) => ({ seq: [b], s: Math.log(p) }));
+    for (let i = 1; i < L; i++) {
+      const nx = [];
+      for (const it of beam) for (const [b, p] of model.next(mode, it.seq[i - 1], i >= 2 ? it.seq[i - 2] : null)) if (b !== it.seq[i - 1]) nx.push({ seq: [...it.seq, b], s: it.s + Math.log(p) });
+      nx.sort((a, b) => b.s - a.s);
+      beam = nx.slice(0, 400);
+    }
+    for (const it of beam) if (valid(it.seq)) { const k = it.seq.join(','); if (!found.has(k)) found.set(k, it.seq); }
+  } else {
+    const T = o.temperature;
+    const sample = (d, exclude) => {
+      const arr = [...d].filter(([b]) => b !== exclude).map(([b, p]) => [b, Math.pow(p, 1 / T)]);
+      const sum = arr.reduce((a, x) => a + x[1], 0);
+      let r = rng() * sum;
+      for (const [b, w] of arr) { r -= w; if (r <= 0) return b; }
+      return arr[arr.length - 1][0];
+    };
+    for (let tries = 0; tries < 3000 && found.size < o.count * 4; tries++) {
+      const seq = [sample(model.open(mode), null)];
+      for (let i = 1; i < L; i++) seq.push(sample(model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null), seq[i - 1]));
+      if (valid(seq)) { const k = seq.join(','); if (!found.has(k)) found.set(k, seq); }
+    }
+  }
+  const flats = keyUsesFlats(tonic, mode);
+  const items = [...found.values()].map((seq) => {
+    const sc = scoreSeq(seq);
+    const colors = seq.map((c) => {
+      const d = model.color(mode, c);
+      if (!o.temperature) return argmaxKey(d);
+      const arr = [...d].map(([k, p]) => [k, Math.pow(p, 1 / o.temperature)]);
+      let r = rng() * arr.reduce((a, x) => a + x[1], 0);
+      for (const [k, w] of arr) { r -= w; if (r <= 0) return k; }
+      return arr[arr.length - 1][0];
+    });
+    const chords = seq.map((c, i) => coreToChord(c, colors[i], tonic));
+    const rare = sc.steps.slice().sort((a, b) => a.p - b.p)[0] || null;
+    const rarest = rare ? Object.assign({}, rare, model.songsFor(mode, `${rare.a}>${rare.b}`)) : null;
+    return {
+      cores: seq, colors, chords, key: progKey(mode, seq, o.loop),
+      symbols: chords.map((c) => C.chordName(c, flats)),
+      degrees: seq.map((c, i) => degreeLabel(c, colors[i], mode)),
+      logP: sc.logP, prob: Math.exp(sc.logP), steps: sc.steps, rarest,
+    };
+  }).sort((a, b) => b.logP - a.logP).slice(0, o.count);
+  if (!items.length) warnings.push('Kurallara uyan progresyon bulunamadı (uzunluk/kapanış/beğenilmeyenler).');
+  return { items, warnings, home, n, nAll };
+}
+// İki bölüm arası: "verse modu → nakarat modu" için modal kayma istatistiğinden geçiş akoru
+function suggestSectionTransition(model, from, to, top = 3) {
+  const iv = mod12(to.tonic - from.tonic);
+  const rows = [];
+  for (const [k, e] of model.stats.inter) {
+    const m = e.meta;
+    const tier = m.fromMode === from.mode && m.toMode === to.mode && m.iv === iv ? 0 : m.fromMode === from.mode && m.toMode === to.mode ? 1 : 2;
+    rows.push({ k, e, tier });
+  }
+  const pick = (tier) => rows.filter((r) => r.tier === tier).sort((a, b) => nSongs(b.e) - nSongs(a.e));
+  let list = pick(0), basis = 'aynı modlar ve aynı merkez aralığı';
+  if (!list.length) { list = pick(1); basis = 'aynı modlar (farklı merkez aralığı)'; }
+  if (!list.length) { list = pick(2); basis = 'tüm bölüm geçişleri (havuz)'; }
+  const fl = keyUsesFlats(from.tonic, from.mode), tl = keyUsesFlats(to.tonic, to.mode);
+  const out = list.slice(0, top).map(({ e }) => {
+    const m = e.meta;
+    const a = coreToChord(m.from, '', from.tonic), b = coreToChord(m.to, '', to.tonic);
+    return {
+      from: { core: m.from, label: coreLabel(m.from, from.mode), symbol: C.chordName(a, fl), chord: a },
+      to: { core: m.to, label: coreLabel(m.to, to.mode), symbol: C.chordName(b, tl), chord: b },
+      songs: [...e.songs], occ: e.occ, examples: e.examples,
+      pivot: C.chordPcs(a).filter((p) => C.chordPcs(b).includes(p)).length,
+    };
+  });
+  return { basis, items: out, iv };
+}
+
+// ---------------------------------------------------------------- saklama
+function newDataset() { return { schema: 'mini-daw-style-dataset', version: 1, songs: [] }; }
+function newFeedback() { return { schema: 'mini-daw-style-feedback', version: 1, on: true, events: [], banned: [] }; }
+function checkFile(obj, schema) {
+  if (!obj || obj.schema !== schema) throw new Error(`Beklenen dosya türü "${schema}", gelen "${obj && obj.schema}"`);
+  if (obj.version !== 1) throw new Error(`Desteklenmeyen sürüm: ${obj.version}`);
+  return obj;
+}
+
+root.Style = {
+  parseSymbol, parseMode, parseKeyText, keyLabel, modeName, sameKey, romanOf, parseRoman, coreKey, coreParts, coreLabel, degreeLabel, argmaxKey,
+  analyzeChord, analyzeSection, detectLoop, comparePreview, previewFor, unknownSymbols, QUALITY_NAMES,
+  validateSongJson, parseImportJson, parseImportText, songKey, findDuplicate,
+  buildStats, modeSongCounts, nSongs, ALL, confirmedKey,
+  MODEL_DEFAULTS, PROG_DEFAULTS, buildModel, diatonicCores, modeColors, homeCore, suggestKAlpha, songTransitions,
+  chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,
+  newDataset, newFeedback, checkFile,
+};
+if (typeof module !== 'undefined' && module.exports) module.exports = root.Style;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
 <script id="app">/* =====================================================================
    MINI DAW ARAYÜZÜ — zaman çizelgesi, kayıt, Tone.js oynatma, dışa aktarım
    ===================================================================== */
@@ -1796,6 +2684,35 @@ const S = {
 };
 window.__daw = S; // hata ayıklama / testler için
 window.__dawCal = () => Cal.last;
+// stil modülünün (styleui.js) kullandığı arayüz
+window.__dawAPI = {
+  S, C, status, esc, getCtx,
+  refresh: () => refresh(),
+  preview: (chords, tonic, mode) => Player.previewChords(chords, tonic, mode),
+  stop: () => Player.stop(),
+  // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
+  placeChords(chords, startBar, key) {
+    const end = startBar + chords.length - 1;
+    const covering = S.proj.sections.filter((s) => !(end < s.startBar || startBar > s.endBar));
+    let note = '';
+    if (!covering.length) {
+      S.proj.sections.push({ id: uid(), name: 'Öneri', startBar, endBar: end, tonic: key.tonic, mode: key.mode });
+      S.proj.sections.sort((a, b) => a.startBar - b.startBar);
+      note = ` "Öneri" bölümü (${C.keyName(key.tonic, key.mode)}) oluşturuldu.`;
+    } else if (covering.some((s) => s.startBar > startBar || s.endBar < end)) {
+      status(`Ölçü ${startBar}–${end} birden fazla bölüme ya da bölüm dışına taşıyor; tek bir bölümün içine yerleştirin.`, 'err');
+      return false;
+    }
+    chords.forEach((ch, i) => {
+      const bar = startBar + i;
+      S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar !== bar);
+      S.proj.chordLocks.push({ bar, half: null, chord: { root: ch.root, q: ch.q, bass: null } });
+    });
+    refresh();
+    status(`${chords.length} akor ölçü ${startBar}–${end} arasına kilitli şablon olarak yerleştirildi.${note}`);
+    return true;
+  },
+};
 
 // ---------------------------------------------------------------- durum satırı
 function status(msg, kind) { const s = $('#status'); s.textContent = msg; s.className = kind || ''; s.title = msg; }
@@ -1838,7 +2755,10 @@ async function analyze() {
   status(`Analiz tamam: ${S.rawNotes.length} nota.`);
 }
 function refresh() {
-  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0 });
+  // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
+  const style = window.StyleUI ? window.StyleUI.scorer() : null;
+  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0, style });
+  S.d.styleActive = !!style;
   if (S.sel && S.sel.type === 'note' && !S.d.notes.some((n) => n.id === S.sel.id)) S.sel = null;
   renderSections();
   renderInspector();
@@ -2021,6 +2941,25 @@ const Player = {
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+  },
+  // melodisiz akor önizleme (progresyon önericisi): 1 akor = 1 ölçü, DAW temposunda
+  async previewChords(chords, tonic, mode) {
+    try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
+    this.stop(true);
+    const g = C.makeGrid(S.proj.settings);
+    const sec = { id: 'preview', tonic, mode };
+    const slots = chords.map((ch, i) => ({ chord: ch, section: 'preview', q0: i * g.barQ, q1: (i + 1) * g.barQ }));
+    C.voiceChords(slots, [], [sec]);
+    const T = this.transport();
+    T.cancel(0);
+    for (const e of C.pianoEvents(slots, g)) {
+      const name = Tone.Frequency(e.midi, 'midi').toNote();
+      T.schedule((time) => this.sampler.triggerAttackRelease(name, e.dur, time, e.vel / 127), e.t);
+    }
+    T.start(Tone.now() + 0.1, 0);
+    clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => { T.stop(); T.cancel(0); }, (chords.length * g.barSec + 2) * 1000);
+    status(`Önizleme: ${chords.map((c) => C.chordName(c)).join(' – ')} (${S.proj.settings.bpm} BPM, akor başına 1 ölçü)`);
   },
   stop(silent) {
     if (!this.ready) return;
@@ -2724,6 +3663,12 @@ $('#inspector').addEventListener('click', (e) => {
       setLock(slot.bar, half, ch);
     }
     if (act === 'unlockChord') { S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === slot.bar && (slot.half == null || l.half == null || l.half === slot.half))); refresh(); }
+    if (act === 'fbChord' && window.StyleUI) {
+      const sec = S.d.sections.find((x) => x.id === slot.section);
+      const same = S.d.chords.filter((x) => x.section === slot.section && x.q0 < slot.q0 && !C.sameChord(x.chord, slot.chord));
+      const prev = same.length ? same[same.length - 1].chord : null;
+      window.StyleUI.feedbackChord(prev, slot.chord, sec, +b.dataset.v);
+    }
   }
 });
 $('#inspector').addEventListener('change', (e) => {
@@ -2745,7 +3690,9 @@ function renderChordInspector(box, slot) {
   const g = S.d.g, sec = S.d.sections.find((s) => s.id === slot.section);
   const nm = (c) => C.chordName(c, slot.flats), pn = (pc) => C.pcName(pc, slot.flats);
   const roleChips = (roles) => roles.filter((r) => r.w >= 0.5).map((r) => `<span class="role ${r.clash ? 'clash' : r.tone ? 'tone' : ''}">${esc(pn(r.pc))}: ${esc(r.role)} <small>×${r.w}</small></span>`).join('') || '<span class="hint">melodi yok</span>';
-  const rows = slot.candidates.map((c) => `<tr><td><b>${esc(nm(c.chord))}</b>${C.sameChord(c.chord, slot.chord) ? ' ✓' : ''}</td><td>${c.pct}</td><td>${roleChips(c.roles)}</td>
+  const sty = !!S.d.styleActive;
+  const fx = (v) => (v >= 0 ? '+' : '') + v.toFixed(2);
+  const rows = slot.candidates.map((c) => `<tr><td><b>${esc(nm(c.chord))}</b>${C.sameChord(c.chord, slot.chord) ? ' ✓' : ''}</td><td>${sty ? `<span title="toplam">${c.score.toFixed(2)}</span> = <span title="melodi uyumu">${fx(c.melody)}</span> <span class="hint">melodi</span> ${fx(c.style)} <span class="hint" title="stil: geçiş ${fx(c.styleTrans)}, renk ${fx(c.styleColor)}">stil</span>` : c.pct}</td><td>${roleChips(c.roles)}</td>
       <td><button data-act="pickChord" data-r="${c.chord.root}" data-q="${c.chord.q}">Seç + kilitle</button></td></tr>`).join('');
   const sug = slot.suggest ? `<tr><td><b>${esc(nm(slot.suggest))}</b></td><td>öneri</td><td class="hint">Minör akorda melodi 2'liye basıyor → sus2 varyantı</td><td><button data-act="pickChord" data-r="${slot.suggest.root}" data-q="${slot.suggest.q}">Seç + kilitle</button></td></tr>` : '';
   const halfTxt = slot.half == null ? 'tüm ölçü' : `${slot.half + 1}. yarı`;
@@ -2756,7 +3703,9 @@ function renderChordInspector(box, slot) {
       <span>Neden</span><span>${esc(slot.reason || '')}</span>
       <span>Melodi notalarının rolü</span><span>${roleChips(slot.roles)}</span>
       <span>Seslendirme</span><span>bas ${esc(C.noteName(slot.voicing.bass, slot.flats))} · ${slot.voicing.notes.map((m) => esc(C.noteName(m, slot.flats))).join(' ')}${slot.inversion ? ' (çevrim)' : ''}</span></div>
-    <table><thead><tr><th>En iyi adaylar</th><th>puan</th><th>ağırlıklı melodi notalarının rolü (kök/3/5/7/9)</th><th></th></tr></thead><tbody>${rows}${sug}</tbody></table>
+    <table><thead><tr><th>En iyi adaylar</th><th>${sty ? 'puan = melodi payı + stil payı' : 'puan'}</th><th>ağırlıklı melodi notalarının rolü (kök/3/5/7/9)</th><th></th></tr></thead><tbody>${rows}${sug}</tbody></table>
+    ${sec && sec.tonic != null && window.StyleUI ? `<div class="row" style="margin-top:6px"><span class="hint">Bu akor seçimi (önceki akordan geçiş) — kişisel geri bildirim:</span>
+      <button data-act="fbChord" data-v="1" title="beğen">👍</button><button data-act="fbChord" data-v="-1" title="beğenme">👎</button></div>` : ''}
     <div class="row" style="margin-top:8px">Elle yaz: <input type="text" id="chInput" placeholder="ör. Dmaj7, C#m, F#m7/A" style="width:170px"> ${scopeSel}
       <button data-act="manualChord" class="accent">Uygula + kilitle</button>
       <button data-act="unlockChord"${slot.locked ? '' : ' disabled'}>Kilidi kaldır (otomatiğe dön)</button></div>`;
@@ -2984,6 +3933,595 @@ syncInputs();
 refresh();
 loadPianoSamples(); // hangi piyanonun çalacağı baştan görünsün
 status('Hazır. Kayıt yapın, dosya yükleyin ya da test melodisi üretin.');
+})();
+</script>
+<script id="styleapp">/* =====================================================================
+   STİL VERİSİ VE ÖNERİ — arayüz (içe aktarma, onay, istatistik, model,
+   geri bildirim, progresyon önericisi, saklama)
+   ===================================================================== */
+(function () {
+'use strict';
+const St = window.Style, A = window.__dawAPI, C = A.C;
+const $ = (s, r = document) => r.querySelector(s);
+const esc = A.esc;
+const LS = { dataset: 'miniDaw.style.dataset', settings: 'miniDaw.style.settings', feedback: 'miniDaw.style.feedback' };
+const lsGet = (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* depolama kapalı olabilir */ } };
+
+const SS = {
+  dataset: St.newDataset(), settings: Object.assign({}, St.MODEL_DEFAULTS), feedback: St.newFeedback(),
+  model: null, tab: 'import', editing: null, statMode: St.ALL, drill: null, importErrors: [], pending: [],
+  cv: null, prog: null, progOpts: Object.assign({ tonic: 1, mode: 'phrygian' }, St.PROG_DEFAULTS), trans: null,
+};
+try {
+  const d = lsGet(LS.dataset); if (d) SS.dataset = St.checkFile(d, 'mini-daw-style-dataset');
+  const s = lsGet(LS.settings); if (s) Object.assign(SS.settings, St.checkFile(s, 'mini-daw-style-settings').settings);
+  const f = lsGet(LS.feedback); if (f) SS.feedback = St.checkFile(f, 'mini-daw-style-feedback');
+} catch (e) { console.warn('stil verisi yüklenemedi:', e.message); }
+
+const settingsFile = () => ({ schema: 'mini-daw-style-settings', version: 1, settings: SS.settings });
+function persist() { lsSet(LS.dataset, SS.dataset); lsSet(LS.settings, settingsFile()); lsSet(LS.feedback, SS.feedback); }
+function model() { if (!SS.model) SS.model = St.buildModel(SS.dataset, SS.settings, SS.feedback); return SS.model; }
+const confirmedSongs = () => model().stats.byMode.get(St.ALL).songs.size;
+// veri / ayar / geri bildirim değişti → istatistik + model + DAW akorları anında güncellenir
+function changed(what = 'data') {
+  SS.model = null;
+  if (what !== 'view') persist();
+  render();
+  A.refresh();
+  renderDawBox();
+}
+const songById = (id) => SS.dataset.songs.find((s) => s.id === id);
+const songName = (s) => (s ? `${s.artist} – ${s.title}` : '(silinmiş)');
+const PCS = C.PC_SHARP;
+const tonicSel = (v, act, extra = '') => `<select data-act="${act}" ${extra}>${PCS.map((n, i) => `<option value="${i}"${v === i ? ' selected' : ''}>${n}</option>`).join('')}</select>`;
+const modeSel = (v, act, extra = '') => `<select data-act="${act}" ${extra}>${C.MODE_ORDER.map((m) => `<option value="${m}"${v === m ? ' selected' : ''}>${C.MODES[m].name}</option>`).join('')}</select>`;
+const pct = (a, b) => (b ? Math.round((100 * a) / b) : 0);
+const download = (text, name) => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+  a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+};
+
+// ---------------------------------------------------------------- görünüm
+const view = $('#styleView');
+function setView(v) {
+  $('#dawView').hidden = v !== 'daw';
+  view.hidden = v !== 'style';
+  document.querySelectorAll('input[name=view]').forEach((r) => { r.checked = r.value === v; });
+  if (v === 'style') render();
+  else window.dispatchEvent(new Event('resize'));
+}
+document.querySelectorAll('input[name=view]').forEach((r) => r.addEventListener('change', (e) => setView(e.target.value)));
+
+const TABS = [['import', 'İçe aktar'], ['songs', 'Şarkılar ve onay'], ['stats', 'İstatistik'], ['model', 'Model ve geri bildirim'], ['prog', 'Progresyon önerici'], ['store', 'Saklama']];
+function render() {
+  if (view.hidden) return;
+  const n = SS.dataset.songs.length, nc = confirmedSongs();
+  view.innerHTML = `<div class="st-tabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-tab="${k}" class="${SS.tab === k ? 'on' : ''}" aria-selected="${SS.tab === k}">${l}</button>`).join('')}
+    <span class="hint st-count">${n} şarkı · ${nc} şarkıda onaylı bölüm</span></div>
+    <div class="st-body">${({ import: tabImport, songs: tabSongs, stats: tabStats, model: tabModel, prog: tabProg, store: tabStore })[SS.tab]()}</div>`;
+}
+view.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-tab]');
+  if (t) { SS.tab = t.dataset.tab; render(); return; }
+  const b = e.target.closest('[data-act]');
+  if (b && ACTIONS[b.dataset.act] && (b.tagName === 'BUTTON' || b.tagName === 'TD' || b.tagName === 'A' || b.tagName === 'TR' || b.dataset.click)) ACTIONS[b.dataset.act](b, e);
+});
+view.addEventListener('change', (e) => { const t = e.target; if (t.dataset.act && CHANGES[t.dataset.act]) CHANGES[t.dataset.act](t, e); });
+
+// ---------------------------------------------------------------- 1) İÇE AKTARMA
+const PROMPT = `Aşağıdaki şarkının akorlarını YALNIZCA şu JSON biçiminde ver:
+{
+  "schema_version": 1,
+  "artist": "Sanatçı",
+  "title": "Şarkı adı",
+  "sections": [
+    {
+      "name": "Verse 1",
+      "chords": ["C#m", "D", "C#m", "D"],
+      "key_proposals": [
+        { "tonic": "C#", "mode": "phrygian", "confidence": 0.7, "reason": "C# merkezde, D ♭II" },
+        { "tonic": "A", "mode": "major", "confidence": 0.3 }
+      ],
+      "degrees_preview": ["i", "♭II", "i", "♭II"],
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}
+Kurallar:
+- chords: bölümde çalındığı sırayla, tekrarlar dahil; akor yoksa "N.C.". Slash akorları "A/C#" gibi yaz.
+- key_proposals: en olası önce. mode: major, minor, harmonic_minor, dorian, phrygian, lydian, mixolydian, locrian, major_pentatonic, minor_pentatonic.
+- degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta. Romen rakamı merkezin MAJÖR gamına göre: büyük harf majör, küçük minör, ° dim, + aug; power chord için "5" (ör. ♭VII5); N.C. için "N.C.".
+- Emin olmadığın her şeyi warnings içine yaz.`;
+function tabImport() {
+  const errs = SS.importErrors.length ? `<div class="st-err" role="alert"><b>İçe aktarılamadı — bozuk alanlar:</b><ul>${SS.importErrors.map((x) => `<li><code>${esc(x)}</code></li>`).join('')}</ul></div>` : '';
+  const pend = SS.pending.map((p, i) => `<div class="st-warn" role="alert">⚠ <b>${esc(songName(p.song))}</b> zaten veri setinde (${esc(songName(p.dup))}).
+      <button data-act="dupOverwrite" data-i="${i}">Üzerine yaz</button> <button data-act="dupCancel" data-i="${i}">Vazgeç</button></div>`).join('');
+  return `<div class="st-grid2">
+    <div>
+      <h3>Şarkı ekle</h3>
+      <p class="hint">Claude chat'in ürettiği JSON'u (schema_version 1) yapıştırın ya da dosyadan yükleyin. Yedek olarak düz metin akor şeması da olur: <code>[Verse: C# phrygian] C#m D C#m D</code> ya da DAW'ın dışa aktardığı akor şeması.</p>
+      <div class="row">
+        <label>Biçim <select id="stFmt" style="width:auto"><option value="auto">otomatik</option><option value="json">JSON</option><option value="text">düz metin</option></select></label>
+        <label class="file-btn">Dosyadan yükle<input type="file" id="stFile" accept=".json,.txt,application/json,text/plain" hidden></label>
+      </div>
+      <textarea id="stText" rows="14" spellcheck="false" placeholder='{"schema_version": 1, "artist": "...", ...}'>${esc(SS.lastText || '')}</textarea>
+      <div class="grid2"><label>Sanatçı (düz metin için)<input type="text" id="stArtist"></label><label>Şarkı (düz metin için)<input type="text" id="stTitle"></label></div>
+      <div class="row"><button class="accent" data-act="doImport">Çözümle ve ekle</button> <button data-act="loadExample">Örnek JSON'u doldur</button></div>
+      ${errs}${pend}
+    </div>
+    <div>
+      <h3>Claude chat için istem</h3>
+      <p class="hint">Bu metni şarkı adıyla birlikte Claude'a verin; çıktıyı soldaki alana yapıştırın.</p>
+      <pre class="st-pre" id="stPrompt">${esc(PROMPT)}</pre>
+      <button data-act="copyPrompt">İstemi kopyala</button>
+    </div></div>`;
+}
+const EXAMPLE = {
+  schema_version: 1, artist: 'Örnek Sanatçı', title: 'Frig ve Dorian',
+  sections: [
+    { name: 'Verse 1', chords: ['C#m', 'D', 'C#m', 'D', 'C#m', 'D', 'C#m', 'D'], key_proposals: [{ tonic: 'C#', mode: 'phrygian', confidence: 0.8, reason: 'C# merkez, D ♭II' }, { tonic: 'A', mode: 'major', confidence: 0.2 }], degrees_preview: ['i', '♭II', 'i', '♭II', 'i', '♭II', 'i', '♭II'], warnings: ['D, A majörde IV olarak da okunabilir'] },
+    { name: 'Chorus', chords: ['Bm', 'E', 'A', 'Bm'], key_proposals: [{ tonic: 'B', mode: 'dorian', confidence: 0.7 }], degrees_preview: ['i', 'IV', '♭VII', 'i'] },
+  ],
+  warnings: [],
+};
+function addSongs(songs) {
+  let added = 0;
+  for (const song of songs) {
+    const dup = St.findDuplicate(SS.dataset, song);
+    if (dup) { SS.pending.push({ song, dup }); continue; }
+    SS.dataset.songs.push(song); added++;
+    SS.editing = song.id;
+  }
+  return added;
+}
+function doImport(text, fmt) {
+  SS.lastText = text;
+  const isJson = fmt === 'json' || (fmt === 'auto' && /^\s*[{[]/.test(text));
+  const r = isJson ? St.parseImportJson(text) : St.parseImportText(text, { artist: ($('#stArtist') || {}).value, title: ($('#stTitle') || {}).value });
+  SS.importErrors = r.errors;
+  if (r.errors.length) { A.status(`İçe aktarma: ${r.errors.length} şema hatası (alanlar listelendi).`, 'err'); render(); return; }
+  const added = addSongs(r.songs);
+  if (added) { SS.tab = SS.pending.length ? 'import' : 'songs'; A.status(`${added} şarkı eklendi — bölümleri onaylayın (onaysız bölüm istatistiğe girmez).`); }
+  else A.status('Şarkı zaten var: üzerine yazmak ya da vazgeçmek için seçin.', 'err');
+  changed();
+}
+const ACTIONS = {
+  doImport: () => doImport($('#stText').value, $('#stFmt').value),
+  loadExample: () => { SS.lastText = JSON.stringify(EXAMPLE, null, 2); render(); },
+  copyPrompt: () => { try { navigator.clipboard.writeText(PROMPT); A.status('İstem panoya kopyalandı.'); } catch (e) { A.status('Kopyalanamadı; metni elle seçin.', 'err'); } },
+  dupOverwrite: (b) => {
+    const p = SS.pending.splice(+b.dataset.i, 1)[0];
+    const idx = SS.dataset.songs.findIndex((s) => s.id === p.dup.id);
+    p.song.id = p.dup.id;
+    SS.dataset.songs[idx] = p.song;
+    SS.editing = p.song.id; SS.tab = SS.pending.length ? 'import' : 'songs';
+    A.status(`${songName(p.song)} üzerine yazıldı (onaylar sıfırlandı).`);
+    changed();
+  },
+  dupCancel: (b) => { const p = SS.pending.splice(+b.dataset.i, 1)[0]; A.status(`${songName(p.song)} eklenmedi.`); render(); },
+  // ---- şarkılar
+  editSong: (b) => { SS.editing = b.dataset.id; render(); },
+  delSong: (b) => {
+    const s = songById(b.dataset.id);
+    if (!confirm(`${songName(s)} silinsin mi?`)) return;
+    SS.dataset.songs = SS.dataset.songs.filter((x) => x.id !== s.id);
+    if (SS.editing === s.id) SS.editing = null;
+    changed();
+  },
+  confirmSec: (b) => {
+    const s = songById(b.dataset.id), sec = s.sections[+b.dataset.si];
+    if (!sec.selected) { A.status('Önce merkez + mod seçin.', 'err'); return; }
+    sec.confirmed = true; changed();
+  },
+  unconfirmSec: (b) => { const s = songById(b.dataset.id); s.sections[+b.dataset.si].confirmed = false; changed(); },
+  confirmAll: (b) => {
+    const s = songById(b.dataset.id);
+    const unk = new Set(St.unknownSymbols(s).map((u) => u.raw));
+    s.sections.forEach((sec) => { if (sec.selected && !sec.chords.some((c) => unk.has(c))) sec.confirmed = true; });
+    changed();
+  },
+  pickProposal: (b) => {
+    const s = songById(b.dataset.id), sec = s.sections[+b.dataset.si], p = sec.proposals[+b.dataset.pi];
+    sec.selected = { tonic: p.tonic, mode: p.mode }; sec.confirmed = false; changed();
+  },
+  applyFixes: (b) => {
+    const s = songById(b.dataset.id);
+    view.querySelectorAll(`input[data-fix][data-id="${s.id}"]`).forEach((inp) => {
+      const v = inp.value.trim();
+      if (!v) return;
+      if (!St.parseSymbol(v).ok) { A.status(`"${v}" de tanınmadı.`, 'err'); return; }
+      s.fixes[inp.dataset.fix] = v;
+    });
+    changed();
+  },
+  editChords: (b) => { SS.chordEdit = `${b.dataset.id}:${b.dataset.si}`; render(); },
+  saveChords: (b) => {
+    const s = songById(b.dataset.id), sec = s.sections[+b.dataset.si];
+    const toks = $(`#stChordEdit`).value.split(/[\s|,]+/).filter(Boolean);
+    if (!toks.length) { A.status('Bölümde en az bir akor olmalı.', 'err'); return; }
+    sec.chords = toks; SS.chordEdit = null; changed();
+  },
+  cancelChords: () => { SS.chordEdit = null; render(); },
+  // ---- istatistik
+  statMode: (b) => { SS.statMode = b.dataset.m; SS.drill = null; render(); },
+  drill: (b) => { SS.drill = { title: b.dataset.title, refs: JSON.parse(b.dataset.refs) }; render(); const d = $('#stDrill'); if (d) d.scrollIntoView({ block: 'nearest' }); },
+  // ---- model
+  suggestKA: () => {
+    A.status('Çapraz doğrulama çalışıyor…', 'busy');
+    setTimeout(() => { SS.cv = St.suggestKAlpha(SS.dataset, SS.settings); A.status(SS.cv.ok ? `Önerilen k=${SS.cv.best.k}, α=${SS.cv.best.alpha}` : SS.cv.reason, SS.cv.ok ? '' : 'err'); render(); }, 20);
+  },
+  applyKA: () => { if (!SS.cv || !SS.cv.ok) return; SS.settings.k = SS.cv.best.k; SS.settings.alpha = SS.cv.best.alpha; changed(); },
+  fbReset: () => { if (!confirm('Tüm kişisel geri bildirim silinsin mi? (şarkı verisi etkilenmez)')) return; SS.feedback = Object.assign(St.newFeedback(), { on: SS.feedback.on }); changed(); },
+  // ---- progresyon
+  runProg: () => runProg(),
+  playProg: (b) => { const it = SS.prog.items[+b.dataset.i]; A.preview(it.chords, SS.prog.opts.tonic, SS.prog.opts.mode); },
+  stopProg: () => A.stop(),
+  fbProg: (b) => {
+    const it = SS.prog.items[+b.dataset.i], like = +b.dataset.v;
+    const tr = [[ '^', it.cores[0]], ...it.steps.map((s) => [s.a, s.b])];
+    SS.feedback.events.push({ t: Date.now(), kind: 'progression', mode: SS.prog.opts.mode, transitions: tr, like, prog: it.key, symbols: it.symbols });
+    if (like < 0 && !SS.feedback.banned.includes(it.key)) SS.feedback.banned.push(it.key);
+    it.fb = like;
+    A.status(like > 0 ? 'Beğenildi: geçişlerin olasılığı artırıldı (en fazla ×2).' : 'Beğenilmedi: bu progresyon bir daha önerilmeyecek; geçişler azaltıldı (en az ×0.5).');
+    SS.model = null; persist(); render(); A.refresh();
+  },
+  placeProg: (b) => {
+    const it = SS.prog.items[+b.dataset.i];
+    const bar = Math.max(1, parseInt($(`#stPlace${b.dataset.i}`).value, 10) || 1);
+    A.placeChords(it.chords, bar, { tonic: SS.prog.opts.tonic, mode: SS.prog.opts.mode });
+  },
+  runTrans: () => {
+    const g = (id) => +$(id).value;
+    const from = { tonic: g('#stTrFromT'), mode: $('#stTrFromM').value }, to = { tonic: g('#stTrToT'), mode: $('#stTrToM').value };
+    SS.trans = { from, to, res: St.suggestSectionTransition(model(), from, to) };
+    render();
+  },
+  playTrans: (b) => { const it = SS.trans.res.items[+b.dataset.i]; A.preview([it.from.chord, it.to.chord], SS.trans.from.tonic, SS.trans.from.mode); },
+  fromDaw: (b) => {
+    const d = A.S.d, s = d && d.sections.find((x) => x.id === b.dataset.sec);
+    if (!s || s.tonic == null) return;
+    if (b.dataset.target === 'prog') { SS.progOpts.tonic = s.tonic; SS.progOpts.mode = s.mode; }
+    else if (b.dataset.target === 'from') SS.trFrom = { tonic: s.tonic, mode: s.mode };
+    else SS.trTo = { tonic: s.tonic, mode: s.mode };
+    render();
+  },
+  // ---- saklama
+  exp: (b) => {
+    const k = b.dataset.k;
+    if (k === 'dataset') download(JSON.stringify(SS.dataset, null, 1), 'stil-veri-seti.json');
+    if (k === 'settings') download(JSON.stringify(settingsFile(), null, 1), 'stil-model-ayarlari.json');
+    if (k === 'feedback') download(JSON.stringify(SS.feedback, null, 1), 'stil-geri-bildirim.json');
+  },
+  clearAll: () => { if (!confirm('Tüm şarkılar silinsin mi? (ayarlar ve geri bildirim kalır)')) return; SS.dataset = St.newDataset(); SS.editing = null; changed(); },
+};
+const CHANGES = {
+  secTonic: (t) => { const s = songById(t.dataset.id), sec = s.sections[+t.dataset.si]; sec.selected = { tonic: +t.value, mode: sec.selected ? sec.selected.mode : 'major' }; sec.confirmed = false; changed(); },
+  secMode: (t) => { const s = songById(t.dataset.id), sec = s.sections[+t.dataset.si]; sec.selected = { tonic: sec.selected ? sec.selected.tonic : 0, mode: t.value }; sec.confirmed = false; changed(); },
+  songField: (t) => {
+    const s = songById(t.dataset.id);
+    const old = s[t.dataset.f];
+    s[t.dataset.f] = t.value.trim() || old;
+    const dup = St.findDuplicate(SS.dataset, s);
+    if (dup) { s[t.dataset.f] = old; A.status(`Bu ad zaten var: ${songName(dup)}`, 'err'); }
+    changed();
+  },
+  set: (t) => {
+    const v = t.type === 'checkbox' ? t.checked : +t.value;
+    if (t.type !== 'checkbox' && !Number.isFinite(v)) return;
+    SS.settings[t.dataset.k] = v; changed();
+  },
+  fbOn: (t) => { SS.feedback.on = t.checked; changed(); },
+  prog: (t) => { const k = t.dataset.k; SS.progOpts[k] = t.type === 'checkbox' ? t.checked : k === 'mode' || k === 'ending' ? t.value : +t.value; },
+  imp: async (t) => {
+    const f = t.files[0]; t.value = '';
+    if (!f) return;
+    try {
+      const obj = JSON.parse(await f.text());
+      const k = t.dataset.k;
+      if (k === 'dataset') { St.checkFile(obj, 'mini-daw-style-dataset'); const inc = obj.songs.filter((s) => !St.findDuplicate(SS.dataset, s)); const dup = obj.songs.length - inc.length;
+        if (SS.dataset.songs.length && !confirm(`Veri seti değiştirilsin mi? Tamam = tamamen değiştir, İptal = birleştir (${dup} kopya atlanır).`)) SS.dataset.songs.push(...inc); else SS.dataset = obj; }
+      if (k === 'settings') Object.assign(SS.settings, St.checkFile(obj, 'mini-daw-style-settings').settings);
+      if (k === 'feedback') SS.feedback = St.checkFile(obj, 'mini-daw-style-feedback');
+      A.status(`${f.name} içe aktarıldı.`);
+      changed();
+    } catch (e) { A.status('İçe aktarılamadı: ' + e.message, 'err'); }
+  },
+};
+view.addEventListener('change', async (e) => {
+  if (e.target.id === 'stFile') {
+    const f = e.target.files[0]; e.target.value = '';
+    if (f) { const txt = await f.text(); SS.lastText = txt; render(); doImport(txt, f.name.endsWith('.json') ? 'json' : $('#stFmt').value); }
+  }
+});
+
+// ---------------------------------------------------------------- 2) ONAY EKRANI
+function tabSongs() {
+  const stats = model().stats;
+  const list = SS.dataset.songs.map((s) => {
+    const info = stats.songInfo.get(s.id) || { confirmed: 0 };
+    const unk = St.unknownSymbols(s).length;
+    return `<li class="${SS.editing === s.id ? 'on' : ''}"><a href="#" data-act="editSong" data-id="${s.id}">${esc(songName(s))}</a>
+      <span class="hint">${info.confirmed}/${s.sections.length} onaylı${unk ? ` · <b class="bad">${unk} tanınmayan akor</b>` : ''}</span></li>`;
+  }).join('');
+  const song = songById(SS.editing) || null;
+  return `<div class="st-split"><div><h3>Şarkılar</h3>${list ? `<ul class="st-list">${list}</ul>` : '<p class="hint">Henüz şarkı yok.</p>'}</div>
+    <div>${song ? songEditor(song, stats) : '<p class="hint">Düzenlemek için soldan bir şarkı seçin.</p>'}</div></div>`;
+}
+function songEditor(s, stats) {
+  const info = stats.songInfo.get(s.id) || { loops: [] };
+  const unk = St.unknownSymbols(s);
+  const unkBox = unk.length ? `<div class="st-err"><b>Tanınamayan akor sembolleri</b> — düzeltin (N.C. de yazılabilir); düzeltilmeden o bölüm onaylanamaz:
+      <table>${unk.map((u) => `<tr><td><code>${esc(u.raw)}</code></td><td class="hint">${esc(u.why)} · ${esc(u.where.join(', '))}</td><td><input type="text" data-fix="${esc(u.raw)}" data-id="${s.id}" placeholder="ör. Gsus4" style="width:110px"></td></tr>`).join('')}</table>
+      <button data-act="applyFixes" data-id="${s.id}">Düzeltmeleri uygula</button></div>` : '';
+  const fixes = Object.entries(s.fixes || {});
+  const loops = info.loops.length ? `<div class="hint">Döngüler: ${info.loops.map((l) => `<b>${esc(l.section)}</b>: ${esc(l.pattern.join(' – '))} ×${l.repeats}`).join(' · ')}</div>` : '';
+  return `<div class="st-song">
+    <div class="row"><input type="text" value="${esc(s.artist)}" data-act="songField" data-f="artist" data-id="${s.id}" aria-label="sanatçı" style="max-width:220px">
+      <input type="text" value="${esc(s.title)}" data-act="songField" data-f="title" data-id="${s.id}" aria-label="şarkı" style="max-width:260px">
+      <button data-act="confirmAll" data-id="${s.id}">Tüm seçili tonları onayla</button>
+      <button data-act="delSong" data-id="${s.id}" class="danger">Şarkıyı sil</button></div>
+    <div class="hint">Kaynak: ${s.source === 'json' ? 'JSON (schema_version 1)' : 'düz metin'} · ${esc(new Date(s.importedAt).toLocaleString())}${fixes.length ? ` · düzeltmeler: ${fixes.map(([a, b]) => `${esc(a)}→${esc(b)}`).join(', ')}` : ''}</div>
+    ${s.warnings.length ? `<div class="st-warn"><b>Uyarılar (şarkı):</b> ${s.warnings.map(esc).join(' · ')}</div>` : ''}
+    ${loops}${unkBox}
+    ${s.sections.map((sec, si) => sectionCard(s, sec, si, unk)).join('')}
+  </div>`;
+}
+function sectionCard(s, sec, si, unk) {
+  const key = sec.selected;
+  const an = St.analyzeSection(s, sec, key);
+  const cmp = St.comparePreview(s, sec, key);
+  const bad = new Set(cmp.mismatches.map((m) => m.index));
+  const unkRaw = new Set(unk.map((u) => u.raw));
+  const blocked = sec.chords.some((c) => unkRaw.has(c));
+  const chips = an.items.map((it, i) => {
+    const cls = it.unknown ? 'unk' : it.nc ? 'nc' : bad.has(i) ? 'bad' : it.borrowed ? 'borrow' : '';
+    const pv = bad.has(i) ? cmp.mismatches.find((m) => m.index === i).preview : null;
+    const title = it.unknown ? 'tanınmadı' : bad.has(i) ? `önizleme "${pv}" diyor, hesaplanan ${it.label}` : it.borrowed ? 'moda ait değil (ödünç)' : it.power ? 'power chord: nitelik belirsiz' : '';
+    return `<span class="chip ${cls}" title="${esc(title)}"><b>${esc(sec.chords[i])}</b><small>${it.unknown ? '?' : it.nc ? '—' : esc(it.label)}${it.bassLabel ? `<br>bas ${esc(it.bassLabel)}` : ''}${pv ? `<br>önizleme: ${esc(pv)}` : ''}${it.borrowed ? '<br>ödünç' : ''}</small></span>`;
+  }).join('');
+  const props = sec.proposals.map((p, pi) => `<label class="chk"><input type="radio" name="prop-${s.id}-${si}" data-act="pickProposal" data-click="1" data-id="${s.id}" data-si="${si}" data-pi="${pi}"${St.sameKey(p, key) ? ' checked' : ''}>
+      ${esc(St.keyLabel(p))}${p.confidence != null ? ` <span class="hint">${Math.round(p.confidence * 100)}%</span>` : ''}${p.reason ? ` <span class="hint">— ${esc(p.reason)}</span>` : ''}${pi === 0 ? ' <span class="hint">(ilk öneri)</span>' : ''}</label>`).join('');
+  let pvTxt;
+  if (!cmp.valid) pvTxt = sec.degreesPreview || sec.proposals.some((p) => p.degreesPreview) ? '<span class="hint">degrees_preview: seçili ton önizlemenin tonundan farklı → önizleme geçersiz (karşılaştırılmadı)</span>' : '<span class="hint">degrees_preview yok</span>';
+  else if (cmp.mismatches.length) pvTxt = `<span class="bad">degrees_preview ile ${cmp.mismatches.length} uyuşmazlık (kırmızı)</span>`;
+  else pvTxt = '<span class="good">degrees_preview ile uyumlu</span>';
+  if (cmp.valid && cmp.lengthMismatch) pvTxt += ` <span class="bad">· önizleme ${cmp.previewLength} öğe, akor ${sec.chords.length}</span>`;
+  const editing = SS.chordEdit === `${s.id}:${si}`;
+  return `<div class="st-sec ${sec.confirmed ? 'ok' : ''}">
+    <div class="row"><b>${esc(sec.name)}</b> ${sec.confirmed ? '<span class="tag ok">onaylı — istatistikte</span>' : '<span class="tag warn">onaysız — istatistiğe girmez</span>'}
+      ${an.loop ? `<span class="hint">döngü: ${esc(an.loop.pattern.join(' '))} ×${an.loop.repeats}</span>` : ''}</div>
+    ${editing ? `<div class="row"><input type="text" id="stChordEdit" value="${esc(sec.chords.join(' '))}" style="flex:1"><button data-act="saveChords" data-id="${s.id}" data-si="${si}" class="accent">Kaydet</button><button data-act="cancelChords">Vazgeç</button></div>`
+      : `<div class="chips">${chips}</div>`}
+    <div class="st-keys">
+      <div>${props || '<span class="hint">Öneri yok — elle girin.</span>'}</div>
+      <div class="row">Elle: ${tonicSel(key ? key.tonic : null, 'secTonic', `data-id="${s.id}" data-si="${si}" style="width:70px"`)} ${modeSel(key ? key.mode : null, 'secMode', `data-id="${s.id}" data-si="${si}" style="width:auto"`)}
+        ${sec.confirmed ? `<button data-act="unconfirmSec" data-id="${s.id}" data-si="${si}">Onayı kaldır</button>` : `<button class="accent" data-act="confirmSec" data-id="${s.id}" data-si="${si}"${blocked || !key ? ' disabled title="önce tanınmayan akorları düzeltin"' : ''}>Onayla: ${esc(St.keyLabel(key))}</button>`}
+        ${editing ? '' : `<button data-act="editChords" data-id="${s.id}" data-si="${si}">Akorları düzenle</button>`}</div>
+    </div>
+    <div>${pvTxt}</div>
+    ${sec.warnings.length ? `<div class="st-warn"><b>Uyarılar:</b> ${sec.warnings.map(esc).join(' · ')}</div>` : ''}
+  </div>`;
+}
+
+// ---------------------------------------------------------------- 6) İSTATİSTİK
+const SEQ = ['#0d366b', '#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'];
+const heat = (v, max) => SEQ[Math.min(SEQ.length - 1, Math.floor((v / max) * (SEQ.length - 1) + 1e-9))];
+const inkOn = (bg) => (SEQ.indexOf(bg) >= 4 ? '#0b0d12' : '#e4e7ee');
+const refsAttr = (e) => esc(JSON.stringify(e.refs));
+function drillCell(e, title, content, extra = '') {
+  return `<td data-act="drill" data-title="${esc(title)}" data-refs="${refsAttr(e)}" class="clk" title="${esc(title)} — tıkla: şarkılar" ${extra}>${content}</td>`;
+}
+function tabStats() {
+  const m = model(), st = m.stats;
+  const counts = St.modeSongCounts(st);
+  const low = m.settings.lowDataSongs;
+  const modes = [St.ALL, ...C.MODE_ORDER.filter((x) => counts[x] > 0)];
+  if (!st.byMode.has(SS.statMode)) SS.statMode = St.ALL;
+  const mode = SS.statMode;
+  const b = st.byMode.get(mode);
+  const N = b.songs.size;
+  const dmode = mode === St.ALL ? 'major' : mode;
+  const lab = (k) => St.coreLabel(k, dmode);
+  const chips = modes.map((x) => `<button data-act="statMode" data-m="${x}" class="${x === mode ? 'on' : ''}">${x === St.ALL ? 'Tüm modlar (havuz)' : esc(C.MODES[x].name)} <b>${counts[x]}</b>${x !== St.ALL && counts[x] < low ? ' <span class="tag warn">az veri</span>' : ''}</button>`).join('');
+  if (!N) return `<div class="row st-modes">${chips}</div><p class="hint">Onaylı bölüm yok. İstatistik yalnızca onaylanan bölümlerden hesaplanır.</p>`;
+  const lowTxt = mode !== St.ALL && N < low ? `<div class="st-warn">⚠ Az veri: bu modda ${N} şarkı (&lt; ${low}). Oranlar güvenilir değil; model havuzdan destek alır.</div>` : '';
+  // nitelik
+  const qual = ['M', 'm', 'd', 'a', '5'].filter((q) => b.qual.has(q)).map((q) => { const e = b.qual.get(q); return `<span class="role clk" data-act="drill" data-click="1" data-title="${esc(St.QUALITY_NAMES[q])}" data-refs="${refsAttr(e)}">${esc(St.QUALITY_NAMES[q])}: ${e.songs.size} şarkı (${e.occ} tekrar)</span>`; }).join(' ');
+  // derece tablosu
+  const degs = [...b.degrees].sort((x, y) => y[1].songs.size - x[1].songs.size || St.coreParts(x[0]).iv - St.coreParts(y[0]).iv);
+  const topColor = (core) => {
+    const cm = b.colors.get(core);
+    if (!cm) return '—';
+    const arr = [...cm].filter(([c]) => c).sort((x, y) => y[1].songs.size - x[1].songs.size);
+    return arr.length ? `${esc(arr[0][0])} <span class="hint">(${arr[0][1].songs.size} şarkı)</span>` : '<span class="hint">yalın</span>';
+  };
+  const dia = new Set(St.diatonicCores(dmode));
+  const degRows = degs.map(([k, e]) => `<tr><td><b>${esc(lab(k))}</b>${mode !== St.ALL && !dia.has(k) ? ' <span class="hint">ödünç</span>' : ''}</td>${drillCell(e, `${lab(k)} derecesi`, e.songs.size)}<td>${pct(e.songs.size, N)}%</td><td class="hint">${e.occ}</td><td>${topColor(k)}</td></tr>`).join('');
+  // geçiş matrisi
+  const vocab = [...new Set([...b.degrees.keys()])].sort((x, y) => St.coreParts(x).iv - St.coreParts(y).iv || x.localeCompare(y));
+  let max = 1;
+  for (const e of b.trans.values()) max = Math.max(max, e.songs.size);
+  const unsure = 3;
+  const matrix = `<table class="heat"><thead><tr><th>önce ↓ / sonra →</th>${vocab.map((v) => `<th>${esc(lab(v))}</th>`).join('')}</tr></thead><tbody>
+    ${vocab.map((a) => `<tr><th>${esc(lab(a))}</th>${vocab.map((c) => {
+      const e = b.trans.get(`${a}>${c}`);
+      if (!e) return `<td class="empty">${a === c ? '·' : ''}</td>`;
+      const n = e.songs.size, bg = heat(n, max);
+      return drillCell(e, `${lab(a)} → ${lab(c)}: ${n} şarkı (%${pct(n, N)}), ${e.occ} tekrar${n < unsure ? ' — belirsiz (3 şarkıdan az)' : ''}`, `${n}${n < unsure ? '<sup>?</sup>' : ''}`, `style="background:${bg};color:${inkOn(bg)}" class="clk${n < unsure ? ' unsure' : ''}"`);
+    }).join('')}</tr>`).join('')}</tbody></table>
+    <div class="heat-legend"><span>1</span><span class="bar">${SEQ.map((c) => `<i style="background:${c}"></i>`).join('')}</span><span>${max} şarkı</span>
+      <span class="hint">· <sup>?</sup> = 3'ten az şarkıda görüldü (belirsiz) · tekrar sayısı yalnızca ipucunda</span></div>`;
+  const top = [...b.trans].sort((x, y) => y[1].songs.size - x[1].songs.size || y[1].occ - x[1].occ).slice(0, 15);
+  const topRows = top.map(([k, e]) => { const [a, c] = k.split('>'); return `<tr><td>${esc(lab(a))} → ${esc(lab(c))}${e.songs.size < unsure ? ' <span class="tag warn">belirsiz</span>' : ''}</td>${drillCell(e, `${lab(a)} → ${lab(c)}`, e.songs.size)}<td>${pct(e.songs.size, N)}%</td><td class="hint">${e.occ}</td></tr>`; }).join('');
+  const edge = (map, name) => [...map].sort((x, y) => y[1].songs.size - x[1].songs.size).map(([k, e]) => `<tr><td>${esc(lab(k))}</td>${drillCell(e, `${name}: ${lab(k)}`, e.songs.size)}<td>${pct(e.songs.size, N)}%</td></tr>`).join('');
+  const shifts = [...st.shifts].sort((x, y) => y[1].songs.size - x[1].songs.size).map(([, e]) => {
+    const mt = e.meta, ivs = mt.iv > 6 ? mt.iv - 12 : mt.iv;
+    return `<tr><td>${esc(C.MODES[mt.fromMode].name)} → ${esc(C.MODES[mt.toMode].name)}</td><td>${ivs > 0 ? '+' : ''}${ivs} yarım ses</td>${drillCell(e, 'modal kayma', e.songs.size)}</tr>`;
+  }).join('');
+  const inter = [...st.inter].sort((x, y) => y[1].songs.size - x[1].songs.size).map(([, e]) => {
+    const mt = e.meta;
+    return `<tr><td>${esc(St.coreLabel(mt.from, mt.fromMode))} <span class="hint">(${esc(C.MODES[mt.fromMode].short)})</span> → ${esc(St.coreLabel(mt.to, mt.toMode))} <span class="hint">(${esc(C.MODES[mt.toMode].short)}, ${mt.iv > 6 ? mt.iv - 12 : mt.iv} yarım ses)</span></td>${drillCell(e, 'bölümler arası geçiş', e.songs.size)}<td class="hint">${e.examples.map((x) => `${St.keyLabel(x.from)} ${x.from.sym} → ${St.keyLabel(x.to)} ${x.to.sym}`).slice(0, 2).map(esc).join('; ')}</td></tr>`;
+  }).join('');
+  const drill = SS.drill ? `<div id="stDrill" class="st-drill"><b>${esc(SS.drill.title)}</b> — geldiği şarkılar:<ul>${SS.drill.refs.map((r) => `<li>${esc(songName(songById(r.song)))} <span class="hint">· ${esc(r.section)}</span></li>`).join('')}</ul></div>` : '';
+  return `<div class="row st-modes">${chips}</div>${lowTxt}
+    <p class="hint">Ana istatistik "kaç şarkıda" (şarkı başına en fazla 1); gri sayılar toplam tekrar — yalnızca bilgi, modele girmez. Hücrelere tıklayınca şarkılar listelenir.${mode === St.ALL ? ' Havuz: dereceler merkezin majör gamına göre.' : ''}</p>
+    <div class="row">Nitelik: ${qual}</div>
+    ${drill}
+    <div class="st-grid2">
+      <div><h3>Dereceler (${N} şarkı)</h3><table class="st-t"><thead><tr><th>derece</th><th>şarkı</th><th>%</th><th>tekrar</th><th>en sık renk</th></tr></thead><tbody>${degRows}</tbody></table></div>
+      <div><h3>En sık 15 geçiş</h3><table class="st-t"><thead><tr><th>geçiş</th><th>şarkı</th><th>%</th><th>tekrar</th></tr></thead><tbody>${topRows || '<tr><td class="hint">geçiş yok</td></tr>'}</tbody></table></div>
+    </div>
+    <h3>Geçiş matrisi</h3>${vocab.length ? matrix : ''}
+    <div class="st-grid2">
+      <div><h3>Açılış (bölümün ilk akoru)</h3><table class="st-t"><tbody>${edge(b.open, 'açılış')}</tbody></table></div>
+      <div><h3>Kapanış (bölümün son akoru)</h3><table class="st-t"><tbody>${edge(b.close, 'kapanış')}</tbody></table></div>
+    </div>
+    <h3>Bölümler arası modal kayma <span class="hint">(tüm modlar)</span></h3>
+    <table class="st-t"><thead><tr><th>modlar</th><th>merkez aralığı</th><th>şarkı</th></tr></thead><tbody>${shifts || '<tr><td class="hint">Bölüm geçişi yok (ardışık iki onaylı bölüm gerekir; N.C. sınırında sayılmaz).</td></tr>'}</tbody></table>
+    <table class="st-t"><thead><tr><th>son akor → ilk akor</th><th>şarkı</th><th>örnek</th></tr></thead><tbody>${inter}</tbody></table>`;
+}
+
+// ---------------------------------------------------------------- 7–8) MODEL + GERİ BİLDİRİM
+function tabModel() {
+  const o = SS.settings;
+  const num = (k, label, step, min, max, help) => `<label title="${esc(help)}">${label}<input type="number" data-act="set" data-k="${k}" value="${o[k]}" step="${step}" min="${min}" max="${max}"></label>`;
+  const cv = SS.cv ? (SS.cv.ok ? `<p>Önerilen: <b>k = ${SS.cv.best.k}, α = ${SS.cv.best.alpha}</b> (ortalama log-olabilirlik ${SS.cv.best.meanLL.toFixed(3)}, ${SS.cv.songs} şarkı, bir-şarkı-dışarıda). <button class="accent" data-act="applyKA">Uygula</button></p>
+      <table class="st-t"><thead><tr><th>k</th><th>α</th><th>ort. log-olabilirlik</th></tr></thead><tbody>${SS.cv.table.slice(0, 8).map((r) => `<tr><td>${r.k}</td><td>${r.alpha}</td><td>${r.meanLL.toFixed(3)}</td></tr>`).join('')}</tbody></table>` : `<p class="bad">${esc(SS.cv.reason)}</p>`) : '';
+  const fb = model().feedback;
+  const adj = [...(fb.net || new Map())].filter(([, n]) => n !== 0).map(([k, n]) => {
+    const [mode, tr] = k.split('|'); const [a, b] = tr.split('>');
+    return `<tr><td>${esc(C.MODES[mode] ? C.MODES[mode].short : mode)}</td><td>${esc(St.coreLabel(a, mode))} → ${esc(St.coreLabel(b, mode))}</td><td>${n > 0 ? '+' : ''}${n}</td><td>×${fb.mult(mode, a, b).toFixed(2)}</td></tr>`;
+  }).join('');
+  return `<div class="st-grid2"><div>
+      <h3>Model</h3>
+      <p class="hint">Birinci derece Markov P(sonraki core | önceki core, mod); ikinci derece yalnızca bağlam en az "min bağlam" şarkıda görüldüyse (yoksa birinci dereceye geri dönülür). Kısmi havuzlama P = (n_mod·P_mod + k·P_havuz)/(n_mod + k); moda uygun ama görülmemiş her geçişe α eklenir. Renk ayrı dağılım: P(color | core, mod), aynı havuzlama ve yumuşatma.</p>
+      <div class="grid2">
+        ${num('k', 'Havuz ağırlığı k', 1, 0, 1000, 'kısmi havuzlama')}
+        ${num('alpha', 'Yumuşatma α (şarkı)', 0.05, 0, 10, 'görülmemiş diatonik geçişe eklenen sanal şarkı sayısı')}
+        ${num('lambda', 'Stil ağırlığı λ (akor bulucu)', 0.25, 0, 10, '0 = saf teori')}
+        ${num('chordTemperature', 'Akor bulucu sıcaklığı', 0.1, 0, 5, '0 = hep en iyisi')}
+        ${num('minCtxSongs', 'Min bağlam (2. derece)', 1, 1, 100, 'ikinci derece için gereken şarkı sayısı')}
+        ${num('lowDataSongs', '"Az veri" eşiği (şarkı)', 1, 1, 1000, 'bu sayının altındaki modlar uyarılır')}
+      </div>
+      <label class="chk"><input type="checkbox" data-act="set" data-k="secondOrder"${o.secondOrder ? ' checked' : ''}> İkinci derece Markov (backoff'lu)</label>
+      <h3>k ve α öner</h3>
+      <p class="hint">Her seferinde bir şarkı dışarıda bırakılır; kalanlarla kurulan model o şarkının geçişlerini ne kadar iyi tahmin ediyor (log-olabilirlik) bakılır.</p>
+      <button data-act="suggestKA">k ve α öner</button>${cv}
+    </div><div>
+      <h3>Kişisel geri bildirim katmanı</h3>
+      <p class="hint">Şarkı verisinden ayrı tutulur, veri setini değiştirmez. Her beğeni ilgili geçişi ×1.25, her beğenmeme ×0.8 ile çarpar; toplam çarpan 0.5 ile 2 arasında sınırlıdır. Beğenilmeyen progresyon (katman açıkken) bir daha önerilmez.</p>
+      <label class="chk"><input type="checkbox" data-act="fbOn"${SS.feedback.on ? ' checked' : ''}> Katman açık</label>
+      <p>${SS.feedback.events.length} geri bildirim · ${SS.feedback.banned.length} yasaklı progresyon <button data-act="fbReset" class="danger">Sıfırla</button></p>
+      ${adj ? `<table class="st-t"><thead><tr><th>mod</th><th>geçiş</th><th>net</th><th>çarpan</th></tr></thead><tbody>${adj}</tbody></table>` : '<p class="hint">Henüz ayarlanmış geçiş yok.</p>'}
+    </div></div>`;
+}
+
+// ---------------------------------------------------------------- 10) PROGRESYON ÖNERİCİ
+function dawSectionButtons(target) {
+  const d = A.S.d;
+  if (!d) return '';
+  const secs = d.sections.filter((s) => s.tonic != null && !s.implicit);
+  return secs.length ? `<span class="hint">DAW'dan:</span> ${secs.map((s) => `<button data-act="fromDaw" data-target="${target}" data-sec="${s.id}" class="small">${esc(s.name)} (${esc(C.keyName(s.tonic, s.mode))})</button>`).join(' ')}` : '';
+}
+function runProg() {
+  const o = SS.progOpts;
+  SS.prog = Object.assign({ opts: Object.assign({}, o) }, St.suggestProgressions(model(), o));
+  render();
+}
+function tabProg() {
+  const o = SS.progOpts;
+  const P = SS.prog;
+  const lab = (k) => St.coreLabel(k, P.opts.mode);
+  const items = P ? P.items.map((it, i) => {
+    const r = it.rarest;
+    const songs = r ? (r.mode.length ? r.mode : r.pool) : [];
+    const surprise = r ? `${esc(lab(r.a))} → ${esc(lab(r.b))}${r.loop ? ' (döngü dönüşü)' : ''} · p=${r.p.toFixed(3)} · ${songs.length ? `görüldüğü şarkılar${r.mode.length ? '' : ' (havuz)'}: ${songs.map((id) => esc(songName(songById(id)))).join(', ')}` : '<span class="bad">hiç görülmedi — yalnızca yumuşatmadan</span>'}` : '';
+    return `<li class="st-prog ${it.fb > 0 ? 'liked' : it.fb < 0 ? 'disliked' : ''}">
+      <div class="syms">${it.symbols.map(esc).join(' – ')}${P.opts.loop ? ' <span class="hint">↻</span>' : ''}</div>
+      <div class="hint">${it.degrees.map(esc).join(' – ')} · toplam olasılık ${it.prob.toExponential(2)} (log ${it.logP.toFixed(2)})</div>
+      <div class="hint">Sürpriz noktası: ${surprise}</div>
+      <div class="row"><button data-act="playProg" data-i="${i}">▶ Çal</button><button data-act="stopProg">■</button>
+        <button data-act="fbProg" data-v="1" data-i="${i}" title="beğen">👍</button><button data-act="fbProg" data-v="-1" data-i="${i}" title="beğenme — bir daha önerilmez">👎</button>
+        <span class="hint">Zaman çizelgesine yerleştir: ölçü</span><input type="number" id="stPlace${i}" min="1" value="1" style="width:60px"><button data-act="placeProg" data-i="${i}">Yerleştir</button></div></li>`;
+  }).join('') : '';
+  const trFrom = SS.trFrom || { tonic: 1, mode: 'phrygian' }, trTo = SS.trTo || { tonic: 11, mode: 'dorian' };
+  const tr = SS.trans;
+  const trRes = tr ? (tr.res.items.length ? `<p class="hint">Dayanak: ${esc(tr.res.basis)}</p><ul class="st-list">${tr.res.items.map((it, i) => `<li><b>${esc(it.from.symbol)}</b> <span class="hint">(${esc(it.from.label)} · ${esc(St.keyLabel(tr.from))})</span> → <b>${esc(it.to.symbol)}</b> <span class="hint">(${esc(it.to.label)} · ${esc(St.keyLabel(tr.to))})</span>
+      · ${it.songs.length} şarkı${it.pivot ? ` · ${it.pivot} ortak nota` : ''} <button data-act="playTrans" data-i="${i}" class="small">▶</button>
+      <div class="hint">${it.songs.map((id) => esc(songName(songById(id)))).join(', ')}</div></li>`).join('')}</ul>` : '<p class="hint">Veride bölüm geçişi yok.</p>') : '';
+  return `<div class="st-grid2"><div>
+      <h3>Melodisiz progresyon önerici</h3>
+      <div class="row">${tonicSel(o.tonic, 'prog', 'data-k="tonic" style="width:70px"')} ${modeSel(o.mode, 'prog', 'data-k="mode" style="width:auto"')} ${dawSectionButtons('prog')}</div>
+      <div class="grid2">
+        <label>Uzunluk<select data-act="prog" data-k="length">${[2, 4, 8].map((n) => `<option${o.length === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label>Kapanış<select data-act="prog" data-k="ending"><option value="home"${o.ending === 'home' ? ' selected' : ''}>eve dön</option><option value="open"${o.ending === 'open' ? ' selected' : ''}>açık bırak</option><option value="data"${o.ending === 'data' ? ' selected' : ''}>verideki kapanış dağılımı</option></select></label>
+        <label>Sıcaklık (0 = en olası)<input type="number" data-act="prog" data-k="temperature" value="${o.temperature}" min="0" max="5" step="0.1"></label>
+        <label>Kaç öneri<input type="number" data-act="prog" data-k="count" value="${o.count}" min="1" max="20"></label>
+        <label>Tohum<input type="number" data-act="prog" data-k="seed" value="${o.seed}" min="1"></label>
+        <label class="chk"><input type="checkbox" data-act="prog" data-k="loop"${o.loop ? ' checked' : ''}> Döngü (son akor başa bağlanır)</label>
+      </div>
+      <button class="accent" data-act="runProg">Öner</button>
+      ${P ? P.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('') : ''}
+      ${P ? `<p class="hint">${esc(St.keyLabel(P.opts))} · ev akoru ${esc(lab(P.home))} · ${P.opts.length} akor${P.opts.loop ? ', döngü' : ''}</p><ol class="st-progs">${items}</ol>` : ''}
+    </div><div>
+      <h3>İki bölüm arası geçiş</h3>
+      <p class="hint">Verideki bölümler arası geçişlerden (bir bölümün son akoru → sonrakinin ilk akoru) aynı mod çiftine ve merkez aralığına göre öneri.</p>
+      <div class="row">Önceki bölüm: ${tonicSel(trFrom.tonic, 'noop', 'id="stTrFromT" style="width:70px"')} ${modeSel(trFrom.mode, 'noop', 'id="stTrFromM" style="width:auto"')}</div>
+      <div class="row">${dawSectionButtons('from')}</div>
+      <div class="row">Sonraki bölüm: ${tonicSel(trTo.tonic, 'noop', 'id="stTrToT" style="width:70px"')} ${modeSel(trTo.mode, 'noop', 'id="stTrToM" style="width:auto"')}</div>
+      <div class="row">${dawSectionButtons('to')}</div>
+      <button data-act="runTrans">Geçiş akoru öner</button>
+      ${trRes}
+    </div></div>`;
+}
+
+// ---------------------------------------------------------------- 11) SAKLAMA
+function tabStore() {
+  const box = (k, title, desc) => `<div class="st-store"><h4>${title}</h4><p class="hint">${desc}</p>
+    <button data-act="exp" data-k="${k}">Dışa aktar (.json)</button>
+    <label class="file-btn">İçe aktar<input type="file" data-act="imp" data-k="${k}" accept=".json,application/json" hidden></label></div>`;
+  return `<p class="hint">Üç ayrı dosya. Tarayıcıda da otomatik saklanır (bu tarayıcıya özel).</p>
+    <div class="st-grid3">
+      ${box('dataset', 'Veri seti', `Şarkılar, bölümler, düzeltmeler ve onaylar (${SS.dataset.songs.length} şarkı).`)}
+      ${box('settings', 'Model ayarları', `k=${SS.settings.k}, α=${SS.settings.alpha}, λ=${SS.settings.lambda}…`)}
+      ${box('feedback', 'Geri bildirim katmanı', `${SS.feedback.events.length} geri bildirim, ${SS.feedback.banned.length} yasaklı progresyon.`)}
+    </div>
+    <p><button data-act="clearAll" class="danger">Tüm şarkıları sil</button></p>`;
+}
+
+// ---------------------------------------------------------------- DAW paneli (λ, sıcaklık) + kancalar
+function renderDawBox() {
+  const n = confirmedSongs();
+  $('#styleInfo').textContent = n ? `${n} şarkıdan model · k=${SS.settings.k}, α=${SS.settings.alpha}${SS.feedback.on && SS.feedback.events.length ? ` · ${SS.feedback.events.length} geri bildirim` : ''}` : 'Onaylı stil verisi yok — akor bulucu saf teoriyle çalışıyor.';
+  $('#inLambda').value = SS.settings.lambda; $('#outLambda').textContent = SS.settings.lambda;
+  $('#inChordTemp').value = SS.settings.chordTemperature; $('#outChordTemp').textContent = SS.settings.chordTemperature;
+}
+$('#inLambda').addEventListener('input', (e) => { SS.settings.lambda = +e.target.value; $('#outLambda').textContent = e.target.value; persist(); A.refresh(); });
+$('#inChordTemp').addEventListener('input', (e) => { SS.settings.chordTemperature = +e.target.value; $('#outChordTemp').textContent = e.target.value; persist(); A.refresh(); });
+$('#btnReseed').onclick = () => { SS.settings.seed = (SS.settings.seed || 1) + 1; persist(); A.refresh(); A.status(`Yeniden örneklendi (tohum ${SS.settings.seed}).`); };
+
+window.StyleUI = {
+  // akor bulucuya stil puanlayıcı: veri yoksa ya da λ = 0 ise null (saf teori, davranış birebir aynı)
+  scorer() {
+    if (!SS.settings.lambda || !confirmedSongs()) return null;
+    return St.makeStyleScorer(model(), { lambda: SS.settings.lambda, temperature: SS.settings.chordTemperature, seed: SS.settings.seed });
+  },
+  feedbackChord(prev, chord, sec, like) {
+    const to = St.chordToCore(chord, sec.tonic, sec.mode).core;
+    const from = prev ? St.chordToCore(prev, sec.tonic, sec.mode).core : '^';
+    if (from === to) { A.status('Önceki akorla aynı core — geçiş yok.', 'err'); return; }
+    SS.feedback.events.push({ t: Date.now(), kind: 'chord', mode: sec.mode, transitions: [[from, to]], like });
+    A.status(`${like > 0 ? 'Beğenildi' : 'Beğenilmedi'}: ${St.coreLabel(from, sec.mode)} → ${St.coreLabel(to, sec.mode)} (${St.modeName(sec.mode)}) — çarpan ×${St.buildModel(SS.dataset, SS.settings, SS.feedback).feedback.mult(sec.mode, from, to).toFixed(2)}`);
+    SS.model = null; persist(); A.refresh(); renderDawBox();
+  },
+  state: SS, setView, render, doImport, model,
+};
+renderDawBox();
+A.refresh();
 })();
 </script>
 </body>

@@ -5,6 +5,8 @@ const tpl = read('./src/template.html');
 const out = tpl
   .replace('/*__STYLE__*/', () => read('./src/style.css'))
   .replace('/*__CORE__*/', () => read('./src/core.js'))
-  .replace('/*__APP__*/', () => read('./src/app.js'));
+  .replace('/*__STYLECORE__*/', () => read('./src/styledata.js'))
+  .replace('/*__APP__*/', () => read('./src/app.js'))
+  .replace('/*__STYLEAPP__*/', () => read('./src/styleui.js'));
 writeFileSync(new URL('./index.html', import.meta.url), out);
 console.log('index.html yazıldı (' + (out.length / 1024).toFixed(0) + ' KB)');

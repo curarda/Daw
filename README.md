@@ -19,6 +19,76 @@ Tarayıcıda çalışan, **tek dosyalık** (`index.html`) mini DAW. Tek sesli vo
 
 Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kilitler ayrı kayıtlar olarak tutulur, her değişiklikte sonraki adımlar yeniden hesaplanır.
 
+## Stil verisi ve öneri
+
+Üst çubuktaki **Stil verisi ve öneri** görünümü, sevdiğin şarkıların akorlarından derece istatistiği ve bir Markov modeli kurar. Model hem melodiye akor bulurken hem de melodisiz progresyon önerirken kullanılır. Mevcut akor bulucu kuralları (yarım ses cezası, %X eşiği, ev akoru M ölçü, N ölçü, kilitler) aynen geçerlidir.
+
+**İçe aktarma.** Claude chat'e verilecek istem uygulamanın içinde, kopyalanabilir. Şema (`schema_version: 1`):
+
+```json
+{
+  "schema_version": 1,
+  "artist": "Sanatçı",
+  "title": "Şarkı",
+  "sections": [
+    {
+      "name": "Verse 1",
+      "chords": ["C#m", "D", "C#m", "D"],
+      "key_proposals": [{ "tonic": "C#", "mode": "phrygian", "confidence": 0.8, "reason": "…" }],
+      "degrees_preview": ["i", "♭II", "i", "♭II"],
+      "warnings": []
+    }
+  ],
+  "warnings": []
+}
+```
+
+- Birden çok şarkı için `{"schema_version": 1, "songs": [ … ]}` de kabul edilir. `key_proposals[].key: "C# phrygian"` biçimi de geçerlidir.
+- Şema hatası olursa içe aktarım durur ve bozuk alanlar yol ile listelenir (ör. `sections[0].key_proposals[0].mode: tanınmayan mod "phrigian"`).
+- Yedek giriş olarak düz metin kabul edilir: `Sanatçı:` / `Şarkı:` satırları ve `[Verse: C# phrygian] C#m D …`. DAW'ın dışa aktardığı akor şeması da okunur.
+- Aynı sanatçı + şarkı ikinci kez gelirse uyarı çıkar (üzerine yaz / vazgeç). Tanınamayan akor sembolleri listelenir. Kullanıcı düzeltene kadar o bölüm onaylanamaz.
+
+**Onay.** İlk ton önerisi ön-seçili gelir ama onaysızdır. Onaylanmamış bölüm istatistiğe girmez. Uygulama dereceleri seçilen merkez + moda göre kendisi hesaplar ve `degrees_preview` ile karşılaştırır; uyuşmayanlar kırmızı gösterilir. Önizlemenin ait olduğu tondan farklı bir ton seçilirse önizleme geçersiz sayılır ve uyarı çıkmaz.
+
+**Dereceler.** Romen rakamları merkezin majör gamına göredir. Üç katman var: core (triad), color (maj7, sus2, add9…) ve bass (slash akorda bas derecesi).
+- Power chord'da core kökten verilir (ör. `♭VII5`). Niteliği "belirsiz" sayılır, majör/minör sayımına girmez.
+- sus akorlarının core niteliği, moddaki diatonik üçlüden çıkarılır (C majörde Dsus2 → ii + sus2).
+- Moda ait olmayan akorlar "ödünç" diye işaretlenir.
+
+**Geçişler.**
+- Arka arkaya aynı akor tek akor sayılır.
+- Core geçişlerinde aynı core'a geçiş (C → Cmaj7) harmonik değişim sayılmaz. Renk dağılımında ikisi de sayılır.
+- N.C. geçişi böler.
+- Bölüm içi ve bölümler arası geçişler ayrı tutulur. Bölümler arası geçişlerde iki bölümün merkez + modu da kaydedilir.
+- Her bölümün açılış ve kapanış akoru ayrıca kaydedilir. Tekrar eden döngüler şarkı kaydında gösterilir.
+
+**Sayma.** Temel birim şarkıdır: her derece, geçiş, açılış ve kapanış bir şarkıda en fazla 1 kez sayılır. Toplam tekrar sayısı yalnızca bilgi olarak gösterilir. İstatistik mod bazında ve tüm modların havuzu olarak ayrı tutulur. 20 şarkıdan az olan modlarda "az veri", 3 şarkıdan az görülen geçişlerde "belirsiz" işareti çıkar. Hücreye tıklayınca verinin hangi şarkılardan geldiği listelenir.
+
+**Model.**
+- Birinci derece Markov: P(core | önceki core, mod).
+- İkinci derece yalnızca bağlam en az 5 şarkıda görüldüyse kullanılır; görülmediyse birinci dereceye geri dönülür (backoff).
+- Kısmi havuzlama: `P = (n_mod·P_mod + k·P_havuz)/(n_mod + k)`, varsayılan k = 10.
+- Moda uygun ama hiç görülmemiş her geçişe α = 0.5 şarkı eklenir.
+- Renk ayrı bir dağılım: P(color | core, mod), aynı havuzlama ve yumuşatmayla.
+- "k ve α öner" düğmesi, bir-şarkı-dışarıda çapraz doğrulamayla log-olabilirliği en yüksek (k, α) çiftini bulur.
+
+**Geri bildirim.** Beğen / beğenme şarkı verisinden ayrı bir katmanda tutulur. Her tıklama ilgili geçişi ×1.25 ya da ×0.8 ile çarpar; toplam çarpan 0.5 ile 2 arasında sınırlıdır. Beğenilmeyen progresyon bir daha önerilmez. Katman kapatılabilir ve sıfırlanabilir.
+
+**Akor bulucu.** Toplam = melodi puanı + λ·log P(geçiş) + λ·log P(renk).
+- Log olasılıklar, o dağılımdaki uniform olasılığa göre normalize edilir: veri yokken stilin etkisi 0, aynı akorda kalmak da 0'dır.
+- λ = 0 saf teoridir; sonuç stil modülü yokkenkiyle birebir aynı çıkar.
+- Sıcaklık > 0 olunca en iyi 3 aday arasından puanla orantılı (softmax) örneklenir.
+- Aday tablosu puanı melodi payı ve stil payı olarak ayrı gösterir.
+
+**Progresyon önerici.**
+- Girdiler: merkez + mod, uzunluk 2/4/8, döngü, kapanış tipi, sıcaklık, öneri sayısı.
+- Açılış dağılımından başlar; sıcaklık 0'da ışın araması, üstünde örnekleme yapar.
+- Her önerinin yanında toplam olasılık, en nadir geçiş (sürpriz noktası) ve bu geçişin görüldüğü şarkılar yazar.
+- Öneri piyanoyla çalınabilir ya da zaman çizelgesine kilitli akor şablonu olarak yerleştirilebilir.
+- İki bölüm arası geçiş önerisi, modal kayma istatistiğinden gelir.
+
+**Saklama.** Veri seti, model ayarları ve geri bildirim ayrı JSON dosyaları olarak dışa ve içe aktarılır. Ayrıca tarayıcıda (localStorage) otomatik saklanır.
+
 ## Perde kaydırma neden TD-PSOLA?
 
 Tone.js `PitchShift` (gecikme hattı tabanlı) vokalde metalik kalıyor. Rubberband-wasm tek HTML dosyasına gömülemeyecek kadar büyük ve AudioWorklet/COOP gerektiriyor. Bunun yerine, zaten elimizde olan pitch track'ten perde işaretleri (pitch marks) çıkarıp **TD-PSOLA** uyguluyoruz. Tanecikler orijinal periyotlarla alındığı için spektral zarf (formantlar) korunur, yani "sincap sesi" oluşmaz. Kaydırma olmayan bölgeler orijinal örneklerle birebir aynı kalır.
@@ -29,15 +99,17 @@ Tek dosya `src/` altındaki parçalardan üretilir:
 
 ```
 src/core.js       DOM'suz çekirdek: DSP, ton/akor mantığı, MIDI/WAV, test melodisi
+src/styledata.js  DOM'suz stil çekirdeği: akor ayrıştırma, dereceler, istatistik, Markov modeli, önerici
 src/app.js        arayüz: zaman çizelgesi, kayıt, Tone.js oynatma, dışa aktarım
+src/styleui.js    "Stil verisi ve öneri" görünümü
 src/style.css, src/template.html
 build.mjs         → index.html
 ```
 
 ```bash
 npm install          # yalnızca testler için (playwright, tone)
-npm test             # çekirdek: test melodisiyle her adımı doğrular (Node)
-npm run test:ui      # arayüz: Chromium'da uçtan uca (sahte mikrofonla kayıt dahil)
+npm test             # çekirdek + stil çekirdeği (Node): test melodisi ve stil testleri a–e
+npm run test:ui      # arayüz + stil görünümü: Chromium'da uçtan uca (sahte mikrofonla kayıt dahil)
 ```
 
 ### Test melodisi
