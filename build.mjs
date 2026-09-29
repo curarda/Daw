@@ -7,6 +7,8 @@ const out = tpl
   .replace('/*__CORE__*/', () => read('./src/core.js'))
   .replace('/*__STYLECORE__*/', () => read('./src/styledata.js'))
   .replace('/*__APP__*/', () => read('./src/app.js'))
-  .replace('/*__STYLEAPP__*/', () => read('./src/styleui.js'));
+  .replace('/*__STYLEAPP__*/', () => read('./src/styleui.js')
+    // içe aktarma istemi tek kaynak: src/import-prompt.txt
+    .replace("/*__IMPORT_PROMPT__*/''", () => JSON.stringify(read('./src/import-prompt.txt').trim())));
 writeFileSync(new URL('./index.html', import.meta.url), out);
 console.log('index.html yazıldı (' + (out.length / 1024).toFixed(0) + ' KB)');

@@ -23,50 +23,55 @@ Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kil
 
 Üst çubuktaki **Stil verisi ve öneri** görünümü, sevdiğin şarkıların akorlarından derece istatistiği ve bir Markov modeli kurar. Model hem melodiye akor bulurken hem de melodisiz progresyon önerirken kullanılır. Mevcut akor bulucu kuralları (yarım ses cezası, %X eşiği, ev akoru M ölçü, N ölçü, kilitler) aynen geçerlidir.
 
-**İçe aktarma.** Claude chat'e verilecek istem uygulamanın içinde, kopyalanabilir. Şema (`schema_version: 1`):
+**İçe aktarma.** Claude chat'e verilecek istem uygulamanın içinde kopyalanabilir. Tek kaynağı `src/import-prompt.txt`; derlemede sayfaya gömülür. Sohbetin ürettiği biçim (`schema_version: 1`):
 
 ```json
 {
   "schema_version": 1,
   "artist": "Sanatçı",
   "title": "Şarkı",
+  "source_notes": { "capo": 2, "tuning": null, "other": null },
+  "warnings": [],
   "sections": [
     {
-      "name": "Verse 1",
+      "label": "Verse 1",
+      "type": "verse",
       "chords": ["C#m", "D", "C#m", "D"],
-      "key_proposals": [{ "tonic": "C#", "mode": "phrygian", "confidence": 0.8, "reason": "…" }],
-      "degrees_preview": ["i", "♭II", "i", "♭II"],
       "bars": [2, 2, 2, 2],
-      "warnings": []
+      "key_proposals": [{ "tonic": "C#", "mode": "phrygian", "confidence": 0.8, "reason": "…" }],
+      "degrees_preview": [{ "core": "i", "color": null, "bass": null }, { "core": "♭II", "color": null, "bass": null }, "…"]
     }
-  ],
-  "warnings": []
+  ]
 }
 ```
 
-- Birden çok şarkı için `{"schema_version": 1, "songs": [ … ]}` de kabul edilir. `key_proposals[].key: "C# phrygian"` biçimi de geçerlidir.
+- `label` bölüm adıdır (eski `name` de kabul edilir). `type` (verse, chorus…) saklanır ve bölüm geçişi örneklerinde gösterilir.
+- `source_notes` (capo, akort, diğer) şarkı kaydında gösterilir. Akorlar dönüştürülmez: dereceler göreli olduğu için kapo istatistiği etkilemez.
+- `bars` bir dizi ya da `null` olabilir. `null` olan bölüm süre istatistiğine girmez ama değişim istatistiğine girer.
+- `degrees_preview` öğeleri `{core, color, bass}` üç katmanı taşır ve her katman ayrı karşılaştırılır. Eski düz metin biçimi ("IVmaj7") de okunur; o biçimde yalnızca core karşılaştırılır.
+- Birden çok şarkı için `{"schema_version": 1, "songs": [ … ]}` de kabul edilir.
 - Şema hatası olursa içe aktarım durur ve bozuk alanlar yol ile listelenir (ör. `sections[0].key_proposals[0].mode: tanınmayan mod "phrigian"`).
-- `bars` isteğe bağlıdır: her akorun süresi ölçü cinsinden, `chords` ile aynı uzunlukta (yarım ölçü = 0.5). `bars` olmayan bölüm süre istatistiğine girmez ama değişim istatistiğine girer.
 - Yedek giriş olarak düz metin kabul edilir: `Sanatçı:` / `Şarkı:` satırları ve `[Verse: C# phrygian] C#m D …`. Süre iki yolla verilebilir: `C#m:4 D:2` ya da ölçü çizgileriyle `| C#m | D C#m |` (her hücre 1 ölçü, içindeki akorlara eşit bölünür). DAW'ın dışa aktardığı akor şeması da okunur.
 - Aynı sanatçı + şarkı ikinci kez gelirse uyarı çıkar (üzerine yaz / vazgeç). Tanınamayan akor sembolleri listelenir. Kullanıcı düzeltene kadar o bölüm onaylanamaz.
 
-**Onay.** İlk ton önerisi ön-seçili gelir ama onaysızdır. Onaylanmamış bölüm istatistiğe girmez. Uygulama dereceleri seçilen merkez + moda göre kendisi hesaplar ve `degrees_preview` ile karşılaştırır; uyuşmayanlar kırmızı gösterilir. Önizlemenin ait olduğu tondan farklı bir ton seçilirse önizleme geçersiz sayılır ve uyarı çıkmaz.
+**Onay.** İlk ton önerisi ön-seçili gelir ama onaysızdır. Onaylanmamış bölüm istatistiğe girmez. Uygulama dereceleri seçilen merkez + moda göre kendisi hesaplar ve `degrees_preview` ile katman katman (core / color / bass) karşılaştırır. Uyuşmayan akorlar kırmızı gösterilir ve hangi katmanın tutmadığı yazar. Önizlemenin ait olduğu tondan farklı bir ton seçilirse önizleme geçersiz sayılır ve uyarı çıkmaz.
 
-**Dereceler.** Romen rakamları merkezin majör gamına göredir. Üç katman var: core (triad), color (maj7, sus2, add9…) ve bass (slash akorda bas derecesi).
-- Power chord'da core kökten verilir (ör. `♭VII5`). Niteliği "belirsiz" sayılır, majör/minör sayımına girmez.
-- sus akorlarının core niteliği, moddaki diatonik üçlüden çıkarılır (C majörde Dsus2 → ii + sus2).
+**Dereceler.** İçeride her derece, merkezden yarım ses uzaklığı + nitelik olarak saklanır (ör. `6M`; tritone = 6). Havuz dahil tüm istatistik ve model bu temsil üzerinden sayılır. Romen rakamı yazımı yalnızca gösterimdedir ve merkezin majör gamına göre, moda göre seçilir: aralık modun gamındaysa o basamağın yazımı kullanılır (Lidya'da ♯IV, Lokriyen'de ♭V), değilse ♭II / ♭III / ♭V / ♭VI / ♭VII.
+- Üç katman var: core (triad), color (maj7, add9…) ve bass (slash akorda bas derecesi).
+- Power chord ve sus akorlarında nitelik "belirsiz"dir. Core yalnızca kök derecesidir (gösterimde `V?`, akorda `♭VII5`, `Vsus4`). Majör/minör sayımına girmezler; nitelik tablosunda "belirsiz (power)" ve "belirsiz (sus)" olarak ayrı görünürler.
 - Moda ait olmayan akorlar "ödünç" diye işaretlenir.
 
 **Geçişler.**
 - Arka arkaya aynı akor tek akor sayılır.
-- Core geçişlerinde aynı core'a geçiş (C → Cmaj7) harmonik değişim sayılmaz. Renk dağılımında ikisi de sayılır.
+- Aynı kökte kalan akorlar (C → Cmaj7, Csus4 → C, C5 → C) Markov geçişi sayılmaz; harmonik ritimde tek akor sayılır ve süreleri birleşir. Belirsiz nitelik komşusunun niteliğini alır. Renk dağılımında hepsi ayrı sayılır.
+- Aynı akor içinde bas değişimi (C → C/B) ayrı bir "bas hareketi" istatistiği olarak kaydedilir: bas derecesi → bas derecesi, şarkı başına sayım.
 - N.C. geçişi böler.
 - Bölüm içi ve bölümler arası geçişler ayrı tutulur. Bölümler arası geçişlerde iki bölümün merkez + modu da kaydedilir.
 - Her bölümün açılış ve kapanış akoru ayrıca kaydedilir. Tekrar eden döngüler şarkı kaydında gösterilir.
 
 **Sayma.** Temel birim şarkıdır: her derece, geçiş, açılış ve kapanış bir şarkıda en fazla 1 kez sayılır. Toplam tekrar sayısı yalnızca bilgi olarak gösterilir. İstatistik mod bazında ve tüm modların havuzu olarak ayrı tutulur. 20 şarkıdan az olan modlarda "az veri", 3 şarkıdan az görülen geçişlerde "belirsiz" işareti çıkar. Hücreye tıklayınca verinin hangi şarkılardan geldiği listelenir.
 
-**Harmonik ritim.** Akor süresi, bir core'da kalma süresidir: C → Cmaj7 tek akor sayılır, süreleri toplanır; N.C. süresi sayılmaz. Süreler 0.5 / 1 / 2 / 4 / 8+ ölçü sınıflarına log ölçekte en yakın sınıfa göre konur (1.5 → 2, 3 → 4, 6 ve üstü → 8+).
+**Harmonik ritim.** Akor süresi, aynı kökte kalma süresidir (yukarıdaki birleşme kuralıyla); N.C. süresi sayılmaz. Süreler 0.5 / 1 / 2 / 4 / 8+ ölçü sınıflarına log ölçekte en yakın sınıfa göre konur (1.5 → 2, 3 → 4, 6 ve üstü → 8+).
 - Dağılım mod bazında ve havuz olarak tutulur; şarkı başına sayma kuralı aynen geçerlidir.
 - Ayrıca bölüm başına "kaç ölçüde bir akor değişiyor" dağılımı tutulur (bölüm uzunluğu ÷ akor sayısı).
 - Panelde süre bilgisi olan şarkı sayısı görünür.
@@ -78,15 +83,16 @@ Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kil
 - Moda uygun ama hiç görülmemiş her geçişe α = 0.5 şarkı eklenir.
 - Renk ayrı bir dağılım: P(color | core, mod), aynı havuzlama ve yumuşatmayla.
 - Süre de ayrı bir dağılım: P(süre sınıfı | mod), aynı havuzlama ve yumuşatmayla. Havuzlamadaki n, o modda süre bilgisi olan şarkı sayısıdır.
-- "k ve α öner" düğmesi, bir-şarkı-dışarıda çapraz doğrulamayla log-olabilirliği en yüksek (k, α) çiftini bulur.
+- "k ve α öner" düğmesi, bir-şarkı-dışarıda çapraz doğrulamayla log-olabilirliği en yüksek (k, α) çiftini bulur. 20 onaylı şarkıdan az veriyle de çalışır ama "sonuç güvenilir değil" uyarısı verir.
 
-**Geri bildirim.** Beğen / beğenme şarkı verisinden ayrı bir katmanda tutulur. Her tıklama ilgili geçişi ×1.25 ya da ×0.8 ile çarpar; toplam çarpan 0.5 ile 2 arasında sınırlıdır. Beğenilmeyen progresyon bir daha önerilmez. Katman kapatılabilir ve sıfırlanabilir.
+**Geri bildirim.** Beğen / beğenme şarkı verisinden ayrı bir katmanda tutulur. Her beğeni ilgili geçişi ×1.1, her beğenmeme ×0.91 ile çarpar; toplam çarpan 0.5 ile 2 arasında sınırlıdır. Beğenilmeyen progresyon bir daha önerilmez. Katman kapatılabilir ve sıfırlanabilir.
 
-**Akor bulucu.** Toplam = melodi puanı + λ·log P(geçiş) + λ·log P(renk).
-- Log olasılıklar, o dağılımdaki uniform olasılığa göre normalize edilir: veri yokken stilin etkisi 0, aynı akorda kalmak da 0'dır.
+**Akor bulucu.** Mevcut kurallar (yarım ses cezası, %X eşiği, N ölçü, ev akoru M ölçü, kilitler) aynen geçerlidir. Stil iki ayrı pay olarak girer:
+- **Değiş mi kal mı:** melodi puanı + mevcut politika + harmonik ritim. Harmonik ritim payı λ·log(h/(1−h)); h, "bu akor n ölçüdür çalıyorken bu modda değişme olasılığı"dır. h, süre dağılımından hesaplanır: sınıflar aralık olarak alınır, içleri düzgün kabul edilir. Süre verisi yoksa stil bu karara katılmaz.
+- **Değişirsem hangi akora:** λ·log(P·K) + λ·log(P_renk·K_renk). K = moddaki diatonik core sayısı (7), sabittir; ödünç akorlar K'yı değiştirmez. Veri yokken P uniform olduğu için bu pay yaklaşık 0'dır.
 - λ = 0 saf teoridir; sonuç stil modülü yokkenkiyle birebir aynı çıkar.
 - Sıcaklık > 0 olunca en iyi 3 aday arasından puanla orantılı (softmax) örneklenir.
-- Aday tablosu puanı melodi payı ve stil payı olarak ayrı gösterir.
+- Aday tablosu puanı melodi payı ve stil payı olarak ayrı gösterir; denetçide ayrıca "değiş mi kal mı" satırı var.
 
 **Progresyon önerici.**
 - Girdiler: merkez + mod, değişim sayısı (1 = tek akorda kalma / drone), toplam uzunluk (ölçü), döngü, kapanış tipi, sıcaklık, öneri sayısı.

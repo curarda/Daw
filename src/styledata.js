@@ -10,11 +10,11 @@ const C = root.Core;
 const { mod12, MODES, MODE_ORDER, scalePcs, parsePc, pcName, keyUsesFlats } = C;
 
 // ---------------------------------------------------------------- akor sembolü
-// tq (core niteliği): M majör, m minör, d dim, a aug, 5 power (belirsiz), s sus (moddan çıkarılır)
+// tq (core niteliği): M majör, m minör, d dim, a aug, x belirsiz (power chord ve sus: üçlü yok)
 const SUFFIX = {
   '': ['M', ''], 'M': ['M', ''], 'maj': ['M', ''], 'major': ['M', ''],
   'm': ['m', ''], 'min': ['m', ''], '-': ['m', ''], 'minor': ['m', ''],
-  '5': ['5', ''], 'no3': ['5', ''],
+  '5': ['x', '5'], 'no3': ['x', '5'],
   'dim': ['d', ''], '°': ['d', ''], 'o': ['d', ''],
   'aug': ['a', ''], '+': ['a', ''], '#5': ['a', ''], '+5': ['a', ''],
   '7': ['M', '7'], 'dom7': ['M', '7'],
@@ -28,8 +28,8 @@ const SUFFIX = {
   'add9': ['M', 'add9'], 'add2': ['M', 'add9'], '2': ['M', 'add9'],
   'madd9': ['m', 'add9'], 'madd2': ['m', 'add9'], 'm2': ['m', 'add9'],
   'add11': ['M', 'add11'], 'add4': ['M', 'add11'], 'madd11': ['m', 'add11'], 'madd4': ['m', 'add11'],
-  'sus2': ['s', 'sus2'], 'sus4': ['s', 'sus4'], 'sus': ['s', 'sus4'],
-  '7sus4': ['s', '7sus4'], '7sus': ['s', '7sus4'], '9sus4': ['s', '9sus4'], '9sus': ['s', '9sus4'], '7sus2': ['s', '7sus2'], 'sus2sus4': ['s', 'sus2sus4'], 'sus24': ['s', 'sus2sus4'],
+  'sus2': ['x', 'sus2'], 'sus4': ['x', 'sus4'], 'sus': ['x', 'sus4'],
+  '7sus4': ['x', '7sus4'], '7sus': ['x', '7sus4'], '9sus4': ['x', '9sus4'], '9sus': ['x', '9sus4'], '7sus2': ['x', '7sus2'], 'sus2sus4': ['x', 'sus2sus4'], 'sus24': ['x', 'sus2sus4'],
   'dim7': ['d', '°7'], '°7': ['d', '°7'], 'o7': ['d', '°7'],
   'm7b5': ['d', 'ø7'], 'ø': ['d', 'ø7'], 'ø7': ['d', 'ø7'], 'm7-5': ['d', 'ø7'], 'min7b5': ['d', 'ø7'], '-7b5': ['d', 'ø7'],
   '7b9': ['M', '7b9'], '7#9': ['M', '7#9'], '7b5': ['M', '7b5'], '7#11': ['M', '7#11'], '7b13': ['M', '7b13'], '7alt': ['M', '7alt'], '9#11': ['M', '9#11'], '13b9': ['M', '13b9'],
@@ -96,24 +96,39 @@ const keyLabel = (k) => (k ? `${pcName(k.tonic, keyUsesFlats(k.tonic, k.mode))} 
 const sameKey = (a, b) => !!a && !!b && a.tonic === b.tonic && a.mode === b.mode;
 
 // ---------------------------------------------------------------- dereceler
+// İÇ TEMSİL: kökün merkeze uzaklığı (yarım ses, 0–11) + nitelik → "6M", "10m", "7x".
+// Tüm istatistik, havuz ve model bu anahtarlarla sayılır; ♭V / ♯IV gibi yazım yalnızca gösterimde, moda göre seçilir.
 const ROMAN = ['I', '♭II', 'II', '♭III', 'III', 'IV', '♭V', 'V', '♭VI', 'VI', '♭VII', 'VII'];
+const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+const MAJOR_STEPS = [0, 2, 4, 5, 7, 9, 11];
 const MAJOR_IV = { I: 0, II: 2, III: 4, IV: 5, V: 7, VI: 9, VII: 11 };
 const heptaOf = (mode) => MODES[mode].hepta || mode;
-const TQ_IV = { M: [0, 4, 7], m: [0, 3, 7], d: [0, 3, 6], a: [0, 4, 8], 5: [0, 7] };
-// Romen rakamı merkezin MAJÖR gamına göre; büyük harf majör, küçük minör, ° dim, + aug, 5 power (belirsiz)
+const TQ_IV = { M: [0, 4, 7], m: [0, 3, 7], d: [0, 3, 6], a: [0, 4, 8], x: [0, 7] };
+// Romen rakamı merkezin MAJÖR gamına göre. Aralık modun gamındaysa o basamağın yazımı (Lidya'da ♯IV,
+// Lokriyen'de ♭V), değilse varsayılan tablo (♭II, ♭III, ♭V, ♭VI, ♭VII).
+function romanNumeral(iv, mode) {
+  iv = mod12(iv);
+  if (mode && MODES[mode]) {
+    const d = MODES[heptaOf(mode)].steps.indexOf(iv);
+    if (d >= 0) { const diff = mod12(iv - MAJOR_STEPS[d] + 6) - 6; return (diff < 0 ? '♭' : diff > 0 ? '♯' : '') + NUMERALS[d]; }
+  }
+  return ROMAN[iv];
+}
+// büyük harf majör, küçük minör, ° dim, + aug, "?" belirsiz nitelik (power / sus)
 function romanOf(iv, tq, mode) {
-  let r = ROMAN[mod12(iv)];
-  if (iv === 6 && mode === 'lydian') r = '♯IV';
+  const r = romanNumeral(iv, mode);
   const acc = /^[♭♯]/.test(r) ? r[0] : '';
   let num = acc ? r.slice(1) : r;
   if (tq === 'm' || tq === 'd') num = num.toLowerCase();
-  return acc + num + (tq === 'd' ? '°' : tq === 'a' ? '+' : tq === '5' ? '5' : '');
+  return acc + num + (tq === 'd' ? '°' : tq === 'a' ? '+' : tq === 'x' ? '?' : '');
 }
 const coreKey = (iv, tq) => `${mod12(iv)}${tq}`;
 function coreParts(key) { const m = /^(\d+)(.)$/.exec(key); return { iv: +m[1], tq: m[2] }; }
 const coreLabel = (key, mode) => { if (key === '^') return 'başlangıç'; const p = coreParts(key); return romanOf(p.iv, p.tq, mode); };
-// core + renk eki: "IVmaj7", "vø7" (yarım dim), "vii°7"
+// core + renk eki: "IVmaj7", "vø7" (yarım dim), "vii°7", belirsizde "♭VII5", "Vsus4"
 function degreeLabel(core, color, mode) {
+  const { iv, tq } = coreParts(core);
+  if (tq === 'x') return romanNumeral(iv, mode) + (color || '');
   const lab = coreLabel(core, mode);
   if (color === 'ø7' || color === '°7') return lab.replace('°', '') + color;
   return lab + (color || '');
@@ -126,20 +141,13 @@ function argmaxKey(dist) {
 }
 function parseRoman(s) {
   const t = String(s || '').trim();
-  if (NC_RE.test(t)) return { nc: true };
-  const m = /^([♭b#♯]?)(VII|VI|V|IV|III|II|I|vii|vi|v|iv|iii|ii|i)(°|o|ø|\+|5)?/.exec(t);
+  if (!t || NC_RE.test(t)) return { nc: true };
+  const m = /^([♭b#♯]?)(VII|VI|V|IV|III|II|I|vii|vi|v|iv|iii|ii|i)(°|o|ø|\+|5|\?|sus)?/.exec(t);
   if (!m) return null;
   const up = m[2] === m[2].toUpperCase();
   const iv = mod12(MAJOR_IV[m[2].toUpperCase()] + (/[b♭]/.test(m[1]) ? -1 : /[#♯]/.test(m[1]) ? 1 : 0));
-  const tq = m[3] === '5' ? '5' : m[3] === '+' ? 'a' : m[3] ? 'd' : up ? 'M' : 'm';
+  const tq = m[3] === '5' || m[3] === '?' || m[3] === 'sus' ? 'x' : m[3] === '+' ? 'a' : m[3] ? 'd' : up ? 'M' : 'm';
   return { iv, tq };
-}
-// sus akorunun core niteliği: moddaki diatonik üçlüden çıkarılır (yoksa majör)
-function susQuality(ivRoot, tonic, mode) {
-  const pcs = scalePcs(tonic, heptaOf(mode));
-  const r = mod12(tonic + ivRoot);
-  if (pcs.includes(mod12(r + 3)) && !pcs.includes(mod12(r + 4))) return 'm';
-  return 'M';
 }
 const SUS_TONES = { sus2: [2], sus4: [5], '7sus4': [5, 10], '9sus4': [5, 10, 2], '7sus2': [2, 10], sus2sus4: [2, 5] };
 // Tek akorun derece analizi (üç katman: core, color, bass)
@@ -147,20 +155,20 @@ function analyzeChord(p, tonic, mode) {
   if (!p || !p.ok) return { unknown: true };
   if (p.nc) return { nc: true, sym: 'N.C.' };
   const iv = mod12(p.root - tonic);
-  let tq = p.tq, susTones = null;
-  if (tq === 's') { tq = susQuality(iv, tonic, mode); susTones = SUS_TONES[p.color] || [5]; }
+  const tq = p.tq;
+  const kind = tq !== 'x' ? tq : p.color === '5' ? '5' : 's'; // nitelik sayımı: power / sus ayrı "belirsiz"
   const pcsScale = scalePcs(tonic, heptaOf(mode));
-  const corePcs = susTones ? [0, 7, ...susTones.filter((x) => x !== 10)] : TQ_IV[tq];
+  const corePcs = kind === 's' ? [0, 7, ...(SUS_TONES[p.color] || [5]).filter((x) => x !== 10)] : TQ_IV[tq];
   const borrowed = !corePcs.every((i) => pcsScale.includes(mod12(p.root + i)));
   const bassIv = p.bass == null ? null : mod12(p.bass - tonic);
   return {
-    sym: p.sym, root: p.root, iv, tq, color: p.color, core: coreKey(iv, tq), bassIv, borrowed,
-    power: tq === '5', label: degreeLabel(coreKey(iv, tq), p.color, mode),
-    bassLabel: bassIv == null ? null : ROMAN[bassIv],
+    sym: p.sym, root: p.root, iv, tq, kind, color: p.color, core: coreKey(iv, tq), bassIv, borrowed,
+    power: kind === '5', sus: kind === 's', label: degreeLabel(coreKey(iv, tq), p.color, mode),
+    bassLabel: bassIv == null ? null : romanNumeral(bassIv, mode),
     ident: `${p.root}|${tq}|${p.color}|${p.bass}`,
   };
 }
-const QUALITY_NAMES = { M: 'majör', m: 'minör', d: 'dim', a: 'aug', 5: 'belirsiz (power)' };
+const QUALITY_NAMES = { M: 'majör', m: 'minör', d: 'dim', a: 'aug', 5: 'belirsiz (power)', s: 'belirsiz (sus)' };
 
 // ---------------------------------------------------------------- şema doğrulama (schema_version 1)
 function validateSongJson(obj, path = '') {
@@ -171,11 +179,21 @@ function validateSongJson(obj, path = '') {
   if (!isStr(obj.artist)) errs.push(`${P('artist')}: boş olmayan metin olmalı`);
   if (!isStr(obj.title)) errs.push(`${P('title')}: boş olmayan metin olmalı`);
   if (obj.warnings != null && !(Array.isArray(obj.warnings) && obj.warnings.every((w) => typeof w === 'string'))) errs.push(`${P('warnings')}: metin dizisi olmalı`);
+  if (obj.source_notes != null) {
+    const sn = obj.source_notes;
+    if (typeof sn !== 'object' || Array.isArray(sn)) errs.push(`${P('source_notes')}: nesne olmalı ({capo, tuning, other})`);
+    else {
+      if (sn.capo != null && !(typeof sn.capo === 'number' || typeof sn.capo === 'string')) errs.push(`${P('source_notes.capo')}: sayı, metin ya da null olmalı`);
+      for (const k of ['tuning', 'other']) if (sn[k] != null && typeof sn[k] !== 'string') errs.push(`${P('source_notes.' + k)}: metin ya da null olmalı`);
+    }
+  }
   if (!Array.isArray(obj.sections) || !obj.sections.length) { errs.push(`${P('sections')}: boş olmayan dizi olmalı`); return errs; }
   obj.sections.forEach((s, i) => {
     const sp = `${P('sections')}[${i}]`;
     if (!s || typeof s !== 'object') { errs.push(`${sp}: nesne olmalı`); return; }
-    if (!isStr(s.name)) errs.push(`${sp}.name: boş olmayan metin olmalı`);
+    // bölüm adı: "label" (sohbet çıktısı) ya da eski "name"
+    if (!isStr(s.label) && !isStr(s.name)) errs.push(`${sp}.label: boş olmayan metin olmalı`);
+    if (s.type != null && typeof s.type !== 'string') errs.push(`${sp}.type: metin ya da null olmalı`);
     if (!Array.isArray(s.chords) || !s.chords.length) errs.push(`${sp}.chords: boş olmayan dizi olmalı`);
     else s.chords.forEach((c, j) => { if (typeof c !== 'string' || !c.trim()) errs.push(`${sp}.chords[${j}]: boş olmayan metin olmalı (${JSON.stringify(c)})`); });
     if (s.key_proposals != null) {
@@ -192,7 +210,14 @@ function validateSongJson(obj, path = '') {
         if (k.degrees_preview != null && !(Array.isArray(k.degrees_preview) && k.degrees_preview.every((d) => typeof d === 'string'))) errs.push(`${kp}.degrees_preview: metin dizisi olmalı`);
       });
     }
-    if (s.degrees_preview != null && !(Array.isArray(s.degrees_preview) && s.degrees_preview.every((d) => typeof d === 'string'))) errs.push(`${sp}.degrees_preview: metin dizisi olmalı`);
+    if (s.degrees_preview != null) {
+      if (!Array.isArray(s.degrees_preview)) errs.push(`${sp}.degrees_preview: dizi olmalı`);
+      else s.degrees_preview.forEach((d, j) => {
+        if (d == null || typeof d === 'string') return;
+        if (typeof d !== 'object' || Array.isArray(d)) { errs.push(`${sp}.degrees_preview[${j}]: {core, color, bass} nesnesi olmalı`); return; }
+        for (const k of ['core', 'color', 'bass']) if (d[k] != null && typeof d[k] !== 'string') errs.push(`${sp}.degrees_preview[${j}].${k}: metin ya da null olmalı`);
+      });
+    }
     // isteğe bağlı: her akorun süresi (ölçü), chords ile aynı uzunlukta
     if (s.bars != null) {
       if (!Array.isArray(s.bars)) errs.push(`${sp}.bars: sayı dizisi olmalı`);
@@ -226,10 +251,11 @@ function songFromJson(o) {
   return {
     id: newId(), artist: o.artist.trim(), title: o.title.trim(), source: 'json', importedAt: new Date().toISOString(),
     warnings: o.warnings || [], fixes: {},
+    sourceNotes: o.source_notes ? { capo: o.source_notes.capo ?? null, tuning: o.source_notes.tuning ?? null, other: o.source_notes.other ?? null } : null,
     sections: o.sections.map((s) => {
       const proposals = (s.key_proposals || []).map(proposalFrom);
       return {
-        name: s.name.trim(), chords: s.chords.map((c) => c.trim()), bars: s.bars ? s.bars.slice() : null, proposals,
+        name: String(s.label ?? s.name).trim(), type: s.type ?? null, chords: s.chords.map((c) => c.trim()), bars: Array.isArray(s.bars) ? s.bars.slice() : null, proposals,
         degreesPreview: s.degrees_preview || null, warnings: s.warnings || [],
         selected: proposals[0] ? { tonic: proposals[0].tonic, mode: proposals[0].mode } : null, confirmed: false,
       };
@@ -326,17 +352,24 @@ function analyzeSection(song, sec, key) {
   const unknown = items.some((x) => x.unknown);
   const hasDur = sectionHasBars(sec);
   if (hasDur) items.forEach((it, i) => { it.dur = sec.bars[i]; });
-  // harmonik ritim: aynı core'da kalma süresi (C → Cmaj7 tek akor sayılır); N.C. süresi sayılmaz
-  const durRuns = [];
-  if (hasDur) {
-    let run = [];
+  // CORE KOŞULARI: aynı kökte kalan akorlar (C → Cmaj7, Csus4 → C, C5 → C) tek akor sayılır:
+  // Markov geçişi değildir, süreleri toplanır (harmonik ritim). Belirsiz nitelik (x) komşusunun niteliğini alır.
+  // Koşu içinde bas değişimi (C → C/B) ayrı "bas hareketi" olarak kaydedilir. N.C. koşuları böler.
+  const runs = [];
+  {
+    let seg = [];
     for (const it of items) {
       if (it.unknown) continue;
-      if (it.nc) { if (run.length) durRuns.push(run); run = []; continue; }
-      const last = run[run.length - 1];
-      if (last && last.core === it.core) last.dur += it.dur; else run.push({ core: it.core, dur: it.dur, sym: it.sym });
+      if (it.nc) { if (seg.length) runs.push(seg); seg = []; continue; }
+      const r = seg[seg.length - 1], bass = it.bassIv ?? it.iv;
+      if (r && r.iv === it.iv && (r.tq === it.tq || r.tq === 'x' || it.tq === 'x')) {
+        if (r.tq === 'x' && it.tq !== 'x') { r.tq = it.tq; r.core = it.core; }
+        r.dur += it.dur || 0;
+        if (bass !== r.lastBass) { r.bassMoves.push([r.lastBass, bass]); r.lastBass = bass; }
+        r.items.push(it);
+      } else seg.push({ iv: it.iv, tq: it.tq, core: it.core, dur: it.dur || 0, sym: it.sym, items: [it], lastBass: bass, bassMoves: [] });
     }
-    if (run.length) durRuns.push(run);
+    if (seg.length) runs.push(seg);
   }
   // aynı akor art arda → tek akor; N.C. segmentleri böler
   const segments = [];
@@ -350,12 +383,12 @@ function analyzeSection(song, sec, key) {
     if (!(chordSeq.length && chordSeq[chordSeq.length - 1].ident === it.ident)) chordSeq.push(it);
   }
   if (seg.length) segments.push(seg);
-  // core geçişleri: aynı core'a geçiş (ör. C → Cmaj7) harmonik değişim sayılmaz
-  const coreSegs = segments.map((sg) => sg.reduce((a, it) => { if (!a.length || a[a.length - 1].core !== it.core) a.push(it); return a; }, []));
   const nonNc = items.filter((x) => !x.nc && !x.unknown);
+  const lastSeg = runs[runs.length - 1];
   return {
-    items, segments, coreSegs, unknown, hasDur, durRuns: hasDur ? durRuns : null,
+    items, segments, runs, coreSegs: runs, unknown, hasDur, durRuns: hasDur ? runs : null,
     first: nonNc[0] || null, last: nonNc[nonNc.length - 1] || null,
+    firstRun: runs.length ? runs[0][0] : null, lastRun: lastSeg ? lastSeg[lastSeg.length - 1] : null,
     startsNc: !!items[0] && !!items[0].nc, endsNc: !!items[items.length - 1] && !!items[items.length - 1].nc,
     loop: key ? detectLoop(chordSeq.filter((x) => !x.nc)) : null,
   };
@@ -391,6 +424,30 @@ function previewFor(sec, key) {
   if (sec.degreesPreview && sec.proposals[0] && sameKey(sec.proposals[0], key)) return sec.degreesPreview;
   return null;
 }
+// renk ekini ortak biçime getir: "m7" (minörde) → "7", "M7"/"Δ7" → "maj7", "m7b5" → "ø7", "5" → "5"
+function normColor(c) {
+  if (c == null) return '';
+  const t = String(c).trim();
+  if (!t) return '';
+  const hit = SUFFIX[normSuffix(t)];
+  return hit ? hit[1] : t;
+}
+// core metnindeki ek renk bilgisi: "IVmaj7" → maj7, "vii°7" → °7, "iiø7" → ø7, "♭VII5" → 5, "Vsus4" → sus4, "vii°" → ''
+function colorFromCoreSuffix(coreTxt) {
+  const m = /^[♭b#♯]?(VII|VI|V|IV|III|II|I|vii|vi|v|iv|iii|ii|i)(.*)$/.exec(String(coreTxt || '').trim());
+  let sc = m ? m[2].trim() : '';
+  if (/^[°o+?]$/.test(sc)) return '';
+  if (/^[°o]7$/.test(sc)) return '°7';
+  if (/^ø/.test(sc)) return 'ø7';
+  if (/^[+?°]/.test(sc)) sc = sc.slice(1);
+  return sc;
+}
+function previewText(pe) {
+  if (pe == null) return 'N.C.';
+  if (typeof pe === 'string') return pe;
+  return `${pe.core ?? 'N.C.'}${pe.color ? ' ' + pe.color : ''}${pe.bass ? '/' + pe.bass : ''}`;
+}
+// degrees_preview: dizi öğesi {core, color, bass} (sohbet çıktısı) ya da eski düz metin ("IVmaj7")
 function comparePreview(song, sec, key) {
   const prev = previewFor(sec, key);
   if (!prev) return { valid: false, mismatches: [], lengthMismatch: false };
@@ -398,13 +455,26 @@ function comparePreview(song, sec, key) {
   const mismatches = [];
   an.items.forEach((it, i) => {
     if (i >= prev.length || it.unknown) return;
-    const pr = parseRoman(prev[i]);
-    let ok;
-    if (!pr) ok = false;
-    else if (it.nc || pr.nc) ok = !!it.nc === !!pr.nc;
-    else if (it.power || pr.tq === '5' || it.color.startsWith('sus') || /sus/.test(it.color)) ok = pr.iv === it.iv; // nitelik belirsiz: yalnız kök
-    else ok = pr.iv === it.iv && pr.tq === it.tq;
-    if (!ok) mismatches.push({ index: i, chord: it.sym, expected: it.nc ? 'N.C.' : it.label, preview: prev[i] });
+    const pe = prev[i];
+    const legacy = typeof pe === 'string';
+    const coreTxt = pe == null ? null : legacy ? pe : pe.core;
+    const pr = parseRoman(coreTxt);
+    const layers = [];
+    if (!pr) layers.push('core (okunamadı)');
+    else if (it.nc || pr.nc) { if (!!it.nc !== !!pr.nc) layers.push('core'); }
+    else {
+      const amb = it.tq === 'x' || pr.tq === 'x'; // belirsiz nitelik: yalnız kök karşılaştırılır
+      if (pr.iv !== it.iv || (!amb && pr.tq !== it.tq)) layers.push('core');
+      if (!legacy) {
+        const pc = normColor(pe.color != null && pe.color !== '' ? pe.color : colorFromCoreSuffix(coreTxt));
+        const ic = normColor(it.color);
+        const same = pc === ic || (it.power && (pc === '' || pc === '5')) || (it.tq === 'd' && ((pc === '' && ic === '') || (pc === '°7' && ic === '°7') || (pc === 'ø7' && ic === 'ø7')));
+        if (!same) layers.push('color');
+        const pb = pe.bass == null || pe.bass === '' ? null : parseRoman(pe.bass);
+        if ((pb ? pb.iv : null) !== it.bassIv) layers.push('bass');
+      }
+    }
+    if (layers.length) mismatches.push({ index: i, chord: it.sym, expected: it.nc ? 'N.C.' : it.label + (it.bassLabel ? '/' + it.bassLabel : ''), preview: previewText(pe), layers });
   });
   return { valid: true, mismatches, lengthMismatch: prev.length !== an.items.length, previewLength: prev.length };
 }
@@ -413,7 +483,7 @@ function comparePreview(song, sec, key) {
 const ALL = '*';
 function emptyBucket() {
   return { songs: new Set(), degrees: new Map(), colors: new Map(), trans: new Map(), trans2: new Map(), ctx1: new Map(), ctx2: new Map(), open: new Map(), close: new Map(), qual: new Map(),
-    dur: new Map(), rate: new Map(), durSongs: new Set() };
+    dur: new Map(), rate: new Map(), durSongs: new Set(), bassMoves: new Map() };
 }
 // map: key → { songs:Set, occ, refs:[{song, section}] }
 function bump(map, key, songId, secName, occ = 1) {
@@ -443,7 +513,7 @@ function buildStats(dataset) {
         const nm = a.sec.name;
         for (const it of a.an.items) {
           if (it.nc || it.unknown) continue;
-          bump(b.qual, it.tq, song.id, nm);
+          bump(b.qual, it.kind, song.id, nm);
         }
         for (const sg of a.an.segments) for (const it of sg) {
           bump(b.degrees, it.core, song.id, nm);
@@ -451,7 +521,8 @@ function buildStats(dataset) {
           if (!cm) { cm = new Map(); b.colors.set(it.core, cm); }
           bump(cm, it.color, song.id, nm);
         }
-        for (const cs of a.an.coreSegs) {
+        for (const seg of a.an.runs) for (const r of seg) for (const [x, y] of r.bassMoves) bump(b.bassMoves, `${x}>${y}`, song.id, nm);
+        for (const cs of a.an.runs) {
           for (let i = 1; i < cs.length; i++) {
             bump(b.trans, `${cs[i - 1].core}>${cs[i].core}`, song.id, nm);
             bump(b.ctx1, cs[i - 1].core, song.id, nm);
@@ -467,20 +538,20 @@ function buildStats(dataset) {
           for (const run of a.an.durRuns) for (const r of run) { bump(b.dur, durBin(r.dur), song.id, nm); total += r.dur; n++; }
           if (n) bump(b.rate, durBin(total / n), song.id, nm); // bu bölümde kaç ölçüde bir akor değişiyor
         }
-        if (a.an.first) bump(b.open, a.an.first.core, song.id, nm);
-        if (a.an.last) bump(b.close, a.an.last.core, song.id, nm);
+        if (a.an.firstRun) bump(b.open, a.an.firstRun.core, song.id, nm);
+        if (a.an.lastRun) bump(b.close, a.an.lastRun.core, song.id, nm);
       }
     });
     // bölümler arası geçiş (N.C. sınırında sayılmaz); iki bölümün merkez+modu da kaydedilir
     for (let i = 1; i < analyzed.length; i++) {
       const A = analyzed[i - 1], B = analyzed[i];
-      if (!A || !B || A.an.unknown || B.an.unknown || A.an.endsNc || B.an.startsNc || !A.an.last || !B.an.first) continue;
+      if (!A || !B || A.an.unknown || B.an.unknown || A.an.endsNc || B.an.startsNc || !A.an.lastRun || !B.an.firstRun) continue;
       const iv = mod12(B.key.tonic - A.key.tonic);
-      const k = `${A.key.mode}|${B.key.mode}|${iv}|${A.an.last.core}>${B.an.first.core}`;
+      const k = `${A.key.mode}|${B.key.mode}|${iv}|${A.an.lastRun.core}>${B.an.firstRun.core}`;
       bump(inter, k, song.id, `${A.sec.name} → ${B.sec.name}`);
       const e = inter.get(k);
-      e.meta = { fromMode: A.key.mode, toMode: B.key.mode, iv, from: A.an.last.core, to: B.an.first.core };
-      (e.examples ||= []).push({ song: song.id, from: { ...A.key, sym: A.an.last.sym }, to: { ...B.key, sym: B.an.first.sym } });
+      e.meta = { fromMode: A.key.mode, toMode: B.key.mode, iv, from: A.an.lastRun.core, to: B.an.firstRun.core };
+      (e.examples ||= []).push({ song: song.id, from: { ...A.key, sym: A.an.last.sym, type: A.sec.type || null, name: A.sec.name }, to: { ...B.key, sym: B.an.first.sym, type: B.sec.type || null, name: B.sec.name } });
       bump(shifts, `${A.key.mode}|${B.key.mode}|${iv}`, song.id, `${A.sec.name} → ${B.sec.name}`);
       shifts.get(`${A.key.mode}|${B.key.mode}|${iv}`).meta = { fromMode: A.key.mode, toMode: B.key.mode, iv };
     }
@@ -508,32 +579,42 @@ function diatonicCores(mode) {
   }
   return out;
 }
-const COLOR_TONES = { '': [], '7': [10], 'maj7': [11], '6': [9], 'add9': [2], '9': [10, 2], 'sus2': [2], 'sus4': [5], 'ø7': [10], '°7': [9] };
+const COLOR_TONES = { '': [], '7': [10], 'maj7': [11], '6': [9], 'add9': [2], '9': [10, 2], 'ø7': [10], '°7': [9] };
+const AMBIG_COLORS = { '5': [7], sus2: [2, 7], sus4: [5, 7] }; // belirsiz core: power / sus
 function modeColors(core, mode) {
   const { iv, tq } = coreParts(core);
   const sc = MODES[heptaOf(mode)].steps;
+  const fits = (tones) => tones.every((t) => sc.includes(mod12(iv + t)));
+  if (tq === 'x') return Object.keys(AMBIG_COLORS).filter((c) => fits(AMBIG_COLORS[c]));
   const out = [];
   for (const [col, tones] of Object.entries(COLOR_TONES)) {
     if ((col === 'ø7' || col === '°7') !== (tq === 'd')) continue;
-    if (tq === '5' && col !== '') continue;
     if (tq === 'd' && col === '') { out.push(col); continue; }
-    if (tones.every((t) => sc.includes(mod12(iv + t)))) out.push(col);
+    if (fits(tones)) out.push(col);
   }
   return out;
 }
 const homeCore = (mode) => { const h = C.homeChord(0, mode); return coreKey(0, h.q === 'm' ? 'm' : h.q === 'dim' ? 'd' : 'M'); };
 
+// Geri bildirim: her beğeni ×1.1, her beğenmeme ×0.91; toplam çarpan 0.5–2 arasında sınırlı.
+const FB_LIKE = 1.1, FB_DISLIKE = 0.91;
 function feedbackIndex(fb) {
-  const net = new Map();
-  if (!fb || !fb.on) return { mult: () => 1, banned: new Set() };
+  const net = new Map(), counts = new Map();
+  if (!fb || !fb.on) return { mult: () => 1, banned: new Set(), net, counts };
   for (const e of fb.events || []) for (const [a, b] of e.transitions || []) {
     const k = `${e.mode}|${a}>${b}`;
-    net.set(k, (net.get(k) || 0) + (e.like > 0 ? 1 : -1));
+    const c = counts.get(k) || { like: 0, dislike: 0 };
+    if (e.like > 0) c.like++; else c.dislike++;
+    counts.set(k, c);
+    net.set(k, c.like - c.dislike);
   }
   return {
-    mult: (mode, a, b) => { const n = net.get(`${mode}|${a}>${b}`) || 0; return Math.min(2, Math.max(0.5, Math.pow(1.25, n))); },
+    mult: (mode, a, b) => {
+      const c = counts.get(`${mode}|${a}>${b}`);
+      return c ? Math.min(2, Math.max(0.5, Math.pow(FB_LIKE, c.like) * Math.pow(FB_DISLIKE, c.dislike))) : 1;
+    },
     banned: new Set(fb.banned || []),
-    net,
+    net, counts,
   };
 }
 function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = null) {
@@ -654,7 +735,10 @@ function suggestKAlpha(dataset, base = {}, grid = {}) {
   const ks = grid.k || [0, 1, 2, 5, 10, 20, 50];
   const alphas = grid.alpha || [0.05, 0.1, 0.25, 0.5, 1, 2];
   const songs = dataset.songs.filter((s) => songTransitions(s).length);
-  if (songs.length < 3) return { ok: false, reason: `Çapraz doğrulama için geçişi olan en az 3 onaylı şarkı gerekli (${songs.length} var).`, table: [] };
+  if (!songs.length) return { ok: false, reason: 'Çapraz doğrulama için geçişi olan en az 1 onaylı şarkı gerekli.', table: [] };
+  const warnings = [];
+  if (songs.length < 20) warnings.push(`Sonuç güvenilir değil: yalnızca ${songs.length} onaylı şarkı var (20'den az).`);
+  if (songs.length === 1) warnings.push('Tek şarkıda dışarıda bırakılınca eğitim verisi boş kalır; sonuç yalnızca yumuşatmayı yansıtır.');
   const folds = songs.map((s) => ({ held: s, trans: songTransitions(s), stats: buildStats({ songs: dataset.songs.filter((x) => x.id !== s.id) }) }));
   const table = [];
   for (const k of ks) for (const alpha of alphas) {
@@ -666,29 +750,45 @@ function suggestKAlpha(dataset, base = {}, grid = {}) {
     table.push({ k, alpha, meanLL: ll / n, n });
   }
   table.sort((a, b) => b.meanLL - a.meanLL);
-  return { ok: true, best: table[0], table, songs: songs.length };
+  return { ok: true, best: table[0], table, songs: songs.length, warnings, reliable: songs.length >= 20 };
 }
 
 // ---------------------------------------------------------------- akor bulucu entegrasyonu
-const Q2TC = { '': ['M', ''], m: ['m', ''], dim: ['d', ''], aug: ['a', ''], maj7: ['M', 'maj7'], m7: ['m', '7'], 7: ['M', '7'], sus2: ['s', 'sus2'], sus4: ['s', 'sus4'], add9: ['M', 'add9'], madd9: ['m', 'add9'], m7b5: ['d', 'ø7'], dim7: ['d', '°7'], 6: ['M', '6'], m6: ['m', '6'], mMaj7: ['m', 'maj7'], 9: ['M', '9'], m9: ['m', '9'], maj9: ['M', 'maj9'], 5: ['5', ''] };
-function chordToCore(ch, tonic, mode) {
+const Q2TC = { '': ['M', ''], m: ['m', ''], dim: ['d', ''], aug: ['a', ''], maj7: ['M', 'maj7'], m7: ['m', '7'], 7: ['M', '7'], sus2: ['x', 'sus2'], sus4: ['x', 'sus4'], add9: ['M', 'add9'], madd9: ['m', 'add9'], m7b5: ['d', 'ø7'], dim7: ['d', '°7'], 6: ['M', '6'], m6: ['m', '6'], mMaj7: ['m', 'maj7'], 9: ['M', '9'], m9: ['m', '9'], maj9: ['M', 'maj9'], 5: ['x', '5'] };
+function chordToCore(ch, tonic) {
   const tc = Q2TC[ch.q] || ['M', ''];
-  const iv = mod12(ch.root - tonic);
-  const tq = tc[0] === 's' ? susQuality(iv, tonic, mode) : tc[0];
-  return { core: coreKey(iv, tq), color: tc[1] };
+  return { core: coreKey(mod12(ch.root - tonic), tc[0]), color: tc[1] };
 }
 function coreToChord(core, color, tonic) {
   const { iv, tq } = coreParts(core);
   const root = mod12(tonic + iv);
-  const pick = Object.entries(Q2TC).find(([, v]) => (v[0] === tq || (v[0] === 's' && (tq === 'M' || tq === 'm'))) && v[1] === color);
-  const q = pick ? pick[0] : { M: '', m: 'm', d: 'dim', a: 'aug', 5: '5' }[tq];
+  const pick = Object.entries(Q2TC).find(([, v]) => v[0] === tq && v[1] === color);
+  let q = pick ? pick[0] : { M: '', m: 'm', d: 'dim', a: 'aug', x: '5' }[tq];
+  if (!pick && tq === 'x' && /sus2/.test(color)) q = 'sus2';
+  else if (!pick && tq === 'x' && /sus/.test(color)) q = 'sus4';
   return { root, q };
+}
+// Harmonik ritim: bu akor `held` ölçüdür çalıyorken ŞİMDİ değişme olasılığı (tehlike oranı).
+// Süre sınıfları aralık olarak alınır (0.5: 0–0.75, 1: 0.75–1.5, 2: 1.5–3, 4: 3–6, 8+: 6–12), içleri düzgün.
+// Süre verisi yoksa null → stil "değiş mi kal mı" kararına katılmaz.
+const BIN_RANGE = { 0.5: [0, 0.75], 1: [0.75, 1.5], 2: [1.5, 3], 4: [3, 6], 8: [6, 12] };
+function changeHazard(model, mode, held, step = 1) {
+  if (!model.durSongs(ALL)) return null;
+  const d = model.dur(mode);
+  const F = (x) => { let f = 0; for (const [b, p] of d) { const [lo, hi] = BIN_RANGE[b]; f += p * Math.min(1, Math.max(0, (x - lo) / (hi - lo))); } return f; };
+  const lo = Math.max(0, held - step / 2), hi = held + step / 2;
+  const surv = 1 - F(lo);
+  const h = surv <= 1e-9 ? 0.98 : (F(hi) - F(lo)) / surv;
+  return Math.min(0.98, Math.max(0.02, h));
 }
 function mulberry32(a) {
   return function () { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
-// Core.buildChords için stil puanlayıcı: λ × log P(geçiş) + λ × log P(renk)
-// log olasılıklar uniform'a göre normalize edilir (veri yokken etkisi 0; akorda kalmak 0).
+// Core.buildChords için stil puanlayıcı — iki ayrı pay:
+//  • "Değişirsem hangi akora": λ·log(P·K) + λ·log(P_renk·K_renk). K = moddaki diatonik core sayısı (7), sabit;
+//    ödünç akorlar K'yı değiştirmez. K_renk = o core için moda uygun renk sayısı. Veri yokken ≈ 0.
+//  • "Değiş mi kal mı": changeTerm → λ·log(h/(1−h)), h = harmonik ritim verisinden bu akor n ölçüdür
+//    çalıyorken bu modda değişme olasılığı. Süre verisi yoksa null (karara katılmaz).
 function makeStyleScorer(model, opts = {}) {
   const lambda = opts.lambda ?? model.settings.lambda;
   const rng = mulberry32((opts.seed ?? model.settings.seed) * 9973 + 17);
@@ -696,19 +796,27 @@ function makeStyleScorer(model, opts = {}) {
     lambda, temperature: opts.temperature ?? model.settings.chordTemperature, rng,
     score(prev, prev2, ch, sec) {
       if (!lambda || sec.tonic == null) return { value: 0, trans: 0, color: 0 };
-      const c = chordToCore(ch, sec.tonic, sec.mode);
+      const c = chordToCore(ch, sec.tonic);
+      const K = diatonicCores(sec.mode).length;
       let trans = 0, color = 0, p = null;
-      const pr = prev ? chordToCore(prev, sec.tonic, sec.mode) : null;
+      const pr = prev ? chordToCore(prev, sec.tonic) : null;
       if (!pr || pr.core !== c.core) {
-        const d = pr ? model.next(sec.mode, pr.core, prev2 ? chordToCore(prev2, sec.tonic, sec.mode).core : null) : model.open(sec.mode);
+        const d = pr ? model.next(sec.mode, pr.core, prev2 ? chordToCore(prev2, sec.tonic).core : null) : model.open(sec.mode);
         p = d.get(c.core) || 0;
-        trans = lambda * Math.log(Math.max(1e-4, p * d.size));
+        trans = lambda * Math.log(Math.max(1e-4, p * K));
       }
       if (!pr || pr.core !== c.core || pr.color !== c.color) {
         const dc = model.color(sec.mode, c.core);
-        color = lambda * Math.log(Math.max(1e-4, (dc.get(c.color) || 0) * dc.size));
+        const Kc = Math.max(1, modeColors(c.core, sec.mode).length);
+        color = lambda * Math.log(Math.max(1e-4, (dc.get(c.color) || 0) * Kc));
       }
       return { value: trans + color, trans, color, p, core: c.core };
+    },
+    changeTerm(sec, held, step = 1) {
+      if (!lambda || sec.tonic == null) return null;
+      const h = changeHazard(model, sec.mode, held, step);
+      if (h == null) return null;
+      return { h, held, value: lambda * Math.log(h / (1 - h)) };
     },
   };
 }
@@ -910,6 +1018,7 @@ root.Style = {
   MODEL_DEFAULTS, PROG_DEFAULTS, buildModel, diatonicCores, modeColors, homeCore, suggestKAlpha, songTransitions,
   chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,
   fitDurations, progDisplay, durBin, durLabel, fmtDur, DUR_BINS, sectionHasBars,
+  romanNumeral, changeHazard, normColor, previewText, FB_LIKE, FB_DISLIKE,
   newDataset, newFeedback, checkFile,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.Style;

@@ -868,7 +868,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const homeExtra = (c, Wt) => (sameChord(c, home) ? 0.5 * Wt : 0);
       const lastNoSplit = isLast && !g.split;
       const extraBar = isFirst ? firstExtra : lastNoSplit ? homeExtra : null;
-      let barChord, barReason = '', barCands = null;
+      let barChord, barReason = '', barCands = null, barRhythm = null;
       // (d) ev akoru en az her M ölçüde bir duyulsun: M dolunca ev akoru eşik beklemeden aday olur
       let homeDue = o.homeEvery > 0 && !isFirst && sinceHome >= o.homeEvery - 1;
       const homeReason = `(d) ev akoru ${o.homeEvery} ölçüdür duyulmadı`;
@@ -883,16 +883,22 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         if (!cur) { barChord = best.chord; barReason = isFirst && prevChord ? 'bölüm başı (ortak nota tercihli)' : 'en iyi puan'; }
         else {
           const cs = evalOne(cur, bn, extraBar);
-          const margin = pct * Math.max(Math.abs(cs.total), 0.25 * cs.W);
+          // "Değiş mi kal mı": melodi puanı + politika + harmonik ritim verisi (bu akor n ölçüdür çalıyorken
+          // değişme olasılığı). Stilin "hangi akora" payı bu karşılaştırmaya girmez; yalnızca adayı seçer.
+          const margin = pct * Math.max(Math.abs(cs.melody), 0.25 * cs.W);
+          const rh = sty && sty.changeTerm ? sty.changeTerm(sec, curBars, 1) : null;
+          barRhythm = rh;
+          const rhv = rh ? rh.value : 0;
+          const rhTxt = rh ? ` · harmonik ritim: ${curBars} ölçüdür çalıyor, değişme olasılığı %${Math.round(rh.h * 100)}` : '';
           const hs = homeDue && !isHome(cur) ? evalOne(home, bn, extraBar) : null;
           if (hs && !hs.friction && hs.score > 0) { barChord = home; barReason = homeReason; }
           else if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
-          else if (best.total - cs.total >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = `(b) yeni akor ≥%${o.changePct} daha iyi`; }
+          else if (best.melody + rhv - cs.melody >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = `(b) yeni akor ≥%${o.changePct} daha iyi${rhTxt}`; }
           else if (curBars >= o.maxBars) {
             const alt = barCands.find((c) => !sameChord(c.chord, cur) && !c.friction && c.total > 0);
             if (alt) { barChord = alt.chord; barReason = `(c) aynı akor ${o.maxBars} ölçüdür çalıyordu`; }
             else { barChord = cur; barReason = 'mevcut akor korunuyor'; }
-          } else { barChord = cur; barReason = 'mevcut akor korunuyor'; }
+          } else { barChord = cur; barReason = 'mevcut akor korunuyor' + rhTxt; }
         }
       }
       // yarım ölçü kontrolü
@@ -932,7 +938,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           bar, q0: sq0, q1: sq1, half: sq1 - sq0 < g.barQ - 1e-6 ? (sq0 > q0 + 1e-6 ? 1 : 0) : null,
           section: sec.id, chord: Object.assign({}, chord), locked: !!locked, reason, flats,
           candidates: top, roles: curEval.roles, score: curEval.score, W: curEval.W, notes: sn.map((x) => ({ id: x.n.id, pc: x.pc, w: x.w })),
-          suggest: null,
+          suggest: null, rhythm: barRhythm,
         };
         // İstisna: melodi maj7 ise akoru maj7 yaz
         if (!locked && slot.chord.q === '' && sn.some((x) => x.w >= 0.5 && mod12(x.pc - slot.chord.root) === 11)) { slot.chord.q = 'maj7'; slot.reason = (slot.reason || '') + ' · melodi maj7 → maj7'; }

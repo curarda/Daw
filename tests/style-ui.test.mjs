@@ -11,12 +11,17 @@ const indexUrl = pathToFileURL(path.join(here, '..', 'index.html')).href;
 const toneLocal = process.env.TONE_JS;
 const shotDir = process.env.SHOT_DIR;
 
+// Sohbetin ürettiği biçim: label, type, source_notes, bars (dizi/null), degrees_preview {core, color, bass}
+const P = (cores) => cores.map((c) => ({ core: c, color: null, bass: null }));
 const TEST_JSON = {
   schema_version: 1, artist: 'Test Sanatçı', title: 'Frig–Dorian Testi',
+  source_notes: { capo: 2, tuning: 'standart', other: null }, warnings: [],
   sections: [
-    { name: 'Verse 1', chords: ['C#m', 'D', 'C#m', 'D', 'C#m', 'D', 'C#m', 'D'], key_proposals: [{ tonic: 'C#', mode: 'phrygian', confidence: 0.8 }, { tonic: 'A', mode: 'major', confidence: 0.2 }], degrees_preview: ['i', '♭II', 'i', '♭II', 'i', '♭II', 'i', '♭II'], bars: [2, 1, 2, 1, 2, 1, 2, 1], warnings: ['D, A majörde IV de olabilir'] },
+    { label: 'Verse 1', type: 'verse', chords: ['C#m', 'D', 'C#m', 'D', 'C#m', 'D', 'C#m', 'D'], bars: [2, 1, 2, 1, 2, 1, 2, 1],
+      key_proposals: [{ tonic: 'C#', mode: 'phrygian', confidence: 0.8, reason: 'C# merkez' }, { tonic: 'A', mode: 'major', confidence: 0.2, reason: 'D = IV' }],
+      degrees_preview: P(['i', '♭II', 'i', '♭II', 'i', '♭II', 'i', '♭II']), warnings: ['D, A majörde IV de olabilir'] },
     // (b) bilerek yanlış: A, B Dorian'da ♭VII'dir
-    { name: 'Chorus', chords: ['Bm', 'E', 'A', 'Bm'], key_proposals: [{ tonic: 'B', mode: 'dorian' }], degrees_preview: ['i', 'IV', 'VII', 'i'] },
+    { label: 'Chorus', type: 'chorus', chords: ['Bm', 'E', 'A', 'Bm'], bars: null, key_proposals: [{ tonic: 'B', mode: 'dorian', confidence: 0.7, reason: 'G#' }], degrees_preview: P(['i', 'IV', 'VII', 'i']) },
   ],
 };
 const POWER_JSON = { schema_version: 1, artist: 'Güç Grubu', title: 'Riff', sections: [
@@ -74,7 +79,9 @@ try {
     assert.match(await page.textContent('.st-song'), /D, A majörde IV de olabilir/);
     const bad = secs.nth(1).locator('.chip.bad');
     assert.equal(await bad.count(), 1);
-    assert.match(await bad.textContent(), /A.*♭VII.*önizleme: VII/s);
+    assert.match(await bad.textContent(), /A.*♭VII.*önizleme: VII.*core/s);
+    assert.match(await page.textContent('.st-song'), /capo 2 · akort: standart/);
+    assert.match(await secs.nth(1).textContent(), /chorus/);
     assert.equal(await secs.nth(0).locator('.chip.bad').count(), 0);
     // farklı mod seçilince önizleme geçersiz → kırmızı yok
     await secs.nth(1).locator('select[data-act=secMode]').selectOption('minor');
@@ -118,6 +125,7 @@ try {
     assert.match(shift, /Frig → Dorian.*-2 yarım ses.*1/s);
     const inter = await page.locator('h3:has-text("modal kayma") + table + table').textContent();
     assert.match(inter, /♭II.*Frig.*→ i.*Dorian/s);
+    assert.match(inter, /verse: C# Frig D → chorus: B Dorian Bm/);
     if (shotDir) await page.screenshot({ path: path.join(shotDir, 'style-stats.png'), fullPage: false });
     return titles.join(' · ');
   });
@@ -143,7 +151,8 @@ try {
     await page.locator('.st-sec button[data-act=confirmSec]').click();
     const q = await E(() => { const b = window.StyleUI.model().stats.byMode.get('minor'); return { p: b.qual.get('5').occ, M: b.qual.get('M').occ, tr: [...b.trans.keys()] }; });
     assert.equal(q.p, 4); assert.equal(q.M, 2);
-    assert.ok(!q.tr.some((k) => k.startsWith('55>')), 'N.C. üzerinden geçiş');
+    assert.ok(!q.tr.some((k) => k.startsWith('5x>')), 'N.C. üzerinden geçiş');
+    assert.ok(q.tr.includes('0x>3x'), 'power chord: belirsiz nitelik (x)');
     return `power ${q.p} (belirsiz), majör ${q.M} · geçişler ${q.tr.join(', ')}`;
   });
 
@@ -196,6 +205,7 @@ try {
     assert.match(head, /melodi payı \+ stil payı/);
     const row = await page.locator('#inspector tbody tr').first().textContent();
     assert.match(row, /melodi.*stil/s);
+    assert.match(await page.textContent('#inspector'), /Değiş mi kal mı\s*harmonik ritim: bu akor \d+ ölçüdür çalıyordu → bu modda değişme olasılığı %\d+/);
     await page.click('#inspector button[data-act=fbChord][data-v="1"]');
     assert.match(await page.textContent('#status'), /Beğenildi: i → ♭II/);
     await page.locator('#inLambda').fill('0');
@@ -227,11 +237,11 @@ try {
     return `${it.displaySymbols} → ölçü 1: ${a} | ölçü 2: ${a} ${b} (yarım) | ölçü 3–4: ${c}`;
   });
 
-  await step('7) k ve α öner (en az 3 şarkı gerekir) + 11) üç ayrı JSON dışa/içe aktarım', async () => {
+  await step('7) k ve α öner (20 şarkıdan az → "güvenilir değil" uyarısı) + 11) üç ayrı JSON dışa/içe aktarım', async () => {
     await tab('Model ve geri bildirim');
     await page.click('button[data-act=suggestKA]');
-    await page.waitForFunction(() => /en az 3|Önerilen/.test(document.querySelector('#styleView').textContent));
-    assert.match(await page.textContent('.st-body'), /en az 3 onaylı şarkı/);
+    await page.waitForFunction(() => /Önerilen:/.test(document.querySelector('#styleView').textContent));
+    assert.match(await page.textContent('.st-body'), /Sonuç güvenilir değil: yalnızca 2 onaylı şarkı var/);
     await tab('Saklama');
     const ds = await download('button[data-act=exp][data-k=dataset]');
     const st = await download('button[data-act=exp][data-k=settings]');

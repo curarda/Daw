@@ -83,8 +83,9 @@ await step('c) power chord majör/minör sayımına girmez; N.C. etrafında geç
   assert.equal(b.qual.get('5').occ, 4);
   assert.equal(b.qual.get('M').occ, 2); assert.equal(b.qual.get('m').occ, 1);
   const tr = [...b.trans.keys()].map((k) => k.split('>').map((x) => L(x, 'minor')).join('→'));
-  assert.deepEqual(tr, ['I5→♭III5', '♭III5→IV5', 'I5→♭VII', '♭VII→♭VI', '♭VI→i']);
-  assert.ok(!tr.some((t) => t.startsWith('IV5→')), 'N.C. üzerinden geçiş sayıldı');
+  // power chord: core kök derecesi, nitelik belirsiz ("?"), iç temsil "7x" gibi
+  assert.deepEqual(tr, ['I?→♭III?', '♭III?→IV?', 'I?→♭VII', '♭VII→♭VI', '♭VI→i']);
+  assert.ok(!tr.some((t) => t.startsWith('IV?→')), 'N.C. üzerinden geçiş sayıldı');
   return `nitelik: majör ${b.qual.get('M').occ}, minör ${b.qual.get('m').occ}, belirsiz (power) ${b.qual.get('5').occ} · geçişler: ${tr.join(', ')}`;
 });
 
@@ -209,9 +210,9 @@ await step('Üç katman: core / color / bass; ödünç akor; slash bas', () => {
   const z = a('Bm7b5', 0, 'major');
   assert.deepEqual([z.label, z.color, z.core], ['viiø7', 'ø7', '11d']);
   const s2 = a('Dsus2', 0, 'major');
-  assert.deepEqual([s2.core, s2.color], ['2m', 'sus2']);
+  assert.deepEqual([s2.core, s2.color, s2.label, s2.kind], ['2x', 'sus2', 'IIsus2', 's']); // sus: nitelik belirsiz
   assert.equal(a('Ab+', 0, 'minor').label, '♭VI+');
-  return `Fmaj7/A → ${x.label} (bas ${x.bassLabel}) · Bb (C majör) → ${y.label} ödünç · Dsus2 → core ${Style.coreLabel(s2.core, 'major')} + sus2`;
+  return `Fmaj7/A → ${x.label} (bas ${x.bassLabel}) · Bb (C majör) → ${y.label} ödünç · Dsus2 → core ${Style.coreLabel(s2.core, 'major')} (belirsiz) + sus2`;
 });
 
 await step('Model: kısmi havuzlama formülü, α yumuşatma, 2. derece backoff, geri bildirim sınırları', () => {
@@ -255,8 +256,10 @@ await step('k ve α önerisi: şarkı bazlı bir-dışarıda çapraz doğrulama'
   progs.forEach((p, i) => { const s = Style.parseImportText(`Sanatçı: K${i}\nŞarkı: T${i}\n[A: C major] ${p}`).songs[0]; confirmAll(s); songs.push(s); });
   const r = Style.suggestKAlpha({ songs });
   assert.ok(r.ok && r.table.length === 42 && Number.isFinite(r.best.meanLL));
-  assert.ok(!Style.suggestKAlpha({ songs: songs.slice(0, 2) }).ok);
-  return `en iyi k=${r.best.k}, α=${r.best.alpha} (ortalama log-olabilirlik ${r.best.meanLL.toFixed(3)}, ${r.songs} şarkı)`;
+  assert.ok(r.warnings.some((w) => /güvenilir değil/.test(w)), '20 şarkıdan az → uyarı');
+  const two = Style.suggestKAlpha({ songs: songs.slice(0, 2) });
+  assert.ok(two.ok && !two.reliable && /güvenilir değil/.test(two.warnings[0]), '2 şarkıyla da çalışmalı');
+  return `en iyi k=${r.best.k}, α=${r.best.alpha} (ortalama log-olabilirlik ${r.best.meanLL.toFixed(3)}, ${r.songs} şarkı) · ${r.warnings[0]}`;
 });
 
 await step('Akor bulucu entegrasyonu: λ=0 saf teori; stil payı ayrı; sıcaklık örneklemesi', () => {
@@ -285,6 +288,98 @@ await step('Akor bulucu entegrasyonu: λ=0 saf teori; stil payı ayrı; sıcakl�
     assert.ok(hot.size > 1, 'sıcaklık > 0 çeşitlilik üretmeli');
     return `λ=0: ${base}\n    λ=1: ${names(d1)} (ölçü 2 en iyi aday ${Core.chordName(c.chord)}: melodi ${c.melody.toFixed(2)} + stil ${c.style.toFixed(2)})\n    sıcaklık 3 → ${hot.size} farklı sonuç (12 tohum)`;
   })();
+});
+
+await step('Sohbet JSON biçimi: label, type, source_notes, bars (dizi/null), degrees_preview {core, color, bass}', () => {
+  const j = { schema_version: 1, artist: 'Sohbet', title: 'Biçim', source_notes: { capo: 2, tuning: 'standart', other: null }, warnings: ['kapo 2'],
+    sections: [
+      { label: 'Verse 1', type: 'verse', chords: ['C', 'Fmaj7/A', 'G7sus4', 'Bb'], bars: [2, 1, 1, 2], key_proposals: [{ tonic: 'C', mode: 'major', confidence: 0.9, reason: 'C merkez' }],
+        degrees_preview: [{ core: 'I', color: null, bass: null }, { core: 'IV', color: 'maj7', bass: 'VI' }, { core: 'V', color: '7sus4', bass: null }, { core: '♭VII', color: null, bass: null }] },
+      { label: 'Chorus', type: 'chorus', chords: ['C', 'F'], bars: null, key_proposals: [{ tonic: 'C', mode: 'major' }],
+        degrees_preview: [{ core: 'I', color: 'maj7', bass: null }, { core: 'IV', color: null, bass: 'I' }] },
+    ] };
+  const r = Style.parseImportJson(JSON.stringify(j));
+  assert.deepEqual(r.errors, []);
+  const song = r.songs[0];
+  assert.deepEqual([song.sections[0].name, song.sections[0].type, song.sections[1].bars, song.sourceNotes.capo], ['Verse 1', 'verse', null, 2]);
+  const ok = Style.comparePreview(song, song.sections[0], song.sections[0].selected);
+  assert.deepEqual(ok.mismatches, [], JSON.stringify(ok.mismatches));
+  const bad = Style.comparePreview(song, song.sections[1], song.sections[1].selected);
+  assert.deepEqual(bad.mismatches.map((m) => [m.index, m.layers.join('+')]), [[0, 'color'], [1, 'bass']]);
+  const e = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'a', title: 'b', source_notes: { capo: [1] }, sections: [{ type: 3, chords: ['C'], degrees_preview: [5] }] })).errors;
+  assert.deepEqual(e, ['source_notes.capo: sayı, metin ya da null olmalı', 'sections[0].label: boş olmayan metin olmalı', 'sections[0].type: metin ya da null olmalı', 'sections[0].degrees_preview[0]: {core, color, bass} nesnesi olmalı']);
+  confirmAll(song);
+  const st = Style.buildStats({ songs: [song] }).byMode.get('major');
+  assert.equal(st.durSongs.size, 1); // chorus bars null → süreye girmez, değişime girer
+  assert.equal(st.trans.get('0M>5M').songs.size, 1);
+  return `katmanlı önizleme: ${bad.mismatches.map((m) => `#${m.index + 1} ${m.chord}: ${m.layers.join('+')} (önizleme "${m.preview}", hesaplanan ${m.expected})`).join(' · ')}`;
+});
+
+await step('sus = belirsiz nitelik; aynı kökte (Csus4 → C, C → Cmaj7) süre birleşir; bas hareketi ayrı sayılır', () => {
+  const r = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'Sus', title: 'Bas', sections: [
+    { label: 'A', chords: ['Csus4', 'C', 'Cmaj7', 'C/B', 'C/Bb', 'F', 'Fsus2'], bars: [1, 1, 1, 1, 1, 2, 1], key_proposals: [{ tonic: 'C', mode: 'major' }] }] }));
+  const song = r.songs[0]; confirmAll(song);
+  const b = Style.buildStats({ songs: [song] }).byMode.get('major');
+  assert.equal(b.qual.get('s').occ, 2); assert.equal(b.qual.has('M') && b.qual.get('M').occ, 5);
+  assert.deepEqual([...b.trans.keys()], ['0M>5M'], 'sus → aynı kök geçiş sayılmamalı');
+  assert.deepEqual([...b.dur].map(([k, e]) => [k, e.occ]).sort(), [[4, 2]], 'C koşusu 5 ölçü, F koşusu 3 ölçü → 4 sınıfı');
+  assert.deepEqual([...b.bassMoves].map(([k, e]) => [k.split('>').map((x) => Style.romanNumeral(+x, 'major')).join('→'), e.songs.size]), [['I→VII', 1], ['VII→♭VII', 1]]);
+  assert.ok(b.degrees.has('0x') && b.degrees.has('5x'), 'sus akorları derece tablosunda belirsiz core');
+  return `Csus4 C Cmaj7 C/B C/B♭ | F Fsus2 → geçiş yalnızca I→IV; süreler 5 + 3 ölçü; bas hareketi I→VII, VII→♭VII`;
+});
+
+await step('İç temsil: yarım ses + nitelik; ♭V / ♯IV yalnızca gösterimde moda göre', () => {
+  assert.equal(Style.romanOf(6, 'M', 'lydian'), '♯IV');
+  assert.equal(Style.romanOf(6, 'M', 'locrian'), '♭V');
+  assert.equal(Style.romanOf(6, 'M', 'major'), '♭V');
+  assert.equal(Style.romanOf(3, 'M', 'minor'), '♭III');
+  assert.equal(Style.parseRoman('♯IV').iv, 6); assert.equal(Style.parseRoman('♭V').iv, 6);
+  const mk = (title, tonic, mode, chords) => { const x = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'T', title, sections: [{ label: 'A', chords, key_proposals: [{ tonic, mode }] }] })).songs[0]; confirmAll(x); return x; };
+  const st = Style.buildStats({ songs: [mk('Lidya', 'C', 'lydian', ['C', 'F#m7b5', 'C']), mk('Lokriyen', 'C', 'locrian', ['Cdim', 'Gb', 'Cdim'])] });
+  const pool = st.byMode.get(Style.ALL);
+  assert.ok(pool.degrees.has('6d') && pool.degrees.has('6M'));
+  assert.ok([...pool.degrees.keys()].every((k) => /^\d+[Mmdax]$/.test(k)), 'havuz anahtarları iç temsil olmalı');
+  return `C Lidya F#ø7 → ${Style.degreeLabel('6d', 'ø7', 'lydian')}, C Lokriyen Gb → ${Style.coreLabel('6M', 'locrian')}; ikisi de havuzda "6d"/"6M"`;
+});
+
+await step('Geri bildirim: beğeni ×1.1, beğenmeme ×0.91, sınır 0.5–2', () => {
+  const fb = Style.newFeedback();
+  const ev = (like, n) => { for (let i = 0; i < n; i++) fb.events.push({ kind: 'transition', mode: 'major', transitions: [['0M', '5M']], like }); };
+  const mult = () => Style.buildModel({ songs: [] }, {}, fb).feedback.mult('major', '0M', '5M');
+  ev(1, 1); assert.ok(Math.abs(mult() - 1.1) < 1e-12);
+  ev(-1, 1); assert.ok(Math.abs(mult() - 1.1 * 0.91) < 1e-12);
+  ev(1, 20); assert.equal(mult(), 2);
+  fb.events = []; ev(-1, 20); assert.equal(mult(), 0.5);
+  return '1 beğeni ×1.1 · +1 beğenmeme ×1.001 · 20 beğeni ×2 (sınır) · 20 beğenmeme ×0.5 (sınır)';
+});
+
+await step('Akor bulucu: "değiş mi kal mı" harmonik ritimden; "hangi akor" λ·log(P·K), K = 7', async () => {
+  const test = Core.synthTestVocal(44100);
+  const proj = Core.newProject();
+  proj.audio.offsetSec = test.offsetSec;
+  proj.sections = [{ id: 'v', name: 'Verse', startBar: 1, endBar: 4, tonic: 1, mode: 'phrygian' }, { id: 'c', name: 'Nakarat', startBar: 5, endBar: 8, tonic: 11, mode: 'dorian' }];
+  const st = { duration: test.signal.length / test.sr };
+  st.track = await Core.detectPitch(test.signal, test.sr, proj.pitch);
+  st.rawNotes = Core.segmentNotes(st.track, proj.pitch);
+  const data = (bars) => {
+    const x = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'R', title: 'R' + bars, sections: [{ label: 'C', chords: ['Bm', 'E', 'A', 'Bm'], bars: [bars, bars, bars, bars], key_proposals: [{ tonic: 'B', mode: 'dorian' }] }] })).songs[0];
+    confirmAll(x); return { songs: [x] };
+  };
+  // tek şarkılık veride α=0.5 dağılımı düzleştirir (h≈0.2); ritmin etkisini görmek için α küçük
+  const run = (ds2) => Core.derive(proj, Object.assign({}, st, { style: Style.makeStyleScorer(Style.buildModel(ds2, { alpha: 0.05 }), { lambda: 3 }) }));
+  const bar6 = (d) => d.chords.find((c) => c.bar === 6);
+  const longD = run(data(8)), shortD = run(data(1));
+  assert.equal(Core.chordName(bar6(longD).chord), 'Bm', 'uzun akor süreleri → kal');
+  assert.notEqual(Core.chordName(bar6(shortD).chord), 'Bm', 'kısa akor süreleri → değiş');
+  assert.ok(bar6(longD).rhythm && bar6(longD).rhythm.h < 0.1 && bar6(shortD).rhythm.h > 0.5);
+  // süre verisi yok → ritim karara katılmaz
+  const noDur = Style.makeStyleScorer(Style.buildModel(ds), { lambda: 3 });
+  assert.equal(noDur.changeTerm({ tonic: 11, mode: 'dorian' }, 1), null);
+  // K sabit: moddaki diatonik core sayısı; veri yokken uniform → stil payı 0
+  const empty = Style.makeStyleScorer(Style.buildModel({ songs: [] }, { alpha: 0.5 }), { lambda: 1 });
+  const v = empty.score({ root: 11, q: 'm' }, null, { root: 4, q: '' }, { tonic: 11, mode: 'dorian' });
+  assert.ok(Math.abs(v.trans - Math.log((1 / 6) * 7)) < 1e-9, 'K=7, 6 hedefe uniform → log(7/6)');
+  return `ölçü 6: uzun süreli veride ${Core.chordName(bar6(longD).chord)} (h=${bar6(longD).rhythm.h.toFixed(2)}), kısa süreli veride ${Core.chordName(bar6(shortD).chord)} (h=${bar6(shortD).rhythm.h.toFixed(2)}) · veri yokken geçiş payı λ·log(P·7) = ${v.trans.toFixed(3)}`;
 });
 
 console.log(results.join('\n'));
