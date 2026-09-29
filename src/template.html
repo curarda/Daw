@@ -113,11 +113,16 @@
       <p class="hint">Sesin kendisi kaydırılır (TD-PSOLA). <b>Manuel</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
       <button id="btnModeSound">Manuel ses düzeltme modunu aç</button>
       <fieldset>
-        <legend>Otomatik (autotune) — bölüm scale'ine göre</legend>
+        <legend>Otomatik (autotune)</legend>
+        <div class="modes" role="radiogroup" aria-label="Autotune hedefi">
+          <label><input type="radio" name="atTarget" value="semitone" checked> En yakın yarım sese çek <small class="hint">(önerilen — notanın kimliği değişmez)</small></label>
+          <label><input type="radio" name="atTarget" value="scale"> Bölüm scale'ine çek <small class="hint">(notanın kimliğini değiştirebilir)</small></label>
+        </div>
+        <div id="scaleWarn" class="st-warn" hidden>⚠ Scale'e çekme açık: scale dışında kalan notalar — tam tonunda söylenmiş olsalar bile — başka bir yarım sese taşınır. Mod yanlış seçildiyse doğru notaları bozar. Akor bulucu bundan etkilenmez (kastedilen notayı kullanır).</div>
         <label>Miktar <output id="outAmount">100%</output><input type="range" id="inAmount" min="0" max="100" value="100"></label>
         <label>Retune hızı <output id="outRetune">30 ms</output><input type="range" id="inRetune" min="0" max="400" step="5" value="30"></label>
         <label class="chk"><input type="checkbox" id="inKeepVib" checked> Vibratoyu koru</label>
-        <label class="chk"><input type="checkbox" id="inSkipChrom" checked> Kromatik geçiş notalarına dokunma</label>
+        <label class="chk"><input type="checkbox" id="inSkipChrom" checked> Kromatik geçiş notalarına dokunma <small class="hint">(scale modunda)</small></label>
         <div class="row">
           <button id="btnAutoApply" class="accent">Autotune uygula</button>
           <button id="btnAutoOff">Autotune kapat</button>
@@ -142,7 +147,8 @@
       <fieldset id="styleBox">
         <legend>Stil modeli (sevdiğin şarkılardan)</legend>
         <div id="styleInfo" class="hint">Stil verisi yok — "Stil verisi ve öneri" görünümünden şarkı ekleyin.</div>
-        <label title="0 = saf teori (stil modeli etkisiz)">Stil ağırlığı λ <output id="outLambda">1</output><input type="range" id="inLambda" min="0" max="5" step="0.25" value="1"></label>
+        <label title="&quot;Değişirsem hangi akora&quot;: geçiş olasılığının ağırlığı. 0 = saf teori">Geçiş ağırlığı λ <output id="outLambda">1</output><input type="range" id="inLambda" min="0" max="5" step="0.25" value="1"></label>
+        <label title="&quot;Değiş mi kal mı&quot;: harmonik ritim verisinin ağırlığı. 0 = ritim karara katılmaz">Ritim ağırlığı λ_ritim <output id="outLambdaR">1</output><input type="range" id="inLambdaR" min="0" max="5" step="0.25" value="1"></label>
         <label title="0 = hep en iyi aday; artınca en iyi 3 aday arasından puanla orantılı örnekler">Sıcaklık <output id="outChordTemp">0</output><input type="range" id="inChordTemp" min="0" max="3" step="0.1" value="0"></label>
         <button id="btnReseed" title="Sıcaklık > 0 iken yeni örnek">Yeniden örnekle</button>
       </fieldset>

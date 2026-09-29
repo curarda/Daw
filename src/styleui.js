@@ -206,7 +206,7 @@ const ACTIONS = {
     A.status('Çapraz doğrulama çalışıyor…', 'busy');
     setTimeout(() => { SS.cv = St.suggestKAlpha(SS.dataset, SS.settings); A.status(SS.cv.ok ? `Önerilen k=${SS.cv.best.k}, α=${SS.cv.best.alpha}` : SS.cv.reason, SS.cv.ok ? '' : 'err'); render(); }, 20);
   },
-  applyKA: () => { if (!SS.cv || !SS.cv.ok) return; SS.settings.k = SS.cv.best.k; SS.settings.alpha = SS.cv.best.alpha; changed(); },
+  applyKA: () => { if (!SS.cv || !SS.cv.ok) return; SS.settings.k = SS.cv.best.k; SS.settings.alpha = SS.cv.best.alpha; if (SS.cv.bestDur) SS.settings.alphaDur = SS.cv.bestDur.alphaDur; changed(); },
   fbReset: () => { if (!confirm('Tüm kişisel geri bildirim silinsin mi? (şarkı verisi etkilenmez)')) return; SS.feedback = Object.assign(St.newFeedback(), { on: SS.feedback.on }); changed(); },
   // ---- progresyon
   runProg: () => runProg(),
@@ -471,7 +471,7 @@ function durTable(map, n, what) {
 function tabModel() {
   const o = SS.settings;
   const num = (k, label, step, min, max, help) => `<label title="${esc(help)}">${label}<input type="number" data-act="set" data-k="${k}" value="${o[k]}" step="${step}" min="${min}" max="${max}"></label>`;
-  const cv = SS.cv ? (SS.cv.ok ? `${SS.cv.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('')}<p>Önerilen: <b>k = ${SS.cv.best.k}, α = ${SS.cv.best.alpha}</b> (ortalama log-olabilirlik ${SS.cv.best.meanLL.toFixed(3)}, ${SS.cv.songs} şarkı, bir-şarkı-dışarıda). <button class="accent" data-act="applyKA">Uygula</button></p>
+  const cv = SS.cv ? (SS.cv.ok ? `${SS.cv.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('')}<p>Önerilen: <b>k = ${SS.cv.best.k}, α = ${SS.cv.best.alpha}</b> (geçişler; ortalama log-olabilirlik ${SS.cv.best.meanLL.toFixed(3)}, ${SS.cv.songs} şarkı, bir-şarkı-dışarıda)${SS.cv.bestDur ? ` · <b>α_ritim = ${SS.cv.bestDur.alphaDur}</b> (süreler; ${SS.cv.bestDur.meanLL.toFixed(3)}, ${SS.cv.durSongs} şarkı)` : ''}. <button class="accent" data-act="applyKA">Uygula</button></p>
       <table class="st-t"><thead><tr><th>k</th><th>α</th><th>ort. log-olabilirlik</th></tr></thead><tbody>${SS.cv.table.slice(0, 8).map((r) => `<tr><td>${r.k}</td><td>${r.alpha}</td><td>${r.meanLL.toFixed(3)}</td></tr>`).join('')}</tbody></table>` : `<p class="bad">${esc(SS.cv.reason)}</p>`) : '';
   const fb = model().feedback;
   const adj = [...(fb.counts || new Map())].map(([k, c]) => {
@@ -483,8 +483,10 @@ function tabModel() {
       <p class="hint">Akor bulucuda stil iki pay: <b>"değiş mi kal mı"</b> = melodi + politika + harmonik ritim (bu akor n ölçüdür çalıyorken değişme olasılığı; süre verisi yoksa katılmaz) ve <b>"değişirsem hangi akora"</b> = λ·log(P·K), K = moddaki diatonik core sayısı (7).<br>Birinci derece Markov P(sonraki core | önceki core, mod); ikinci derece yalnızca bağlam en az "min bağlam" şarkıda görüldüyse (yoksa birinci dereceye geri dönülür). Kısmi havuzlama P = (n_mod·P_mod + k·P_havuz)/(n_mod + k); moda uygun ama görülmemiş her geçişe α eklenir. Renk ayrı dağılım: P(color | core, mod), aynı havuzlama ve yumuşatma.</p>
       <div class="grid2">
         ${num('k', 'Havuz ağırlığı k', 1, 0, 1000, 'kısmi havuzlama')}
-        ${num('alpha', 'Yumuşatma α (şarkı)', 0.05, 0, 10, 'görülmemiş diatonik geçişe eklenen sanal şarkı sayısı')}
-        ${num('lambda', 'Stil ağırlığı λ (akor bulucu)', 0.25, 0, 10, '0 = saf teori')}
+        ${num('alpha', 'Geçiş yumuşatması α (şarkı)', 0.05, 0, 10, 'görülmemiş diatonik geçişe eklenen sanal şarkı sayısı')}
+        ${num('alphaDur', 'Ritim yumuşatması α_ritim (şarkı)', 0.05, 0, 10, 'her süre sınıfına eklenen sanal şarkı sayısı')}
+        ${num('lambda', 'Geçiş ağırlığı λ ("hangi akora")', 0.25, 0, 10, '0 = saf teori')}
+        ${num('lambdaRhythm', 'Ritim ağırlığı λ_ritim ("değiş mi kal mı")', 0.25, 0, 10, '0 = ritim karara katılmaz')}
         ${num('chordTemperature', 'Akor bulucu sıcaklığı', 0.1, 0, 5, '0 = hep en iyisi')}
         ${num('minCtxSongs', 'Min bağlam (2. derece)', 1, 1, 100, 'ikinci derece için gereken şarkı sayısı')}
         ${num('lowDataSongs', '"Az veri" eşiği (şarkı)', 1, 1, 1000, 'bu sayının altındaki modlar uyarılır')}
@@ -585,17 +587,19 @@ function renderDawBox() {
   const n = confirmedSongs();
   $('#styleInfo').textContent = n ? `${n} şarkıdan model · k=${SS.settings.k}, α=${SS.settings.alpha}${SS.feedback.on && SS.feedback.events.length ? ` · ${SS.feedback.events.length} geri bildirim` : ''}` : 'Onaylı stil verisi yok — akor bulucu saf teoriyle çalışıyor.';
   $('#inLambda').value = SS.settings.lambda; $('#outLambda').textContent = SS.settings.lambda;
+  $('#inLambdaR').value = SS.settings.lambdaRhythm; $('#outLambdaR').textContent = SS.settings.lambdaRhythm;
   $('#inChordTemp').value = SS.settings.chordTemperature; $('#outChordTemp').textContent = SS.settings.chordTemperature;
 }
 $('#inLambda').addEventListener('input', (e) => { SS.settings.lambda = +e.target.value; $('#outLambda').textContent = e.target.value; persist(); A.refresh(); });
+$('#inLambdaR').addEventListener('input', (e) => { SS.settings.lambdaRhythm = +e.target.value; $('#outLambdaR').textContent = e.target.value; persist(); A.refresh(); });
 $('#inChordTemp').addEventListener('input', (e) => { SS.settings.chordTemperature = +e.target.value; $('#outChordTemp').textContent = e.target.value; persist(); A.refresh(); });
 $('#btnReseed').onclick = () => { SS.settings.seed = (SS.settings.seed || 1) + 1; persist(); A.refresh(); A.status(`Yeniden örneklendi (tohum ${SS.settings.seed}).`); };
 
 window.StyleUI = {
   // akor bulucuya stil puanlayıcı: veri yoksa ya da λ = 0 ise null (saf teori, davranış birebir aynı)
   scorer() {
-    if (!SS.settings.lambda || !confirmedSongs()) return null;
-    return St.makeStyleScorer(model(), { lambda: SS.settings.lambda, temperature: SS.settings.chordTemperature, seed: SS.settings.seed });
+    if ((!SS.settings.lambda && !SS.settings.lambdaRhythm) || !confirmedSongs()) return null;
+    return St.makeStyleScorer(model(), { lambda: SS.settings.lambda, lambdaRhythm: SS.settings.lambdaRhythm, temperature: SS.settings.chordTemperature, seed: SS.settings.seed });
   },
   feedbackChord(prev, chord, sec, like) {
     const to = St.chordToCore(chord, sec.tonic, sec.mode).core;

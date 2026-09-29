@@ -658,6 +658,11 @@ function draw() {
       roundRect(c, x0, y - h / 2, Math.max(3, x1 - x0 - 1), h, 3); c.fill();
       c.globalAlpha = 1;
       const selN = S.sel && S.sel.type === 'note' && S.sel.id === n.id;
+      if (n.modeSuspect && !selN) { // tam tonunda scale dışı: mod yanlış olabilir
+        c.lineWidth = 2; c.strokeStyle = '#c792ea'; c.setLineDash([2, 2]);
+        roundRect(c, x0, y - h / 2, Math.max(3, x1 - x0 - 1), h, 3); c.stroke();
+        c.setLineDash([]); c.lineWidth = 1;
+      }
       if (selN || n.locked || n.label != null) {
         c.lineWidth = selN ? 2 : 1.5;
         c.strokeStyle = selN ? '#fff' : n.locked ? '#f4d35e' : '#ffb454';
@@ -670,6 +675,7 @@ function draw() {
         let t = C.noteName(n.effMidi, false);
         if (x1 - x0 > 70) t += ` ${n.cents > 0 ? '+' : ''}${n.cents}c`;
         if (n.locked) t = '🔒' + t;
+        if (n.modeSuspect) t = '? ' + t;
         c.save(); c.beginPath(); c.rect(x0, y - h / 2, x1 - x0 - 2, h); c.clip();
         c.fillText(t, x0 + 4, y + 0.5);
         c.restore();
@@ -871,6 +877,7 @@ function renderSections() {
           ${status}</div>`;
     return `<div class="sec-card${sel ? ' sel' : ''}" data-sec="${s.id}">${head}${keyRow}
       ${ki.last ? `<div class="hint">Ayırt edici ipucu — bölümün son ağırlıklı notası: <b>${esc(ki.last.name)}</b></div>` : ''}
+      ${(() => { const sus = S.d.notes.filter((n) => n.section === s.id && n.modeSuspect); return sus.length ? `<div class="st-warn">⚠ Mod yanlış olabilir: ${sus.length} nota tam tonunda söylenmiş ama ${esc(C.keyName(s.tonic, s.mode))} dışında (${[...new Set(sus.map((n) => C.pcName(n.effMidi, C.keyUsesFlats(s.tonic, s.mode))))].join(', ')}).</div>` : ''; })()}
       ${cands ? `<ul class="cands">${cands}</ul>` : ''}
       ${s.implicit && ki.candidates.length ? '<p class="hint">Mod seçmek için önce bir bölüm tanımlayın (tek bölüm için: 1–son ölçü).</p>' : ''}
     </div>`;
@@ -957,7 +964,7 @@ function renderNoteInspector(box, n) {
   const corr = n.corr || { source: 'none' };
   let soundDesc;
   if (corr.source === 'manual') soundDesc = `Manuel: ${nn(corr.target)}${Math.abs(corr.target - Math.round(corr.target)) > 0.001 ? ` ${Math.round((corr.target - Math.round(corr.target)) * 100)}c` : ''} (kaydırma ${Math.round(corr.applied)} cent) — kilitli`;
-  else if (corr.source === 'auto') soundDesc = `Autotune → ${nn(corr.target)} (kaydırma ${Math.round(corr.applied)} cent)`;
+  else if (corr.source === 'auto') soundDesc = `Autotune → ${nn(corr.target)} (kaydırma ${Math.round(corr.applied)} cent)${corr.identityChange ? ' — UYARI: scale\'e çekme notayı başka yarım sese taşıdı' : ''}`;
   else if (corr.chromatic) soundDesc = 'Kromatik geçiş notası — autotune dokunmadı';
   else if (n.locked) soundDesc = 'Kilitli — autotune dokunmaz';
   else soundDesc = S.proj.autotune.enabled ? 'Düzeltme yok' : 'Düzeltme yok (autotune kapalı)';
@@ -967,6 +974,7 @@ function renderNoteInspector(box, n) {
       <span>Konum</span><span>ölçü ${mp.bar + 1}, vuruş ${beat} · ${(n.tl1 - n.tl0).toFixed(2)} s (${((n.q1 - n.q0) / g.pulseQ).toFixed(2)} vuruş)</span>
       <span>Bölüm</span><span>${sec ? esc(sec.name) + (sec.tonic != null ? ' · ' + esc(C.keyName(sec.tonic, sec.mode)) : '') : '—'} · ${n.inScale ? 'scale içinde' : '<b style="color:var(--note-out)">scale dışı</b>'}</span>
       <span>Akor ağırlığı</span><span>×${n.cw}</span>
+      ${n.modeSuspect ? `<span>Mod</span><span><b style="color:#c792ea">Mod yanlış olabilir:</b> bu nota tam tonunda söylenmiş (${n.cents > 0 ? '+' : ''}${n.cents} cent) ama ${sec && sec.tonic != null ? esc(C.keyName(sec.tonic, sec.mode)) : 'seçili scale'} dışında. Büyük ihtimalle kasıtlı — bölümün modunu kontrol edin; autotune bu notanın kimliğini değiştirmez.</span>` : ''}
     </div>
     <div class="cols">
       <div class="box a"><h4>a) Etiket düzeltme — ses değişmez</h4>
@@ -976,10 +984,10 @@ function renderNoteInspector(box, n) {
         <p class="hint">Pitch detection yanlış algıladığında kullanın. Ton önerisi (4. adım) ve akor bulma bu etiketi kullanır.</p></div>
       <div class="box b"><h4>b) Ses düzeltme — perde kaydırılır</h4>
         <div class="row">${esc(soundDesc)}</div>
-        <p class="hint">Ton önerisine girmez; akor bulma düzeltilmiş notayı kullanır.</p>
+        <p class="hint">Yalnızca sesi değiştirir: ton önerisine ve akor bulmaya girmez — ikisi de kastedilen notayı (algılanan nota ya da etiket) kullanır. Notanın kendisi yanlışsa (a) etiketini düzeltin.</p>
         <div class="row">Hedef: <button data-act="snd" data-v="-1">−1 yarım ses</button><button data-act="snd" data-v="1">+1 yarım ses</button>
           <button data-act="snd" data-v="-0.05">−5c</button><button data-act="snd" data-v="0.05">+5c</button>
-          <button data-act="sndSnap">En yakın notaya çek</button>
+          <button data-act="sndSnap">En yakın yarım sese çek</button>
           <button data-act="sndReset"${n.manualTarget == null ? ' disabled' : ''}>Sıfırla</button></div>
         <label class="chk"><input type="checkbox" data-act="lock"${n.locked ? ' checked' : ''}${n.manualTarget != null ? ' disabled' : ''}> Kilitli (autotune dokunmaz)</label></div>
     </div>`;
@@ -1000,7 +1008,7 @@ $('#inspector').addEventListener('click', (e) => {
     if (act === 'label') { const ed = editFor(n, true); ed.label = (n.label ?? n.detMidi) + +b.dataset.v; refresh(); }
     if (act === 'labelReset') { const ed = editFor(n); if (ed) ed.label = null; cleanupEdits(); refresh(); }
     if (act === 'snd') soundEdit(n, (t) => { const v = +b.dataset.v; return Math.abs(v) >= 1 ? Math.round(t) + v : Math.round((t + v) * 100) / 100; });
-    if (act === 'sndSnap') soundEdit(n, () => (n.scalePcs ? C.nearestScaleNote(n.median, n.scalePcs) : Math.round(n.median)));
+    if (act === 'sndSnap') soundEdit(n, () => n.nearest);
     if (act === 'sndReset') { const ed = editFor(n); if (ed) { ed.target = null; ed.locked = false; } cleanupEdits(); refresh(); scheduleRender(true); }
   } else if (S.sel.type === 'chord') {
     const slot = S.d.chords.find((s) => S.sel.q >= s.q0 && S.sel.q < s.q1);
@@ -1089,6 +1097,9 @@ function syncInputs() {
   $('#inAmount').value = p.autotune.amount; $('#outAmount').textContent = p.autotune.amount + '%';
   $('#inRetune').value = p.autotune.retuneMs; $('#outRetune').textContent = p.autotune.retuneMs + ' ms';
   $('#inKeepVib').checked = p.autotune.keepVibrato; $('#inSkipChrom').checked = p.autotune.skipChromatic;
+  document.querySelectorAll('input[name=atTarget]').forEach((r) => { r.checked = r.value === (p.autotune.target || 'semitone'); });
+  $('#scaleWarn').hidden = p.autotune.target !== 'scale';
+  $('#inSkipChrom').disabled = p.autotune.target !== 'scale';
   $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
   $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
   $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
@@ -1117,6 +1128,13 @@ $('#inAmount').addEventListener('input', (e) => { S.proj.autotune.amount = +e.ta
 $('#inRetune').addEventListener('input', (e) => { S.proj.autotune.retuneMs = +e.target.value; $('#outRetune').textContent = e.target.value + ' ms'; if (S.proj.autotune.enabled) refresh(); });
 $('#inKeepVib').addEventListener('change', (e) => { S.proj.autotune.keepVibrato = e.target.checked; if (S.proj.autotune.enabled) refresh(); });
 $('#inSkipChrom').addEventListener('change', (e) => { S.proj.autotune.skipChromatic = e.target.checked; if (S.proj.autotune.enabled) refresh(); });
+document.querySelectorAll('input[name=atTarget]').forEach((r) => r.addEventListener('change', (e) => {
+  S.proj.autotune.target = e.target.value;
+  $('#scaleWarn').hidden = e.target.value !== 'scale';
+  $('#inSkipChrom').disabled = e.target.value !== 'scale';
+  refresh();
+  if (e.target.value === 'scale') status('Uyarı: scale\'e çekme notaların kimliğini değiştirebilir (bkz. kırmızı uyarı).', 'err');
+}));
 $('#btnAutoApply').onclick = () => { S.proj.autotune.enabled = true; refresh(); scheduleRender(true); };
 $('#btnAutoOff').onclick = () => { S.proj.autotune.enabled = false; refresh(); scheduleRender(true); };
 $('#btnClearManual').onclick = () => { S.proj.noteEdits.forEach((e) => { e.target = null; e.locked = false; }); cleanupEdits(); refresh(); scheduleRender(true); };

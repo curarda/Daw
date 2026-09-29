@@ -134,7 +134,7 @@ try {
     const again = JSON.parse(JSON.stringify(TEST_JSON));
     again.title = 'FRİG–DORİAN TESTİ';
     await importJson(again);
-    const w = await page.textContent('.st-warn');
+    const w = await page.textContent('#styleView .st-warn');
     assert.match(w, /zaten veri setinde/);
     await page.click('button[data-act=dupCancel]');
     assert.equal(await E(() => window.StyleUI.state.dataset.songs.length), 1);
@@ -208,10 +208,14 @@ try {
     assert.match(await page.textContent('#inspector'), /Değiş mi kal mı\s*harmonik ritim: bu akor \d+ ölçüdür çalıyordu → bu modda değişme olasılığı %\d+/);
     await page.click('#inspector button[data-act=fbChord][data-v="1"]');
     assert.match(await page.textContent('#status'), /Beğenildi: i → ♭II/);
+    // λ = 0: "hangi akor" payı sıfır, ritim (λ_ritim) hâlâ etkin; ikisi de 0 → saf teori
     await page.locator('#inLambda').fill('0');
+    assert.equal(await E(() => window.__daw.d.styleActive), true);
+    assert.ok(await E(() => window.__daw.d.chords.every((c) => c.candidates.every((x) => x.style === 0))));
+    await page.locator('#inLambdaR').fill('0');
     assert.equal(await E(() => window.__daw.d.styleActive), false);
     assert.doesNotMatch(await page.textContent('#inspector thead'), /stil payı/);
-    await page.locator('#inLambda').fill('1');
+    await page.locator('#inLambda').fill('1'); await page.locator('#inLambdaR').fill('1');
     return row.replace(/\s+/g, ' ').trim().slice(0, 90);
   });
 

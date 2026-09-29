@@ -199,7 +199,8 @@ try {
     await page.mouse.up();
     await waitStatus(/Düzeltilmiş vokal hazır/);
     const r = await S(() => { const n = window.__daw.d.notes[0]; return { t: n.corr.target, src: n.corr.source, locked: n.locked, eff: n.effMidi, ap: n.corr.applied }; });
-    assert.equal(r.t, 62); assert.equal(r.src, 'manual'); assert.ok(r.locked); assert.equal(r.eff, 62);
+    assert.equal(r.t, 62); assert.equal(r.src, 'manual'); assert.ok(r.locked);
+    assert.equal(r.eff, 61, 'ses kaydırma akor bulucunun gördüğü notayı değiştirmemeli');
     // Shift ile cent hassasiyeti
     await page.keyboard.down('Shift');
     await page.keyboard.press('ArrowUp');
@@ -208,7 +209,7 @@ try {
     assert.equal(t2, 62.05);
     await page.click('#btnClearManual');
     await page.click('.seg input[value=select] + span');
-    return `C#4 → D4 (+${Math.round(r.ap)}c), Shift+↑ → +5c`;
+    return `ses C#4 → D4 (+${Math.round(r.ap)}c), akor bulucu C#4 görmeye devam ediyor · Shift+↑ → +5c`;
   });
 
   await step('8) oynatma (Tone.js) + mikser + A/B', async () => {

@@ -257,9 +257,13 @@ await step('k ve α önerisi: şarkı bazlı bir-dışarıda çapraz doğrulama'
   const r = Style.suggestKAlpha({ songs });
   assert.ok(r.ok && r.table.length === 42 && Number.isFinite(r.best.meanLL));
   assert.ok(r.warnings.some((w) => /güvenilir değil/.test(w)), '20 şarkıdan az → uyarı');
+  assert.equal(r.bestDur, null); // bu şarkılarda süre yok → ritim α'sı önerilemez
+  const withDur = songs.map((x, i) => { const y = JSON.parse(JSON.stringify(x)); y.sections[0].bars = y.sections[0].chords.map(() => (i % 2 ? 2 : 1)); return y; });
+  const rd = Style.suggestKAlpha({ songs: withDur });
+  assert.ok(rd.bestDur && Number.isFinite(rd.bestDur.meanLL) && rd.durTable.length === 6);
   const two = Style.suggestKAlpha({ songs: songs.slice(0, 2) });
   assert.ok(two.ok && !two.reliable && /güvenilir değil/.test(two.warnings[0]), '2 şarkıyla da çalışmalı');
-  return `en iyi k=${r.best.k}, α=${r.best.alpha} (ortalama log-olabilirlik ${r.best.meanLL.toFixed(3)}, ${r.songs} şarkı) · ${r.warnings[0]}`;
+  return `geçiş: k=${r.best.k}, α=${r.best.alpha} (log-olabilirlik ${r.best.meanLL.toFixed(3)}) · ritim: α_ritim=${rd.bestDur.alphaDur} (${rd.bestDur.meanLL.toFixed(3)}) · ${r.warnings[0]}`;
 });
 
 await step('Akor bulucu entegrasyonu: λ=0 saf teori; stil payı ayrı; sıcaklık örneklemesi', () => {
@@ -361,17 +365,20 @@ await step('Akor bulucu: "değiş mi kal mı" harmonik ritimden; "hangi akor" λ
   const st = { duration: test.signal.length / test.sr };
   st.track = await Core.detectPitch(test.signal, test.sr, proj.pitch);
   st.rawNotes = Core.segmentNotes(st.track, proj.pitch);
-  const data = (bars) => {
-    const x = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'R', title: 'R' + bars, sections: [{ label: 'C', chords: ['Bm', 'E', 'A', 'Bm'], bars: [bars, bars, bars, bars], key_proposals: [{ tonic: 'B', mode: 'dorian' }] }] })).songs[0];
-    confirmAll(x); return { songs: [x] };
-  };
-  // tek şarkılık veride α=0.5 dağılımı düzleştirir (h≈0.2); ritmin etkisini görmek için α küçük
-  const run = (ds2) => Core.derive(proj, Object.assign({}, st, { style: Style.makeStyleScorer(Style.buildModel(ds2, { alpha: 0.05 }), { lambda: 3 }) }));
+  // Aynı ritmi taşıyan 10 sentetik şarkı (varsayılan α = 0.5 ile): ya hep 8 ölçü ya hep 1 ölçü
+  const data = (bars) => ({ songs: Array.from({ length: 10 }, (_, i) => {
+    const x = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'Ritim ' + bars, title: 'Şarkı ' + i, sections: [{ label: 'C', chords: ['Bm', 'E', 'A', 'Bm'], bars: [bars, bars, bars, bars], key_proposals: [{ tonic: 'B', mode: 'dorian' }] }] })).songs[0];
+    confirmAll(x); return x;
+  }) });
+  const run = (ds2) => Core.derive(proj, Object.assign({}, st, { style: Style.makeStyleScorer(Style.buildModel(ds2), { lambda: 1, lambdaRhythm: 3 }) }));
   const bar6 = (d) => d.chords.find((c) => c.bar === 6);
   const longD = run(data(8)), shortD = run(data(1));
+  assert.equal(Style.MODEL_DEFAULTS.alphaDur, 0.5); assert.equal(Style.MODEL_DEFAULTS.alpha, 0.5);
   assert.equal(Core.chordName(bar6(longD).chord), 'Bm', 'uzun akor süreleri → kal');
   assert.notEqual(Core.chordName(bar6(shortD).chord), 'Bm', 'kısa akor süreleri → değiş');
   assert.ok(bar6(longD).rhythm && bar6(longD).rhythm.h < 0.1 && bar6(shortD).rhythm.h > 0.5);
+  // λ_ritim = 0 → ritim karara katılmaz (geçiş ağırlığı λ ayrı)
+  assert.equal(Style.makeStyleScorer(Style.buildModel(data(8)), { lambda: 1, lambdaRhythm: 0 }).changeTerm({ tonic: 11, mode: 'dorian' }, 1), null);
   // süre verisi yok → ritim karara katılmaz
   const noDur = Style.makeStyleScorer(Style.buildModel(ds), { lambda: 3 });
   assert.equal(noDur.changeTerm({ tonic: 11, mode: 'dorian' }, 1), null);
@@ -379,7 +386,7 @@ await step('Akor bulucu: "değiş mi kal mı" harmonik ritimden; "hangi akor" λ
   const empty = Style.makeStyleScorer(Style.buildModel({ songs: [] }, { alpha: 0.5 }), { lambda: 1 });
   const v = empty.score({ root: 11, q: 'm' }, null, { root: 4, q: '' }, { tonic: 11, mode: 'dorian' });
   assert.ok(Math.abs(v.trans - Math.log((1 / 6) * 7)) < 1e-9, 'K=7, 6 hedefe uniform → log(7/6)');
-  return `ölçü 6: uzun süreli veride ${Core.chordName(bar6(longD).chord)} (h=${bar6(longD).rhythm.h.toFixed(2)}), kısa süreli veride ${Core.chordName(bar6(shortD).chord)} (h=${bar6(shortD).rhythm.h.toFixed(2)}) · veri yokken geçiş payı λ·log(P·7) = ${v.trans.toFixed(3)}`;
+  return `10 şarkı, α=0.5 · ölçü 6: uzun süreli veride ${Core.chordName(bar6(longD).chord)} (h=${bar6(longD).rhythm.h.toFixed(2)}), kısa süreli veride ${Core.chordName(bar6(shortD).chord)} (h=${bar6(shortD).rhythm.h.toFixed(2)}) · veri yokken geçiş payı λ·log(P·7) = ${v.trans.toFixed(3)}`;
 });
 
 console.log(results.join('\n'));

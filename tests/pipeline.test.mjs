@@ -75,7 +75,8 @@ await step('3b) Etiket düzeltme ton önerisinden önce: histogram etiketleri ku
   proj.noteEdits = [{ t0: n0.t0, t1: n0.t1, target: 63, locked: true }];
   proj.autotune = Object.assign({}, proj.autotune, { enabled: true });
   const dS = Core.derive(proj, st);
-  assert.equal(dS.notes[0].effMidi, 63, 'manuel ses düzeltmesi uygulanmadı');
+  assert.equal(dS.notes[0].corr.target, 63, 'manuel ses düzeltmesi uygulanmadı');
+  assert.equal(dS.notes[0].effMidi, 61, 'ses düzeltmesi kastedilen notayı değiştirmemeli');
   assert.deepEqual(Array.from(dS.keyInfo.s0.hist), h0, 'ses düzeltmesi histogramı değiştirdi');
   proj.noteEdits = [];
   proj.autotune = Object.assign({}, proj.autotune, { enabled: false });
@@ -139,15 +140,41 @@ await step('5b) Autotune: pes notayı düzeltir (TD-PSOLA render + yeniden anali
   return `pes D4 ${d.notes[3].cents}c → render sonrası ${f2.cents}c · en kötü nota ${worst}c · RMS oranı ${ratio.toFixed(3)}`;
 });
 
-await step('5b) Manuel düzeltme kilitler; autotune ona dokunmaz', () => {
+await step('5b) Manuel ses düzeltme kilitler; autotune dokunmaz; akor bulucu kastedilen notayı kullanır', () => {
   const n = d.notes[0];
   proj.noteEdits.push({ t0: n.t0, t1: n.t1, target: 63, locked: true });
   const d2 = Core.derive(proj, st);
   assert.equal(d2.notes[0].corr.source, 'manual');
-  assert.equal(d2.notes[0].effMidi, 63);
+  assert.equal(d2.notes[0].corr.target, 63);
   assert.ok(d2.notes[0].locked);
+  assert.equal(d2.notes[0].effMidi, 61, 'ses kaydırma kastedilen notayı değiştirmemeli');
   proj.noteEdits = [];
-  return 'nota 1 → D#4 (manuel, kilitli)';
+  return 'nota 1: ses D#4\'e kaydırıldı (kilitli) · akor bulucu hâlâ C#4 görür';
+});
+
+await step('5b) Autotune notanın kimliğini değiştirmez; scale\'e çekme yalnızca açık seçenek; tam tonunda scale dışı nota işaretlenir', () => {
+  // nakaratı bilerek yanlış moda (B minör) koy: G#4 (Dorian 6'lısı) tam tonunda söylendi
+  const p2 = JSON.parse(JSON.stringify(proj));
+  p2.sections[1].mode = 'minor';
+  p2.autotune = Object.assign({}, p2.autotune, { enabled: true, target: 'semitone', retuneMs: 20 });
+  const dS = Core.derive(p2, st);
+  const gs = dS.notes.find((x) => x.nearest === 68);
+  assert.equal(gs.corr.target, 68, 'en yakın yarım ses: G# G# kalmalı');
+  assert.ok(Math.abs(gs.corr.applied) < 5);
+  assert.equal(gs.effMidi, 68);
+  assert.ok(gs.modeSuspect, 'tam tonunda scale dışı nota "mod yanlış olabilir" işaretlenmeli');
+  // pes söylenen D (−40c) yine D'ye çekilir
+  assert.equal(dS.notes[3].corr.target, 62);
+  // scale'e çekme açıkça seçilirse G# başka yarım sese taşınır — ama akor bulucu etkilenmez
+  p2.autotune.target = 'scale';
+  const dC = Core.derive(p2, st);
+  const gs2 = dC.notes.find((x) => x.nearest === 68);
+  assert.ok(gs2.corr.identityChange && gs2.corr.target !== 68);
+  assert.equal(gs2.effMidi, 68);
+  const names = (dd) => dd.chords.map((c) => Core.chordName(c.chord)).join(' ');
+  p2.autotune.enabled = false;
+  assert.equal(names(dC), names(Core.derive(p2, st)), 'autotune akorları değiştirmemeli');
+  return `B minör seçiliyken G#4: yarım ses modunda hedef G#4 (kayma ${gs.corr.applied.toFixed(1)}c), "mod yanlış olabilir" işaretli · scale modunda hedef ${Core.noteName(gs2.corr.target)} (kimlik değişti, uyarı) · akorlar her durumda aynı`;
 });
 
 await step('6) Akor bulma: verse C#m / Dmaj7, ev akoru her 2 ölçüde; nakarat sonu Bm', () => {

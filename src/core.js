@@ -482,7 +482,11 @@ function suggestKeys(notes, g, topK = 3) {
 }
 
 // ---------------------------------------------------------------- AUTOTUNE / DÜZELTME EĞRİSİ
-const AUTOTUNE_DEFAULTS = { enabled: false, amount: 100, retuneMs: 30, keepVibrato: true, skipChromatic: true };
+// target: 'semitone' (varsayılan) = söylenen notanın en yakın yarım sesine çek, notanın kimliği ASLA değişmez;
+//         'scale' = scale'in en yakın notasına çek (kimliği değiştirebilir; yalnızca açıkça seçilirse)
+const AUTOTUNE_DEFAULTS = { enabled: false, target: 'semitone', amount: 100, retuneMs: 30, keepVibrato: true, skipChromatic: true };
+// bu kadar cent içinde söylenen nota "tam tonunda" sayılır (kişisel akort referansına göre)
+const IN_TUNE_CENTS = 20;
 function nearestScaleNote(m, pcs) {
   if (!pcs) return Math.round(m);
   let best = Math.round(m), bd = Infinity;
@@ -506,14 +510,17 @@ function isChromaticPassing(i, notes, pcs, g) {
 function computeCorrection(track, notes, at, g) {
   const nF = track.f0.length, hop = track.hopSec;
   const shift = new Float32Array(nF);
-  const info = notes.map(() => ({ target: null, source: 'none', applied: 0, chromatic: false }));
+  const info = notes.map(() => ({ target: null, source: 'none', applied: 0, chromatic: false, identityChange: false }));
   notes.forEach((n, i) => {
     let target = null, tau, amount, keepVib;
     if (n.manualTarget != null) {
       target = n.manualTarget; tau = 0.01; amount = 1; keepVib = true; info[i].source = 'manual';
     } else if (at.enabled && !n.locked) {
-      if (at.skipChromatic && isChromaticPassing(i, notes, n.scalePcs, g)) { info[i].chromatic = true; return; }
-      target = nearestScaleNote(n.median, n.scalePcs);
+      if (at.target === 'scale') {
+        if (at.skipChromatic && isChromaticPassing(i, notes, n.scalePcs, g)) { info[i].chromatic = true; return; }
+        target = nearestScaleNote(n.median, n.scalePcs);
+        info[i].identityChange = target !== n.nearest; // scale'e çekme notayı başka yarım sese taşıdı
+      } else target = n.nearest; // en yakın yarım ses: tonlama düzeltmesi, kimlik aynı
       tau = at.retuneMs / 1000; amount = at.amount / 100; keepVib = at.keepVibrato; info[i].source = 'auto';
     }
     if (target == null) return;
@@ -1359,9 +1366,15 @@ function derive(proj, st) {
       const inf = correction.info[i];
       n.corr = inf;
       n.soundMidi = n.median + inf.applied / 100;
-      n.effMidi = n.label != null ? n.label : Math.round(n.soundMidi);
-      n.inScale = n.scalePcs ? n.scalePcs.includes(mod12(n.effMidi)) : true;
     });
+  }
+  // Akor bulucu SESİ değil kastedilen notayı kullanır: etiket düzeltmesi varsa o, yoksa algılanan nota.
+  // Ses düzeltmeleri (autotune, manuel kaydırma) buna dokunmaz.
+  for (const n of notes) {
+    n.effMidi = n.label != null ? n.label : n.nearest;
+    n.inScale = n.scalePcs ? n.scalePcs.includes(mod12(n.effMidi)) : true;
+    // tam tonunda söylenmiş ama scale dışı → büyük ihtimalle kasıtlı: "mod yanlış olabilir"
+    n.modeSuspect = !n.inScale && n.label == null && Math.abs(n.cents) <= IN_TUNE_CENTS;
   }
   for (const n of notes) n.cw = chordWeight(n, g);
   // 6) akorlar
@@ -1474,7 +1487,7 @@ function measureLatency(x, sr, clickTimes, opts = {}) {
 
 const Core = {
   PC_SHARP, PC_FLAT, MODES, MODE_ORDER, METERS, CHORD_Q, TEST_SCORE,
-  PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS,
+  PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS, IN_TUNE_CENTS,
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,

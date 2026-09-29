@@ -311,11 +311,16 @@ td.durbar i { display: block; height: 8px; border-radius: 0 4px 4px 0; backgroun
       <p class="hint">Sesin kendisi kaydırılır (TD-PSOLA). <b>Manuel</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
       <button id="btnModeSound">Manuel ses düzeltme modunu aç</button>
       <fieldset>
-        <legend>Otomatik (autotune) — bölüm scale'ine göre</legend>
+        <legend>Otomatik (autotune)</legend>
+        <div class="modes" role="radiogroup" aria-label="Autotune hedefi">
+          <label><input type="radio" name="atTarget" value="semitone" checked> En yakın yarım sese çek <small class="hint">(önerilen — notanın kimliği değişmez)</small></label>
+          <label><input type="radio" name="atTarget" value="scale"> Bölüm scale'ine çek <small class="hint">(notanın kimliğini değiştirebilir)</small></label>
+        </div>
+        <div id="scaleWarn" class="st-warn" hidden>⚠ Scale'e çekme açık: scale dışında kalan notalar — tam tonunda söylenmiş olsalar bile — başka bir yarım sese taşınır. Mod yanlış seçildiyse doğru notaları bozar. Akor bulucu bundan etkilenmez (kastedilen notayı kullanır).</div>
         <label>Miktar <output id="outAmount">100%</output><input type="range" id="inAmount" min="0" max="100" value="100"></label>
         <label>Retune hızı <output id="outRetune">30 ms</output><input type="range" id="inRetune" min="0" max="400" step="5" value="30"></label>
         <label class="chk"><input type="checkbox" id="inKeepVib" checked> Vibratoyu koru</label>
-        <label class="chk"><input type="checkbox" id="inSkipChrom" checked> Kromatik geçiş notalarına dokunma</label>
+        <label class="chk"><input type="checkbox" id="inSkipChrom" checked> Kromatik geçiş notalarına dokunma <small class="hint">(scale modunda)</small></label>
         <div class="row">
           <button id="btnAutoApply" class="accent">Autotune uygula</button>
           <button id="btnAutoOff">Autotune kapat</button>
@@ -340,7 +345,8 @@ td.durbar i { display: block; height: 8px; border-radius: 0 4px 4px 0; backgroun
       <fieldset id="styleBox">
         <legend>Stil modeli (sevdiğin şarkılardan)</legend>
         <div id="styleInfo" class="hint">Stil verisi yok — "Stil verisi ve öneri" görünümünden şarkı ekleyin.</div>
-        <label title="0 = saf teori (stil modeli etkisiz)">Stil ağırlığı λ <output id="outLambda">1</output><input type="range" id="inLambda" min="0" max="5" step="0.25" value="1"></label>
+        <label title="&quot;Değişirsem hangi akora&quot;: geçiş olasılığının ağırlığı. 0 = saf teori">Geçiş ağırlığı λ <output id="outLambda">1</output><input type="range" id="inLambda" min="0" max="5" step="0.25" value="1"></label>
+        <label title="&quot;Değiş mi kal mı&quot;: harmonik ritim verisinin ağırlığı. 0 = ritim karara katılmaz">Ritim ağırlığı λ_ritim <output id="outLambdaR">1</output><input type="range" id="inLambdaR" min="0" max="5" step="0.25" value="1"></label>
         <label title="0 = hep en iyi aday; artınca en iyi 3 aday arasından puanla orantılı örnekler">Sıcaklık <output id="outChordTemp">0</output><input type="range" id="inChordTemp" min="0" max="3" step="0.1" value="0"></label>
         <button id="btnReseed" title="Sıcaklık > 0 iken yeni örnek">Yeniden örnekle</button>
       </fieldset>
@@ -879,7 +885,11 @@ function suggestKeys(notes, g, topK = 3) {
 }
 
 // ---------------------------------------------------------------- AUTOTUNE / DÜZELTME EĞRİSİ
-const AUTOTUNE_DEFAULTS = { enabled: false, amount: 100, retuneMs: 30, keepVibrato: true, skipChromatic: true };
+// target: 'semitone' (varsayılan) = söylenen notanın en yakın yarım sesine çek, notanın kimliği ASLA değişmez;
+//         'scale' = scale'in en yakın notasına çek (kimliği değiştirebilir; yalnızca açıkça seçilirse)
+const AUTOTUNE_DEFAULTS = { enabled: false, target: 'semitone', amount: 100, retuneMs: 30, keepVibrato: true, skipChromatic: true };
+// bu kadar cent içinde söylenen nota "tam tonunda" sayılır (kişisel akort referansına göre)
+const IN_TUNE_CENTS = 20;
 function nearestScaleNote(m, pcs) {
   if (!pcs) return Math.round(m);
   let best = Math.round(m), bd = Infinity;
@@ -903,14 +913,17 @@ function isChromaticPassing(i, notes, pcs, g) {
 function computeCorrection(track, notes, at, g) {
   const nF = track.f0.length, hop = track.hopSec;
   const shift = new Float32Array(nF);
-  const info = notes.map(() => ({ target: null, source: 'none', applied: 0, chromatic: false }));
+  const info = notes.map(() => ({ target: null, source: 'none', applied: 0, chromatic: false, identityChange: false }));
   notes.forEach((n, i) => {
     let target = null, tau, amount, keepVib;
     if (n.manualTarget != null) {
       target = n.manualTarget; tau = 0.01; amount = 1; keepVib = true; info[i].source = 'manual';
     } else if (at.enabled && !n.locked) {
-      if (at.skipChromatic && isChromaticPassing(i, notes, n.scalePcs, g)) { info[i].chromatic = true; return; }
-      target = nearestScaleNote(n.median, n.scalePcs);
+      if (at.target === 'scale') {
+        if (at.skipChromatic && isChromaticPassing(i, notes, n.scalePcs, g)) { info[i].chromatic = true; return; }
+        target = nearestScaleNote(n.median, n.scalePcs);
+        info[i].identityChange = target !== n.nearest; // scale'e çekme notayı başka yarım sese taşıdı
+      } else target = n.nearest; // en yakın yarım ses: tonlama düzeltmesi, kimlik aynı
       tau = at.retuneMs / 1000; amount = at.amount / 100; keepVib = at.keepVibrato; info[i].source = 'auto';
     }
     if (target == null) return;
@@ -1756,9 +1769,15 @@ function derive(proj, st) {
       const inf = correction.info[i];
       n.corr = inf;
       n.soundMidi = n.median + inf.applied / 100;
-      n.effMidi = n.label != null ? n.label : Math.round(n.soundMidi);
-      n.inScale = n.scalePcs ? n.scalePcs.includes(mod12(n.effMidi)) : true;
     });
+  }
+  // Akor bulucu SESİ değil kastedilen notayı kullanır: etiket düzeltmesi varsa o, yoksa algılanan nota.
+  // Ses düzeltmeleri (autotune, manuel kaydırma) buna dokunmaz.
+  for (const n of notes) {
+    n.effMidi = n.label != null ? n.label : n.nearest;
+    n.inScale = n.scalePcs ? n.scalePcs.includes(mod12(n.effMidi)) : true;
+    // tam tonunda söylenmiş ama scale dışı → büyük ihtimalle kasıtlı: "mod yanlış olabilir"
+    n.modeSuspect = !n.inScale && n.label == null && Math.abs(n.cents) <= IN_TUNE_CENTS;
   }
   for (const n of notes) n.cw = chordWeight(n, g);
   // 6) akorlar
@@ -1871,7 +1890,7 @@ function measureLatency(x, sr, clickTimes, opts = {}) {
 
 const Core = {
   PC_SHARP, PC_FLAT, MODES, MODE_ORDER, METERS, CHORD_Q, TEST_SCORE,
-  PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS,
+  PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS, IN_TUNE_CENTS,
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
@@ -2454,7 +2473,9 @@ function modeSongCounts(stats) {
 }
 
 // ---------------------------------------------------------------- MODEL
-const MODEL_DEFAULTS = { k: 10, alpha: 0.5, lambda: 1, chordTemperature: 0, seed: 1, minCtxSongs: 5, secondOrder: true, lowDataSongs: 20 };
+// alpha: geçiş/renk/açılış yumuşatması; alphaDur: harmonik ritim (süre) yumuşatması — ayrı ayarlanır.
+// lambda: "hangi akora" (geçiş) ağırlığı; lambdaRhythm: "değiş mi kal mı" (harmonik ritim) ağırlığı.
+const MODEL_DEFAULTS = { k: 10, alpha: 0.5, alphaDur: 0.5, lambda: 1, lambdaRhythm: 1, chordTemperature: 0, seed: 1, minCtxSongs: 5, secondOrder: true, lowDataSongs: 20 };
 // moda uygun (diatonik) core'lar
 function diatonicCores(mode) {
   const sc = MODES[heptaOf(mode)].steps;
@@ -2522,10 +2543,10 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     return v;
   }
   // sayım haritasından yumuşatılmış dağılım
-  function smooth(countOf, support, dia) {
+  function smooth(countOf, support, dia, alpha = o.alpha) {
     const w = new Map();
     let sum = 0;
-    for (const b of support) { const x = countOf(b) + (dia.has(b) ? o.alpha : 0); if (x > 0) { w.set(b, x); sum += x; } }
+    for (const b of support) { const x = countOf(b) + (dia.has(b) ? alpha : 0); if (x > 0) { w.set(b, x); sum += x; } }
     if (sum <= 0) { const d = support.filter((b) => dia.has(b)); for (const b of d) w.set(b, 1 / d.length); return w; }
     for (const [b, x] of w) w.set(b, x / sum);
     return w;
@@ -2592,7 +2613,7 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const ck = `${mode}|dur`;
     if (cache.has(ck)) return cache.get(ck);
     const all = new Set(DUR_BINS);
-    const d = pooled(smooth((b) => nSongs(B(mode).dur.get(b)), DUR_BINS, all), smooth((b) => nSongs(pool.dur.get(b)), DUR_BINS, all), B(mode).durSongs.size);
+    const d = pooled(smooth((b) => nSongs(B(mode).dur.get(b)), DUR_BINS, all, o.alphaDur), smooth((b) => nSongs(pool.dur.get(b)), DUR_BINS, all, o.alphaDur), B(mode).durSongs.size);
     cache.set(ck, d);
     return d;
   }
@@ -2618,6 +2639,17 @@ function songTransitions(song) {
   }
   return out;
 }
+function songDurBins(song) {
+  const out = [], seen = new Set();
+  for (const sec of song.sections) {
+    const k = confirmedKey(sec);
+    if (!k) continue;
+    const an = analyzeSection(song, sec, k);
+    if (an.unknown || !an.hasDur) continue;
+    for (const seg of an.runs) for (const r of seg) { const key = `${k.mode}|${durBin(r.dur)}`; if (!seen.has(key)) { seen.add(key); out.push({ mode: k.mode, bin: durBin(r.dur) }); } }
+  }
+  return out;
+}
 function suggestKAlpha(dataset, base = {}, grid = {}) {
   const ks = grid.k || [0, 1, 2, 5, 10, 20, 50];
   const alphas = grid.alpha || [0.05, 0.1, 0.25, 0.5, 1, 2];
@@ -2637,7 +2669,23 @@ function suggestKAlpha(dataset, base = {}, grid = {}) {
     table.push({ k, alpha, meanLL: ll / n, n });
   }
   table.sort((a, b) => b.meanLL - a.meanLL);
-  return { ok: true, best: table[0], table, songs: songs.length, warnings, reliable: songs.length >= 20 };
+  // harmonik ritim α'sı ayrı: dışarıda bırakılan şarkının süre sınıfları (şarkı başına 1) ne kadar iyi tahmin ediliyor
+  const durFolds = folds.map((f) => ({ f, bins: songDurBins(f.held) })).filter((x) => x.bins.length);
+  let durTable = [], bestDur = null;
+  if (durFolds.length) {
+    for (const alphaDur of alphas) {
+      let ll = 0, n = 0;
+      for (const { f, bins } of durFolds) {
+        const m = buildModel(null, Object.assign({}, base, { k: table[0].k, alphaDur }), null, f.stats);
+        for (const t of bins) { ll += Math.log(Math.max(1e-4, m.dur(t.mode).get(t.bin) || 0)); n++; }
+      }
+      durTable.push({ alphaDur, meanLL: ll / n, n });
+    }
+    durTable.sort((a, b) => b.meanLL - a.meanLL);
+    bestDur = durTable[0];
+    if (durFolds.length < 20) warnings.push(`Ritim α'sı için sonuç güvenilir değil: yalnızca ${durFolds.length} şarkıda süre bilgisi var (20'den az).`);
+  } else warnings.push('Süre bilgisi olan şarkı yok: ritim α\'sı önerilemedi.');
+  return { ok: true, best: table[0], table, bestDur, durTable, durSongs: durFolds.length, songs: songs.length, warnings, reliable: songs.length >= 20 };
 }
 
 // ---------------------------------------------------------------- akor bulucu entegrasyonu
@@ -2674,13 +2722,14 @@ function mulberry32(a) {
 // Core.buildChords için stil puanlayıcı — iki ayrı pay:
 //  • "Değişirsem hangi akora": λ·log(P·K) + λ·log(P_renk·K_renk). K = moddaki diatonik core sayısı (7), sabit;
 //    ödünç akorlar K'yı değiştirmez. K_renk = o core için moda uygun renk sayısı. Veri yokken ≈ 0.
-//  • "Değiş mi kal mı": changeTerm → λ·log(h/(1−h)), h = harmonik ritim verisinden bu akor n ölçüdür
+//  • "Değiş mi kal mı": changeTerm → λ_ritim·log(h/(1−h)), h = harmonik ritim verisinden bu akor n ölçüdür
 //    çalıyorken bu modda değişme olasılığı. Süre verisi yoksa null (karara katılmaz).
 function makeStyleScorer(model, opts = {}) {
   const lambda = opts.lambda ?? model.settings.lambda;
+  const lambdaRhythm = opts.lambdaRhythm ?? model.settings.lambdaRhythm;
   const rng = mulberry32((opts.seed ?? model.settings.seed) * 9973 + 17);
   return {
-    lambda, temperature: opts.temperature ?? model.settings.chordTemperature, rng,
+    lambda, lambdaRhythm, temperature: opts.temperature ?? model.settings.chordTemperature, rng,
     score(prev, prev2, ch, sec) {
       if (!lambda || sec.tonic == null) return { value: 0, trans: 0, color: 0 };
       const c = chordToCore(ch, sec.tonic);
@@ -2700,10 +2749,10 @@ function makeStyleScorer(model, opts = {}) {
       return { value: trans + color, trans, color, p, core: c.core };
     },
     changeTerm(sec, held, step = 1) {
-      if (!lambda || sec.tonic == null) return null;
+      if (!lambdaRhythm || sec.tonic == null) return null;
       const h = changeHazard(model, sec.mode, held, step);
       if (h == null) return null;
-      return { h, held, value: lambda * Math.log(h / (1 - h)) };
+      return { h, held, value: lambdaRhythm * Math.log(h / (1 - h)) };
     },
   };
 }
@@ -3571,6 +3620,11 @@ function draw() {
       roundRect(c, x0, y - h / 2, Math.max(3, x1 - x0 - 1), h, 3); c.fill();
       c.globalAlpha = 1;
       const selN = S.sel && S.sel.type === 'note' && S.sel.id === n.id;
+      if (n.modeSuspect && !selN) { // tam tonunda scale dışı: mod yanlış olabilir
+        c.lineWidth = 2; c.strokeStyle = '#c792ea'; c.setLineDash([2, 2]);
+        roundRect(c, x0, y - h / 2, Math.max(3, x1 - x0 - 1), h, 3); c.stroke();
+        c.setLineDash([]); c.lineWidth = 1;
+      }
       if (selN || n.locked || n.label != null) {
         c.lineWidth = selN ? 2 : 1.5;
         c.strokeStyle = selN ? '#fff' : n.locked ? '#f4d35e' : '#ffb454';
@@ -3583,6 +3637,7 @@ function draw() {
         let t = C.noteName(n.effMidi, false);
         if (x1 - x0 > 70) t += ` ${n.cents > 0 ? '+' : ''}${n.cents}c`;
         if (n.locked) t = '🔒' + t;
+        if (n.modeSuspect) t = '? ' + t;
         c.save(); c.beginPath(); c.rect(x0, y - h / 2, x1 - x0 - 2, h); c.clip();
         c.fillText(t, x0 + 4, y + 0.5);
         c.restore();
@@ -3784,6 +3839,7 @@ function renderSections() {
           ${status}</div>`;
     return `<div class="sec-card${sel ? ' sel' : ''}" data-sec="${s.id}">${head}${keyRow}
       ${ki.last ? `<div class="hint">Ayırt edici ipucu — bölümün son ağırlıklı notası: <b>${esc(ki.last.name)}</b></div>` : ''}
+      ${(() => { const sus = S.d.notes.filter((n) => n.section === s.id && n.modeSuspect); return sus.length ? `<div class="st-warn">⚠ Mod yanlış olabilir: ${sus.length} nota tam tonunda söylenmiş ama ${esc(C.keyName(s.tonic, s.mode))} dışında (${[...new Set(sus.map((n) => C.pcName(n.effMidi, C.keyUsesFlats(s.tonic, s.mode))))].join(', ')}).</div>` : ''; })()}
       ${cands ? `<ul class="cands">${cands}</ul>` : ''}
       ${s.implicit && ki.candidates.length ? '<p class="hint">Mod seçmek için önce bir bölüm tanımlayın (tek bölüm için: 1–son ölçü).</p>' : ''}
     </div>`;
@@ -3870,7 +3926,7 @@ function renderNoteInspector(box, n) {
   const corr = n.corr || { source: 'none' };
   let soundDesc;
   if (corr.source === 'manual') soundDesc = `Manuel: ${nn(corr.target)}${Math.abs(corr.target - Math.round(corr.target)) > 0.001 ? ` ${Math.round((corr.target - Math.round(corr.target)) * 100)}c` : ''} (kaydırma ${Math.round(corr.applied)} cent) — kilitli`;
-  else if (corr.source === 'auto') soundDesc = `Autotune → ${nn(corr.target)} (kaydırma ${Math.round(corr.applied)} cent)`;
+  else if (corr.source === 'auto') soundDesc = `Autotune → ${nn(corr.target)} (kaydırma ${Math.round(corr.applied)} cent)${corr.identityChange ? ' — UYARI: scale\'e çekme notayı başka yarım sese taşıdı' : ''}`;
   else if (corr.chromatic) soundDesc = 'Kromatik geçiş notası — autotune dokunmadı';
   else if (n.locked) soundDesc = 'Kilitli — autotune dokunmaz';
   else soundDesc = S.proj.autotune.enabled ? 'Düzeltme yok' : 'Düzeltme yok (autotune kapalı)';
@@ -3880,6 +3936,7 @@ function renderNoteInspector(box, n) {
       <span>Konum</span><span>ölçü ${mp.bar + 1}, vuruş ${beat} · ${(n.tl1 - n.tl0).toFixed(2)} s (${((n.q1 - n.q0) / g.pulseQ).toFixed(2)} vuruş)</span>
       <span>Bölüm</span><span>${sec ? esc(sec.name) + (sec.tonic != null ? ' · ' + esc(C.keyName(sec.tonic, sec.mode)) : '') : '—'} · ${n.inScale ? 'scale içinde' : '<b style="color:var(--note-out)">scale dışı</b>'}</span>
       <span>Akor ağırlığı</span><span>×${n.cw}</span>
+      ${n.modeSuspect ? `<span>Mod</span><span><b style="color:#c792ea">Mod yanlış olabilir:</b> bu nota tam tonunda söylenmiş (${n.cents > 0 ? '+' : ''}${n.cents} cent) ama ${sec && sec.tonic != null ? esc(C.keyName(sec.tonic, sec.mode)) : 'seçili scale'} dışında. Büyük ihtimalle kasıtlı — bölümün modunu kontrol edin; autotune bu notanın kimliğini değiştirmez.</span>` : ''}
     </div>
     <div class="cols">
       <div class="box a"><h4>a) Etiket düzeltme — ses değişmez</h4>
@@ -3889,10 +3946,10 @@ function renderNoteInspector(box, n) {
         <p class="hint">Pitch detection yanlış algıladığında kullanın. Ton önerisi (4. adım) ve akor bulma bu etiketi kullanır.</p></div>
       <div class="box b"><h4>b) Ses düzeltme — perde kaydırılır</h4>
         <div class="row">${esc(soundDesc)}</div>
-        <p class="hint">Ton önerisine girmez; akor bulma düzeltilmiş notayı kullanır.</p>
+        <p class="hint">Yalnızca sesi değiştirir: ton önerisine ve akor bulmaya girmez — ikisi de kastedilen notayı (algılanan nota ya da etiket) kullanır. Notanın kendisi yanlışsa (a) etiketini düzeltin.</p>
         <div class="row">Hedef: <button data-act="snd" data-v="-1">−1 yarım ses</button><button data-act="snd" data-v="1">+1 yarım ses</button>
           <button data-act="snd" data-v="-0.05">−5c</button><button data-act="snd" data-v="0.05">+5c</button>
-          <button data-act="sndSnap">En yakın notaya çek</button>
+          <button data-act="sndSnap">En yakın yarım sese çek</button>
           <button data-act="sndReset"${n.manualTarget == null ? ' disabled' : ''}>Sıfırla</button></div>
         <label class="chk"><input type="checkbox" data-act="lock"${n.locked ? ' checked' : ''}${n.manualTarget != null ? ' disabled' : ''}> Kilitli (autotune dokunmaz)</label></div>
     </div>`;
@@ -3913,7 +3970,7 @@ $('#inspector').addEventListener('click', (e) => {
     if (act === 'label') { const ed = editFor(n, true); ed.label = (n.label ?? n.detMidi) + +b.dataset.v; refresh(); }
     if (act === 'labelReset') { const ed = editFor(n); if (ed) ed.label = null; cleanupEdits(); refresh(); }
     if (act === 'snd') soundEdit(n, (t) => { const v = +b.dataset.v; return Math.abs(v) >= 1 ? Math.round(t) + v : Math.round((t + v) * 100) / 100; });
-    if (act === 'sndSnap') soundEdit(n, () => (n.scalePcs ? C.nearestScaleNote(n.median, n.scalePcs) : Math.round(n.median)));
+    if (act === 'sndSnap') soundEdit(n, () => n.nearest);
     if (act === 'sndReset') { const ed = editFor(n); if (ed) { ed.target = null; ed.locked = false; } cleanupEdits(); refresh(); scheduleRender(true); }
   } else if (S.sel.type === 'chord') {
     const slot = S.d.chords.find((s) => S.sel.q >= s.q0 && S.sel.q < s.q1);
@@ -4002,6 +4059,9 @@ function syncInputs() {
   $('#inAmount').value = p.autotune.amount; $('#outAmount').textContent = p.autotune.amount + '%';
   $('#inRetune').value = p.autotune.retuneMs; $('#outRetune').textContent = p.autotune.retuneMs + ' ms';
   $('#inKeepVib').checked = p.autotune.keepVibrato; $('#inSkipChrom').checked = p.autotune.skipChromatic;
+  document.querySelectorAll('input[name=atTarget]').forEach((r) => { r.checked = r.value === (p.autotune.target || 'semitone'); });
+  $('#scaleWarn').hidden = p.autotune.target !== 'scale';
+  $('#inSkipChrom').disabled = p.autotune.target !== 'scale';
   $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
   $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
   $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
@@ -4030,6 +4090,13 @@ $('#inAmount').addEventListener('input', (e) => { S.proj.autotune.amount = +e.ta
 $('#inRetune').addEventListener('input', (e) => { S.proj.autotune.retuneMs = +e.target.value; $('#outRetune').textContent = e.target.value + ' ms'; if (S.proj.autotune.enabled) refresh(); });
 $('#inKeepVib').addEventListener('change', (e) => { S.proj.autotune.keepVibrato = e.target.checked; if (S.proj.autotune.enabled) refresh(); });
 $('#inSkipChrom').addEventListener('change', (e) => { S.proj.autotune.skipChromatic = e.target.checked; if (S.proj.autotune.enabled) refresh(); });
+document.querySelectorAll('input[name=atTarget]').forEach((r) => r.addEventListener('change', (e) => {
+  S.proj.autotune.target = e.target.value;
+  $('#scaleWarn').hidden = e.target.value !== 'scale';
+  $('#inSkipChrom').disabled = e.target.value !== 'scale';
+  refresh();
+  if (e.target.value === 'scale') status('Uyarı: scale\'e çekme notaların kimliğini değiştirebilir (bkz. kırmızı uyarı).', 'err');
+}));
 $('#btnAutoApply').onclick = () => { S.proj.autotune.enabled = true; refresh(); scheduleRender(true); };
 $('#btnAutoOff').onclick = () => { S.proj.autotune.enabled = false; refresh(); scheduleRender(true); };
 $('#btnClearManual').onclick = () => { S.proj.noteEdits.forEach((e) => { e.target = null; e.locked = false; }); cleanupEdits(); refresh(); scheduleRender(true); };
@@ -4408,7 +4475,7 @@ const ACTIONS = {
     A.status('Çapraz doğrulama çalışıyor…', 'busy');
     setTimeout(() => { SS.cv = St.suggestKAlpha(SS.dataset, SS.settings); A.status(SS.cv.ok ? `Önerilen k=${SS.cv.best.k}, α=${SS.cv.best.alpha}` : SS.cv.reason, SS.cv.ok ? '' : 'err'); render(); }, 20);
   },
-  applyKA: () => { if (!SS.cv || !SS.cv.ok) return; SS.settings.k = SS.cv.best.k; SS.settings.alpha = SS.cv.best.alpha; changed(); },
+  applyKA: () => { if (!SS.cv || !SS.cv.ok) return; SS.settings.k = SS.cv.best.k; SS.settings.alpha = SS.cv.best.alpha; if (SS.cv.bestDur) SS.settings.alphaDur = SS.cv.bestDur.alphaDur; changed(); },
   fbReset: () => { if (!confirm('Tüm kişisel geri bildirim silinsin mi? (şarkı verisi etkilenmez)')) return; SS.feedback = Object.assign(St.newFeedback(), { on: SS.feedback.on }); changed(); },
   // ---- progresyon
   runProg: () => runProg(),
@@ -4673,7 +4740,7 @@ function durTable(map, n, what) {
 function tabModel() {
   const o = SS.settings;
   const num = (k, label, step, min, max, help) => `<label title="${esc(help)}">${label}<input type="number" data-act="set" data-k="${k}" value="${o[k]}" step="${step}" min="${min}" max="${max}"></label>`;
-  const cv = SS.cv ? (SS.cv.ok ? `${SS.cv.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('')}<p>Önerilen: <b>k = ${SS.cv.best.k}, α = ${SS.cv.best.alpha}</b> (ortalama log-olabilirlik ${SS.cv.best.meanLL.toFixed(3)}, ${SS.cv.songs} şarkı, bir-şarkı-dışarıda). <button class="accent" data-act="applyKA">Uygula</button></p>
+  const cv = SS.cv ? (SS.cv.ok ? `${SS.cv.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('')}<p>Önerilen: <b>k = ${SS.cv.best.k}, α = ${SS.cv.best.alpha}</b> (geçişler; ortalama log-olabilirlik ${SS.cv.best.meanLL.toFixed(3)}, ${SS.cv.songs} şarkı, bir-şarkı-dışarıda)${SS.cv.bestDur ? ` · <b>α_ritim = ${SS.cv.bestDur.alphaDur}</b> (süreler; ${SS.cv.bestDur.meanLL.toFixed(3)}, ${SS.cv.durSongs} şarkı)` : ''}. <button class="accent" data-act="applyKA">Uygula</button></p>
       <table class="st-t"><thead><tr><th>k</th><th>α</th><th>ort. log-olabilirlik</th></tr></thead><tbody>${SS.cv.table.slice(0, 8).map((r) => `<tr><td>${r.k}</td><td>${r.alpha}</td><td>${r.meanLL.toFixed(3)}</td></tr>`).join('')}</tbody></table>` : `<p class="bad">${esc(SS.cv.reason)}</p>`) : '';
   const fb = model().feedback;
   const adj = [...(fb.counts || new Map())].map(([k, c]) => {
@@ -4685,8 +4752,10 @@ function tabModel() {
       <p class="hint">Akor bulucuda stil iki pay: <b>"değiş mi kal mı"</b> = melodi + politika + harmonik ritim (bu akor n ölçüdür çalıyorken değişme olasılığı; süre verisi yoksa katılmaz) ve <b>"değişirsem hangi akora"</b> = λ·log(P·K), K = moddaki diatonik core sayısı (7).<br>Birinci derece Markov P(sonraki core | önceki core, mod); ikinci derece yalnızca bağlam en az "min bağlam" şarkıda görüldüyse (yoksa birinci dereceye geri dönülür). Kısmi havuzlama P = (n_mod·P_mod + k·P_havuz)/(n_mod + k); moda uygun ama görülmemiş her geçişe α eklenir. Renk ayrı dağılım: P(color | core, mod), aynı havuzlama ve yumuşatma.</p>
       <div class="grid2">
         ${num('k', 'Havuz ağırlığı k', 1, 0, 1000, 'kısmi havuzlama')}
-        ${num('alpha', 'Yumuşatma α (şarkı)', 0.05, 0, 10, 'görülmemiş diatonik geçişe eklenen sanal şarkı sayısı')}
-        ${num('lambda', 'Stil ağırlığı λ (akor bulucu)', 0.25, 0, 10, '0 = saf teori')}
+        ${num('alpha', 'Geçiş yumuşatması α (şarkı)', 0.05, 0, 10, 'görülmemiş diatonik geçişe eklenen sanal şarkı sayısı')}
+        ${num('alphaDur', 'Ritim yumuşatması α_ritim (şarkı)', 0.05, 0, 10, 'her süre sınıfına eklenen sanal şarkı sayısı')}
+        ${num('lambda', 'Geçiş ağırlığı λ ("hangi akora")', 0.25, 0, 10, '0 = saf teori')}
+        ${num('lambdaRhythm', 'Ritim ağırlığı λ_ritim ("değiş mi kal mı")', 0.25, 0, 10, '0 = ritim karara katılmaz')}
         ${num('chordTemperature', 'Akor bulucu sıcaklığı', 0.1, 0, 5, '0 = hep en iyisi')}
         ${num('minCtxSongs', 'Min bağlam (2. derece)', 1, 1, 100, 'ikinci derece için gereken şarkı sayısı')}
         ${num('lowDataSongs', '"Az veri" eşiği (şarkı)', 1, 1, 1000, 'bu sayının altındaki modlar uyarılır')}
@@ -4787,17 +4856,19 @@ function renderDawBox() {
   const n = confirmedSongs();
   $('#styleInfo').textContent = n ? `${n} şarkıdan model · k=${SS.settings.k}, α=${SS.settings.alpha}${SS.feedback.on && SS.feedback.events.length ? ` · ${SS.feedback.events.length} geri bildirim` : ''}` : 'Onaylı stil verisi yok — akor bulucu saf teoriyle çalışıyor.';
   $('#inLambda').value = SS.settings.lambda; $('#outLambda').textContent = SS.settings.lambda;
+  $('#inLambdaR').value = SS.settings.lambdaRhythm; $('#outLambdaR').textContent = SS.settings.lambdaRhythm;
   $('#inChordTemp').value = SS.settings.chordTemperature; $('#outChordTemp').textContent = SS.settings.chordTemperature;
 }
 $('#inLambda').addEventListener('input', (e) => { SS.settings.lambda = +e.target.value; $('#outLambda').textContent = e.target.value; persist(); A.refresh(); });
+$('#inLambdaR').addEventListener('input', (e) => { SS.settings.lambdaRhythm = +e.target.value; $('#outLambdaR').textContent = e.target.value; persist(); A.refresh(); });
 $('#inChordTemp').addEventListener('input', (e) => { SS.settings.chordTemperature = +e.target.value; $('#outChordTemp').textContent = e.target.value; persist(); A.refresh(); });
 $('#btnReseed').onclick = () => { SS.settings.seed = (SS.settings.seed || 1) + 1; persist(); A.refresh(); A.status(`Yeniden örneklendi (tohum ${SS.settings.seed}).`); };
 
 window.StyleUI = {
   // akor bulucuya stil puanlayıcı: veri yoksa ya da λ = 0 ise null (saf teori, davranış birebir aynı)
   scorer() {
-    if (!SS.settings.lambda || !confirmedSongs()) return null;
-    return St.makeStyleScorer(model(), { lambda: SS.settings.lambda, temperature: SS.settings.chordTemperature, seed: SS.settings.seed });
+    if ((!SS.settings.lambda && !SS.settings.lambdaRhythm) || !confirmedSongs()) return null;
+    return St.makeStyleScorer(model(), { lambda: SS.settings.lambda, lambdaRhythm: SS.settings.lambdaRhythm, temperature: SS.settings.chordTemperature, seed: SS.settings.seed });
   },
   feedbackChord(prev, chord, sec, like) {
     const to = St.chordToCore(chord, sec.tonic, sec.mode).core;

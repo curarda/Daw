@@ -567,7 +567,9 @@ function modeSongCounts(stats) {
 }
 
 // ---------------------------------------------------------------- MODEL
-const MODEL_DEFAULTS = { k: 10, alpha: 0.5, lambda: 1, chordTemperature: 0, seed: 1, minCtxSongs: 5, secondOrder: true, lowDataSongs: 20 };
+// alpha: geçiş/renk/açılış yumuşatması; alphaDur: harmonik ritim (süre) yumuşatması — ayrı ayarlanır.
+// lambda: "hangi akora" (geçiş) ağırlığı; lambdaRhythm: "değiş mi kal mı" (harmonik ritim) ağırlığı.
+const MODEL_DEFAULTS = { k: 10, alpha: 0.5, alphaDur: 0.5, lambda: 1, lambdaRhythm: 1, chordTemperature: 0, seed: 1, minCtxSongs: 5, secondOrder: true, lowDataSongs: 20 };
 // moda uygun (diatonik) core'lar
 function diatonicCores(mode) {
   const sc = MODES[heptaOf(mode)].steps;
@@ -635,10 +637,10 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     return v;
   }
   // sayım haritasından yumuşatılmış dağılım
-  function smooth(countOf, support, dia) {
+  function smooth(countOf, support, dia, alpha = o.alpha) {
     const w = new Map();
     let sum = 0;
-    for (const b of support) { const x = countOf(b) + (dia.has(b) ? o.alpha : 0); if (x > 0) { w.set(b, x); sum += x; } }
+    for (const b of support) { const x = countOf(b) + (dia.has(b) ? alpha : 0); if (x > 0) { w.set(b, x); sum += x; } }
     if (sum <= 0) { const d = support.filter((b) => dia.has(b)); for (const b of d) w.set(b, 1 / d.length); return w; }
     for (const [b, x] of w) w.set(b, x / sum);
     return w;
@@ -705,7 +707,7 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const ck = `${mode}|dur`;
     if (cache.has(ck)) return cache.get(ck);
     const all = new Set(DUR_BINS);
-    const d = pooled(smooth((b) => nSongs(B(mode).dur.get(b)), DUR_BINS, all), smooth((b) => nSongs(pool.dur.get(b)), DUR_BINS, all), B(mode).durSongs.size);
+    const d = pooled(smooth((b) => nSongs(B(mode).dur.get(b)), DUR_BINS, all, o.alphaDur), smooth((b) => nSongs(pool.dur.get(b)), DUR_BINS, all, o.alphaDur), B(mode).durSongs.size);
     cache.set(ck, d);
     return d;
   }
@@ -731,6 +733,17 @@ function songTransitions(song) {
   }
   return out;
 }
+function songDurBins(song) {
+  const out = [], seen = new Set();
+  for (const sec of song.sections) {
+    const k = confirmedKey(sec);
+    if (!k) continue;
+    const an = analyzeSection(song, sec, k);
+    if (an.unknown || !an.hasDur) continue;
+    for (const seg of an.runs) for (const r of seg) { const key = `${k.mode}|${durBin(r.dur)}`; if (!seen.has(key)) { seen.add(key); out.push({ mode: k.mode, bin: durBin(r.dur) }); } }
+  }
+  return out;
+}
 function suggestKAlpha(dataset, base = {}, grid = {}) {
   const ks = grid.k || [0, 1, 2, 5, 10, 20, 50];
   const alphas = grid.alpha || [0.05, 0.1, 0.25, 0.5, 1, 2];
@@ -750,7 +763,23 @@ function suggestKAlpha(dataset, base = {}, grid = {}) {
     table.push({ k, alpha, meanLL: ll / n, n });
   }
   table.sort((a, b) => b.meanLL - a.meanLL);
-  return { ok: true, best: table[0], table, songs: songs.length, warnings, reliable: songs.length >= 20 };
+  // harmonik ritim α'sı ayrı: dışarıda bırakılan şarkının süre sınıfları (şarkı başına 1) ne kadar iyi tahmin ediliyor
+  const durFolds = folds.map((f) => ({ f, bins: songDurBins(f.held) })).filter((x) => x.bins.length);
+  let durTable = [], bestDur = null;
+  if (durFolds.length) {
+    for (const alphaDur of alphas) {
+      let ll = 0, n = 0;
+      for (const { f, bins } of durFolds) {
+        const m = buildModel(null, Object.assign({}, base, { k: table[0].k, alphaDur }), null, f.stats);
+        for (const t of bins) { ll += Math.log(Math.max(1e-4, m.dur(t.mode).get(t.bin) || 0)); n++; }
+      }
+      durTable.push({ alphaDur, meanLL: ll / n, n });
+    }
+    durTable.sort((a, b) => b.meanLL - a.meanLL);
+    bestDur = durTable[0];
+    if (durFolds.length < 20) warnings.push(`Ritim α'sı için sonuç güvenilir değil: yalnızca ${durFolds.length} şarkıda süre bilgisi var (20'den az).`);
+  } else warnings.push('Süre bilgisi olan şarkı yok: ritim α\'sı önerilemedi.');
+  return { ok: true, best: table[0], table, bestDur, durTable, durSongs: durFolds.length, songs: songs.length, warnings, reliable: songs.length >= 20 };
 }
 
 // ---------------------------------------------------------------- akor bulucu entegrasyonu
@@ -787,13 +816,14 @@ function mulberry32(a) {
 // Core.buildChords için stil puanlayıcı — iki ayrı pay:
 //  • "Değişirsem hangi akora": λ·log(P·K) + λ·log(P_renk·K_renk). K = moddaki diatonik core sayısı (7), sabit;
 //    ödünç akorlar K'yı değiştirmez. K_renk = o core için moda uygun renk sayısı. Veri yokken ≈ 0.
-//  • "Değiş mi kal mı": changeTerm → λ·log(h/(1−h)), h = harmonik ritim verisinden bu akor n ölçüdür
+//  • "Değiş mi kal mı": changeTerm → λ_ritim·log(h/(1−h)), h = harmonik ritim verisinden bu akor n ölçüdür
 //    çalıyorken bu modda değişme olasılığı. Süre verisi yoksa null (karara katılmaz).
 function makeStyleScorer(model, opts = {}) {
   const lambda = opts.lambda ?? model.settings.lambda;
+  const lambdaRhythm = opts.lambdaRhythm ?? model.settings.lambdaRhythm;
   const rng = mulberry32((opts.seed ?? model.settings.seed) * 9973 + 17);
   return {
-    lambda, temperature: opts.temperature ?? model.settings.chordTemperature, rng,
+    lambda, lambdaRhythm, temperature: opts.temperature ?? model.settings.chordTemperature, rng,
     score(prev, prev2, ch, sec) {
       if (!lambda || sec.tonic == null) return { value: 0, trans: 0, color: 0 };
       const c = chordToCore(ch, sec.tonic);
@@ -813,10 +843,10 @@ function makeStyleScorer(model, opts = {}) {
       return { value: trans + color, trans, color, p, core: c.core };
     },
     changeTerm(sec, held, step = 1) {
-      if (!lambda || sec.tonic == null) return null;
+      if (!lambdaRhythm || sec.tonic == null) return null;
       const h = changeHazard(model, sec.mode, held, step);
       if (h == null) return null;
-      return { h, held, value: lambda * Math.log(h / (1 - h)) };
+      return { h, held, value: lambdaRhythm * Math.log(h / (1 - h)) };
     },
   };
 }
