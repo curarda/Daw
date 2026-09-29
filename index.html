@@ -202,6 +202,10 @@ td.clk:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
 .st-prog .durs input { width: 58px; }
 td.durbar { width: 120px; }
 td.durbar i { display: block; height: 8px; border-radius: 0 4px 4px 0; background: #3987e5; }
+/* denetçinin üstündeki "kaldır" satırı: tıklayarak eklenen her şeyin geri alınacağı yer */
+.rm-bar { border: 1px solid #ff8a8f55; background: rgba(255, 138, 143, 0.07); border-radius: 6px; padding: 4px 8px; margin: 4px 0 8px; }
+.rm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; flex-wrap: wrap; }
+.rm-row + .rm-row { border-top: 1px dashed #ff8a8f33; }
 </style>
 </head>
 <body>
@@ -4266,7 +4270,7 @@ cv.addEventListener('pointerdown', (e) => {
     const bar = Math.max(1, Math.floor(q / g.barQ) + 1);
     const s = sectionAtBar(bar);
     if (s) { select({ type: 'section', id: s.id }); return; }
-    S.drag = { type: 'newSection', b0: bar, b1: bar };
+    S.drag = { type: 'newSection', b0: bar, b1: bar, x0: x, moved: false };
     cv.setPointerCapture(e.pointerId); draw(); return;
   }
   if (y < TL.TOP) {
@@ -4290,6 +4294,7 @@ cv.addEventListener('pointermove', (e) => {
   }
   const g = grid();
   if (S.drag.type === 'newSection') {
+    if (Math.abs(x - S.drag.x0) >= 4) S.drag.moved = true;
     S.drag.b1 = Math.max(1, Math.floor(xToQ(x) / g.barQ) + 1);
     draw(); return;
   }
@@ -4315,8 +4320,9 @@ cv.addEventListener('pointerup', () => {
   S.drag = null;
   if (!dr) return;
   if (dr.type === 'newSection') {
-    const a = Math.min(dr.b0, dr.b1), b = Math.max(dr.b0, dr.b1);
-    addSection(null, a, b);
+    // tek tık bölüm açmaz (yanlışlıkla 1 ölçülük bölüm oluşuyordu); bölüm sürükleyerek açılır
+    if (!dr.moved) status('Bölüm eklemek için bölüm şeridinde ölçüler boyunca sürükleyin (ya da 4. adımdaki "Ekle").');
+    else addSection(null, Math.min(dr.b0, dr.b1), Math.max(dr.b0, dr.b1));
   } else if (dr.type === 'note' && dr.moved) {
     cleanupEdits(); refresh();
     if (dr.mode === 'sound') scheduleRender(true);
@@ -4362,6 +4368,15 @@ function addSection(name, a, b) {
   refresh();
   status(`“${name}” bölümü eklendi (ölçü ${a}–${b}). Tonunu 4. adımda seçin.`);
 }
+function deleteSection(id) {
+  const s = S.proj.sections.find((x) => x.id === id);
+  if (!s) return;
+  S.proj.sections = S.proj.sections.filter((x) => x !== s);
+  S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar < s.startBar || l.bar > s.endBar);
+  if (S.sel && S.sel.id === s.id) S.sel = null;
+  refresh();
+  status(`“${s.name}” bölümü silindi (ölçü ${s.startBar}–${s.endBar}).`);
+}
 function renderSections() {
   const box = $('#sectionList');
   if (!S.d) { box.innerHTML = ''; return; }
@@ -4384,7 +4399,7 @@ function renderSections() {
           <input type="text" value="${esc(src.name)}" data-act="secName" data-id="${s.id}" aria-label="bölüm adı">
           <input type="number" min="1" value="${s.startBar}" data-act="secStart" data-id="${s.id}" title="başlangıç ölçüsü">
           <input type="number" min="1" value="${s.endBar}" data-act="secEnd" data-id="${s.id}" title="bitiş ölçüsü">
-          <button data-act="secDel" data-id="${s.id}" title="bölümü sil">✕</button></div>`;
+          <button class="danger" data-act="secDel" data-id="${s.id}" title="bölümü sil">✕ Sil</button></div>`;
     const keyRow = s.implicit ? '' : `<div class="keyrow">
           <select data-act="secTonic" data-id="${s.id}" aria-label="merkez nota">${tonicOpts(src.tonic)}</select>
           <select data-act="secMode" data-id="${s.id}" aria-label="mod">${modeOpts(src.mode || s.mode || 'major')}</select>
@@ -4408,12 +4423,7 @@ $('#sectionList').addEventListener('click', (e) => {
     } else { s.tonic = +b.dataset.t; s.mode = b.dataset.m; }
     refresh();
     status(`Ton seçildi: ${C.keyName(+b.dataset.t, b.dataset.m)}`);
-  } else if (b.dataset.act === 'secDel' && s) {
-    S.proj.sections = S.proj.sections.filter((x) => x !== s);
-    S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar < s.startBar || l.bar > s.endBar);
-    if (S.sel && S.sel.id === s.id) S.sel = null;
-    refresh();
-  }
+  } else if (b.dataset.act === 'secDel' && s) deleteSection(s.id);
 });
 $('#sectionList').addEventListener('change', (e) => {
   const t = e.target, s = S.proj.sections.find((x) => x.id === t.dataset.id);
@@ -4460,7 +4470,12 @@ function renderInspector() {
     const ki = d.keyInfo[s.id];
     const hist = ki && ki.hist ? Array.from(ki.hist).map((v, i) => ({ v, i })).filter((x) => x.v > 0.005).sort((p, q) => q.v - p.v).map((x) => `${C.pcName(x.i, C.keyUsesFlats(s.tonic, s.mode))} ${(x.v * 100).toFixed(0)}%`).join(' · ') : '';
     const chords = d.chords.filter((c) => c.section === s.id).map((c) => C.chordName(c.chord, c.flats)).join(' – ');
+    const nLocks = s.implicit ? 0 : S.proj.chordLocks.filter((l) => l.bar >= s.startBar && l.bar <= s.endBar).length;
     box.innerHTML = `<h3>${esc(s.name)} · ölçü ${s.startBar}–${s.endBar}</h3>
+      ${s.implicit ? '' : rmBar([
+        { text: `Bölüm: <b>${esc(s.name)}</b> (ölçü ${s.startBar}–${s.endBar}) <span class="hint">· Delete tuşu da siler</span>`, act: 'secDelete', btn: 'Bölümü sil' },
+        nLocks && { text: `Bu bölümde ${nLocks} kilitli akor`, act: 'secUnlockAll', btn: 'Bölümdeki kilitleri kaldır' },
+      ])}
       <div class="kv"><span>Ton</span><span>${s.tonic != null ? esc(C.keyName(s.tonic, s.mode)) + (s.provisional ? ' <span class="tag warn">öneri</span>' : ' <span class="tag ok">onaylı</span>') : '—'}</span>
       <span>Scale notaları</span><span>${s.pcs ? s.pcs.map((p) => C.pcName(p, C.keyUsesFlats(s.tonic, s.mode))).join(' ') : '—'}</span>
       <span>Ağırlıklı histogram</span><span>${hist || '—'}</span>
@@ -4468,6 +4483,13 @@ function renderInspector() {
       <span>Akorlar</span><span>${esc(chords)}</span></div>
       <p class="hint">Ton/mod seçimini soldaki 4. adımdan yapın. Son karar her zaman sizde.</p>`;
   }
+}
+// Tıklayarak eklenen her şey (bölüm, akor kilidi, etiket, ses düzeltmesi, nota kilidi) tekrar
+// tıklandığında denetçinin EN ÜSTÜNDE net bir "kaldır" satırıyla gelir.
+function rmBar(rows) {
+  const r = rows.filter(Boolean);
+  if (!r.length) return '';
+  return `<div class="rm-bar">${r.map((x) => `<div class="rm-row"><span>${x.text}</span><button class="danger" data-act="${x.act}">✕ ${esc(x.btn)}</button></div>`).join('')}</div>`;
 }
 function renderNoteInspector(box, n) {
   if (!n) { box.innerHTML = ''; return; }
@@ -4483,7 +4505,15 @@ function renderNoteInspector(box, n) {
   else if (corr.chromatic) soundDesc = 'Kromatik geçiş notası — autotune dokunmadı';
   else if (n.locked) soundDesc = 'Kilitli — autotune dokunmaz';
   else soundDesc = S.proj.autotune.enabled ? 'Düzeltme yok' : 'Düzeltme yok (autotune kapalı)';
+  const manual = n.manualTarget != null;
+  const rms = [
+    n.label != null && { text: `Etiket: algılanan ${esc(nn(n.detMidi))} → <b>${esc(nn(n.label))}</b>`, act: 'labelReset', btn: 'Etiketi kaldır' },
+    manual && { text: `Ses düzeltmesi: <b>${esc(soundDesc)}</b>`, act: 'sndReset', btn: 'Ses düzeltmesini kaldır' },
+    !manual && n.locked && { text: 'Nota kilidi: autotune bu notaya dokunmuyor', act: 'noteUnlock', btn: 'Kilidi kaldır' },
+  ].filter(Boolean);
+  if (rms.length > 1) rms.push({ text: 'Bu notadaki bütün değişiklikler', act: 'noteResetAll', btn: 'Hepsini kaldır' });
   box.innerHTML = `<h3>Nota ${esc(nn(n.effMidi))}${n.label != null ? ' <span class="tag warn">etiket</span>' : ''}${n.locked ? ' <span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : ''}</h3>
+    ${rmBar(rms)}
     <div class="kv">
       <span>Algılanan</span><span>${esc(nn(n.nearest))} ${n.cents > 0 ? '+' : ''}${n.cents} cent <span class="hint">(kişisel akort referansına göre${n.refCents ? `; referans ${n.refCents >= 0 ? '+' : ''}${n.refCents.toFixed(0)}c` : ''} · A4=440'a göre ${esc(nn(n.absNearest))} ${n.absCents > 0 ? '+' : ''}${n.absCents}c · medyan MIDI ${n.median.toFixed(2)})</span></span>
       <span>Konum</span><span>ölçü ${mp.bar + 1}, vuruş ${beat} · ${(n.tl1 - n.tl0).toFixed(2)} s (${((n.q1 - n.q0) / g.pulseQ).toFixed(2)} vuruş)</span>
@@ -4494,16 +4524,14 @@ function renderNoteInspector(box, n) {
     <div class="cols">
       <div class="box a"><h4>a) Etiket düzeltme — ses değişmez</h4>
         <div class="row">Analizdeki nota: <b>${esc(nn(n.label ?? n.detMidi))}</b>
-          <button data-act="label" data-v="-1">−1</button><button data-act="label" data-v="1">+1</button>
-          <button data-act="labelReset"${n.label == null ? ' disabled' : ''}>Sıfırla</button></div>
+          <button data-act="label" data-v="-1">−1</button><button data-act="label" data-v="1">+1</button></div>
         <p class="hint">Pitch detection yanlış algıladığında kullanın. Ton önerisi (4. adım) ve akor bulma bu etiketi kullanır.</p></div>
       <div class="box b"><h4>b) Ses düzeltme — perde kaydırılır</h4>
         <div class="row">${esc(soundDesc)}</div>
         <p class="hint">Yalnızca sesi değiştirir: ton önerisine ve akor bulmaya girmez — ikisi de kastedilen notayı (algılanan nota ya da etiket) kullanır. Notanın kendisi yanlışsa (a) etiketini düzeltin.</p>
         <div class="row">Hedef: <button data-act="snd" data-v="-1">−1 yarım ses</button><button data-act="snd" data-v="1">+1 yarım ses</button>
           <button data-act="snd" data-v="-0.05">−5c</button><button data-act="snd" data-v="0.05">+5c</button>
-          <button data-act="sndSnap">En yakın yarım sese çek</button>
-          <button data-act="sndReset"${n.manualTarget == null ? ' disabled' : ''}>Sıfırla</button></div>
+          <button data-act="sndSnap">En yakın yarım sese çek</button></div>
         <label class="chk"><input type="checkbox" data-act="lock"${n.locked ? ' checked' : ''}${n.manualTarget != null ? ' disabled' : ''}> Kilitli (autotune dokunmaz)</label></div>
     </div>`;
 }
@@ -4517,6 +4545,12 @@ $('#inspector').addEventListener('click', (e) => {
   const b = e.target.closest('button[data-act]');
   if (!b || !S.sel) return;
   const act = b.dataset.act;
+  if (act === 'secDelete' && S.sel.type === 'section') { deleteSection(S.sel.id); return; }
+  if (act === 'secUnlockAll' && S.sel.type === 'section') {
+    const s = S.proj.sections.find((x) => x.id === S.sel.id);
+    if (s) { S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar < s.startBar || l.bar > s.endBar); refresh(); status(`“${s.name}” bölümündeki akor kilitleri kaldırıldı.`); }
+    return;
+  }
   if (S.sel.type === 'note') {
     const n = S.d.notes.find((x) => x.id === S.sel.id);
     if (!n) return;
@@ -4525,6 +4559,13 @@ $('#inspector').addEventListener('click', (e) => {
     if (act === 'snd') soundEdit(n, (t) => { const v = +b.dataset.v; return Math.abs(v) >= 1 ? Math.round(t) + v : Math.round((t + v) * 100) / 100; });
     if (act === 'sndSnap') soundEdit(n, () => n.nearest);
     if (act === 'sndReset') { const ed = editFor(n); if (ed) { ed.target = null; ed.locked = false; } cleanupEdits(); refresh(); scheduleRender(true); }
+    if (act === 'noteUnlock') { const ed = editFor(n); if (ed) ed.locked = false; cleanupEdits(); refresh(); }
+    if (act === 'noteResetAll') {
+      const had = n.manualTarget != null;
+      S.proj.noteEdits = S.proj.noteEdits.filter((e) => e !== editFor(n));
+      refresh(); if (had) scheduleRender(true);
+      status('Notadaki bütün değişiklikler kaldırıldı.');
+    }
   } else if (S.sel.type === 'chord') {
     const slot = S.d.chords.find((s) => S.sel.q >= s.q0 && S.sel.q < s.q1);
     if (!slot) return;
@@ -4573,6 +4614,7 @@ function renderChordInspector(box, slot) {
   const scopeSel = g.split ? `<select id="chScope" aria-label="kapsam" style="width:auto"><option value="slot">bu slot (${halfTxt})</option>${slot.half != null ? '<option value="bar">tüm ölçü</option>' : ''}<option value="0">1. yarı</option><option value="1">2. yarı</option></select>` : '';
   const disp = Object.assign({}, slot.chord, { bass: slot.chord.bass ?? (slot.inversion ? slot.voicing.bassPc : null) });
   box.innerHTML = `<h3>Ölçü ${slot.bar} · ${halfTxt} · ${esc(sec ? sec.name : '')}${sec && sec.tonic != null ? ' (' + esc(C.keyName(sec.tonic, sec.mode)) + ')' : ''}</h3>
+    ${slot.locked ? rmBar([{ text: `🔒 Bu akor elle seçildi / kilitlendi: <b>${esc(C.chordName(disp, slot.flats))}</b>`, act: 'unlockChord', btn: 'Kilidi kaldır (otomatiğe dön)' }]) : ''}
     <div class="kv"><span>Akor</span><span><b style="font-size:16px">${esc(C.chordName(disp, slot.flats))}</b> ${slot.locked ? '<span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : '<span class="tag">otomatik</span>'}</span>
       <span>Neden</span><span>${esc(slot.reason || '')}</span>
       <span>Melodi notalarının rolü</span><span>${roleChips(slot.roles)}</span>
@@ -4583,8 +4625,7 @@ function renderChordInspector(box, slot) {
     ${sec && sec.tonic != null && window.StyleUI ? `<div class="row" style="margin-top:6px"><span class="hint">Bu akor seçimi (önceki akordan geçiş) — kişisel geri bildirim:</span>
       <button data-act="fbChord" data-v="1" title="beğen">👍</button><button data-act="fbChord" data-v="-1" title="beğenme">👎</button></div>` : ''}
     <div class="row" style="margin-top:8px">Elle yaz: <input type="text" id="chInput" placeholder="ör. Dmaj7, C#m, F#m7/A" style="width:170px"> ${scopeSel}
-      <button data-act="manualChord" class="accent">Uygula + kilitle</button>
-      <button data-act="unlockChord"${slot.locked ? '' : ' disabled'}>Kilidi kaldır (otomatiğe dön)</button></div>`;
+      <button data-act="manualChord" class="accent">Uygula + kilitle</button></div>`;
 }
 
 // ---------------------------------------------------------------- bilgi satırları
@@ -4735,6 +4776,7 @@ document.addEventListener('keydown', (e) => {
     }
     if (e.key === 'l' || e.key === 'L') { const ed = editFor(n, true); ed.locked = !n.locked; cleanupEdits(); refresh(); }
   }
+  if (S.sel.type === 'section' && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteSection(S.sel.id); return; }
   if (e.key === 'Escape') select(null);
 });
 

@@ -344,6 +344,66 @@ try {
     return `6/8: ${u} · 2/4 seçilebilir · click deseni yalnızca 4/4'te`;
   });
 
+  await step('4) bölüm şeridi: tek tık bölüm açmaz; sürükle → bölüm; denetçiden ve Delete ile silinir', async () => {
+    await page.click('#btnTest');
+    await waitStatus(/Test melodisi hazır/);
+    const tl = await page.locator('#tl').boundingBox();
+    const barX = (bar) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); return 46 + ((${bar} - 1 + 0.5) * d.g.barQ) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
+    const y = tl.y + 22 + 13;
+    const secs = () => S(() => window.__daw.proj.sections.map((x) => `${x.name} ${x.startBar}–${x.endBar}`));
+    assert.deepEqual(await secs(), ['Verse 1–4', 'Nakarat 5–8']);
+    // bölüme tıkla → seçilir; denetçideki "Bölümü sil"
+    await page.mouse.click(tl.x + (await barX(6)), y);
+    await page.click('#inspector button[data-act=secDelete]');
+    assert.deepEqual(await secs(), ['Verse 1–4']);
+    // boş şeride tek tık: bölüm açılmaz
+    await page.mouse.click(tl.x + (await barX(6)), y);
+    assert.deepEqual(await secs(), ['Verse 1–4']);
+    assert.match(await page.textContent('#status'), /sürükleyin/);
+    // sürükle: ölçü 5–7
+    await page.mouse.move(tl.x + (await barX(5)), y); await page.mouse.down();
+    await page.mouse.move(tl.x + (await barX(7)), y, { steps: 5 }); await page.mouse.up();
+    const added = await secs();
+    assert.equal(added.length, 2); assert.match(added[1], /5–7$/);
+    // seç + Delete tuşu
+    await page.mouse.click(tl.x + (await barX(6)), y);
+    await page.keyboard.press('Delete');
+    assert.deepEqual(await secs(), ['Verse 1–4']);
+    return `denetçiden silindi · tek tık → bölüm yok · sürükle → ${added[1]} · Delete ile silindi`;
+  });
+
+  await step('Eklenen her şey tekrar tıklanınca en üstte "kaldır" satırıyla gelir (nota, akor kilidi, bölüm kilitleri)', async () => {
+    const tl = await page.locator('#tl').boundingBox();
+    const rm = () => page.locator('#inspector .rm-bar button').allTextContents();
+    // nota: etiket + kilit → iki satır + "Hepsini kaldır"
+    const geo = await noteGeo(2);
+    await page.mouse.click(tl.x + geo.x, tl.y + geo.y);
+    assert.deepEqual(await rm(), []);
+    await page.click('#inspector button[data-act=label][data-v="1"]');
+    await page.check('#inspector input[data-act=lock]');
+    assert.deepEqual(await rm(), ['✕ Etiketi kaldır', '✕ Kilidi kaldır', '✕ Hepsini kaldır']);
+    if (shotDir) await page.locator('#inspector').screenshot({ path: path.join(shotDir, 'remove-bar.png') });
+    await page.click('#inspector button[data-act=labelReset]');
+    assert.deepEqual(await rm(), ['✕ Kilidi kaldır']);
+    await page.click('#inspector button[data-act=noteUnlock]');
+    assert.deepEqual(await rm(), []);
+    assert.equal(await S(() => window.__daw.proj.noteEdits.length), 0);
+    // akor: seç + kilitle → üstte "Kilidi kaldır"
+    const sx = await S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === 2); return 46 + ((s.q0 + s.q1) / 2) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
+    await page.mouse.click(tl.x + sx, tl.y + 22 + 26 + 18);
+    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    await page.mouse.click(tl.x + sx, tl.y + 22 + 26 + 18);
+    assert.deepEqual(await rm(), ['✕ Kilidi kaldır (otomatiğe dön)']);
+    // bölüm: kilitli akor varsa "Bölümdeki kilitleri kaldır"
+    const bx = await S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); return 46 + 1.5 * d.g.barQ * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
+    await page.mouse.click(tl.x + bx, tl.y + 22 + 13);
+    assert.deepEqual(await rm(), ['✕ Bölümü sil', '✕ Bölümdeki kilitleri kaldır']);
+    await page.click('#inspector button[data-act=secUnlockAll]');
+    assert.deepEqual(await rm(), ['✕ Bölümü sil']);
+    assert.equal(await S(() => window.__daw.proj.chordLocks.length), 0);
+    return 'nota: etiket / kilit / hepsi · akor: kilidi kaldır · bölüm: sil / kilitleri kaldır';
+  });
+
   assert.deepEqual(errors, [], 'tarayıcı hataları');
   console.log(log.join('\n'));
   console.log('\nArayüz testi geçti.');

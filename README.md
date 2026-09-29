@@ -17,6 +17,8 @@ Tarayıcıda çalışan, **tek dosyalık** (`index.html`) mini DAW. Tek sesli vo
 | 8. Piyano | Tone.js Sampler (Salamander). Hangi piyanonun çaldığı (Salamander / yedek sentez) üst çubukta görünür. Bas kökte başlar, basamaklı hareket için çevrim; pedal bas seçeneği. Akorlar vokal aralığının altında, ortak notalar yerinde kalır. Vokal/piyano için ses seviyesi, mute, solo |
 | 9. Dışa aktarım | MIDI (tempo, ölçü, bölüm işaretleri, melodi + piyano izi, akor adları), akor şeması (.txt), düzeltilmiş vokal WAV, vokal + piyano mix WAV, proje JSON (ayarlar, bölümler, düzeltmeler, kilitler, istenirse gömülü orijinal ses) |
 
+**Geri alma kuralı:** Tıklayarak eklenen her şey (bölüm, akor kilidi, nota etiketi, ses düzeltmesi, nota kilidi) tekrar tıklandığında sağdaki denetçinin en üstünde kırmızı çerçeveli bir satırla gelir: ne eklendiği ve "✕ … kaldır" düğmesi. Birden fazla değişiklik varsa "Hepsini kaldır" da çıkar. Bölüm seçiliyken Delete tuşu bölümü siler. Bölüm şeridine tek tık bölüm açmaz; bölüm sürükleyerek açılır.
+
 Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kilitler ayrı kayıtlar olarak tutulur, her değişiklikte sonraki adımlar yeniden hesaplanır.
 
 ### Kişisel akort referansı
