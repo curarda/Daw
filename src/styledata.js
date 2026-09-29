@@ -479,6 +479,61 @@ function comparePreview(song, sec, key) {
   return { valid: true, mismatches, lengthMismatch: prev.length !== an.items.length, previewLength: prev.length };
 }
 
+// ---------------------------------------------------------------- akorlardan ton tahmini (sohbetin önerisini denetler)
+const COLOR_EXTRA = { '7': [10], maj7: [11], '6': [9], '6/9': [9, 2], add9: [2], '9': [10, 2], maj9: [11, 2], '11': [10, 2, 5], '13': [10, 2, 9], add11: [5], 'ø7': [10], '°7': [9] };
+function estimateKeyFromChords(song, sec, topK = 3) {
+  const h = new Float64Array(12), rootH = new Float64Array(12);
+  const hasDur = sectionHasBars(sec);
+  const syms = sectionSymbols(song, sec);
+  const chords = [];
+  let prev = null;
+  syms.forEach((sym, i) => {
+    let p = parseSymbol(sym);
+    if (p.ok && p.repeat) p = prev;
+    if (!p || !p.ok || p.nc) { prev = null; return; }
+    prev = p;
+    const w = hasDur ? sec.bars[i] : 1;
+    const ivs = p.tq === 'x' ? [0, 7, ...(SUS_TONES[p.color] || [])] : [...TQ_IV[p.tq], ...(COLOR_EXTRA[p.color] || [])];
+    for (const iv of new Set(ivs.map(mod12))) h[mod12(p.root + iv)] += w;
+    rootH[p.root] += w;
+    chords.push(p);
+  });
+  const tot = h.reduce((a, b) => a + b, 0), rtot = rootH.reduce((a, b) => a + b, 0);
+  if (!tot) return { candidates: [], hist: h, ambiguity: [] };
+  for (let i = 0; i < 12; i++) { h[i] /= tot; rootH[i] /= rtot; }
+  const first = chords[0], last = chords[chords.length - 1];
+  const all = [];
+  for (let t = 0; t < 12; t++) for (const mode of MODE_ORDER) {
+    const set = new Set(scalePcs(t, mode));
+    let inS = 0;
+    for (let pc = 0; pc < 12; pc++) if (set.has(pc)) inS += h[pc];
+    let s = inS - 2 * (1 - inS) + 0.45 * rootH[t];
+    const homeQ = C.homeChord(t, mode).q, homeTq = homeQ === 'm' ? 'm' : homeQ === 'dim' ? 'd' : 'M';
+    const tonicMatch = (c) => (c.root !== t ? 0 : c.tq === homeTq ? 1 : c.tq === 'x' ? 0.5 : 0);
+    s += 0.1 * tonicMatch(first) + 0.2 * tonicMatch(last);
+    s -= (1 - MODES[mode].prior) * 0.5;
+    all.push({ tonic: t, mode, score: s, pcs: [...set].sort((a, b) => a - b) });
+  }
+  all.sort((a, b) => b.score - a.score);
+  const top = all.slice(0, topK);
+  for (const c of top) c.name = C.keyName(c.tonic, c.mode);
+  return { candidates: top, hist: h, ambiguity: C.keyAmbiguity(top, h) };
+}
+// Sohbetin ilk önerisi ile uygulamanın akorlardan tahmini: agree / sameSet (merkez belirsiz) / differ
+function checkChatKey(song, sec) {
+  const est = estimateKeyFromChords(song, sec);
+  const chat = sec.proposals[0] || null;
+  if (!chat || !est.candidates.length) return { est, chat, verdict: 'none' };
+  const top = est.candidates[0];
+  const rank = est.candidates.findIndex((c) => sameKey(c, chat)) + 1;
+  const chatSet = scalePcs(chat.tonic, chat.mode).sort((a, b) => a - b).join();
+  let verdict, text;
+  if (sameKey(top, chat)) { verdict = 'agree'; text = `Uygulamanın akorlardan tahmini de ${top.name}.`; }
+  else if (top.pcs.join() === chatSet) { verdict = 'sameSet'; text = `Aynı nota kümesi, merkez belirsiz: uygulama akorlardan ${top.name} diyor, sohbet ${keyLabel(chat)}. Akorlar merkezi netleştirmiyor — kararı sen ver.`; }
+  else { verdict = 'differ'; text = `Uyuşmuyor: uygulamanın akorlardan tahmini ${est.candidates.map((c) => c.name).join(', ')}; sohbetin önerisi ${keyLabel(chat)}${rank ? ` (uygulamada ${rank}. sırada)` : ' (uygulamanın ilk 3 adayında yok)'}.`; }
+  return { est, chat, verdict, text, rank };
+}
+
 // ---------------------------------------------------------------- istatistik
 const ALL = '*';
 function emptyBucket() {
@@ -1048,7 +1103,7 @@ root.Style = {
   MODEL_DEFAULTS, PROG_DEFAULTS, buildModel, diatonicCores, modeColors, homeCore, suggestKAlpha, songTransitions,
   chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,
   fitDurations, progDisplay, durBin, durLabel, fmtDur, DUR_BINS, sectionHasBars,
-  romanNumeral, changeHazard, normColor, previewText, FB_LIKE, FB_DISLIKE,
+  romanNumeral, changeHazard, normColor, previewText, FB_LIKE, FB_DISLIKE, estimateKeyFromChords, checkChatKey,
   newDataset, newFeedback, checkFile,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.Style;

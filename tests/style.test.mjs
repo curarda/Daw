@@ -389,6 +389,24 @@ await step('Akor bulucu: "değiş mi kal mı" harmonik ritimden; "hangi akor" λ
   return `10 şarkı, α=0.5 · ölçü 6: uzun süreli veride ${Core.chordName(bar6(longD).chord)} (h=${bar6(longD).rhythm.h.toFixed(2)}), kısa süreli veride ${Core.chordName(bar6(shortD).chord)} (h=${bar6(shortD).rhythm.h.toFixed(2)}) · veri yokken geçiş payı λ·log(P·7) = ${v.trans.toFixed(3)}`;
 });
 
+await step('Uygulamanın akorlardan ton tahmini sohbetin önerisini denetler; istem hafızadan tamamlamayı yasaklar', async () => {
+  const song = Style.parseImportJson(JSON.stringify(TEST_JSON)).songs[0];
+  const v = Style.checkChatKey(song, song.sections[0]), c = Style.checkChatKey(song, song.sections[1]);
+  assert.equal(c.verdict, 'agree', c.text);
+  assert.equal(v.verdict, 'sameSet', v.text); // C#m–D dönüşümü: akorlar C# ile D arasında merkezi netleştirmiyor
+  const mk = (chords, tonic, mode) => Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'x', title: 'y', sections: [{ label: 'A', chords, key_proposals: [{ tonic, mode }] }] })).songs[0];
+  const d = mk(['C', 'F', 'G', 'C'], 'D', 'major');
+  const dv = Style.checkChatKey(d, d.sections[0]);
+  assert.equal(dv.verdict, 'differ'); assert.equal(dv.est.candidates[0].name, 'C majör');
+  const a = mk(['Am', 'F', 'G', 'Am'], 'A', 'minor');
+  assert.equal(Style.checkChatKey(a, a.sections[0]).verdict, 'agree');
+  const { readFileSync } = await import('node:fs');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(html.includes('Sadece yapıştırılan akor şemasını dönüştür. Şema yapıştırılmamışsa ya da eksikse akor üretme, hafızandan tamamlama; eksik kısmı warnings'));
+  assert.ok(html.includes('Kaynak linkini source_notes.other alanına yaz.'));
+  return `Verse: ${v.text}\n    Chorus: ${c.text}\n    C F G C (sohbet: D majör): ${dv.text}`;
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nStil testleri geçti.');

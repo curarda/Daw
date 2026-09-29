@@ -1,4 +1,4 @@
-Aşağıdaki şarkının akorlarını YALNIZCA şu JSON biçiminde ver:
+Aşağıya yapıştırdığım akor şemasını YALNIZCA şu JSON biçimine dönüştür:
 {
   "schema_version": 1,
   "artist": "Sanatçı",
@@ -25,11 +25,13 @@ Aşağıdaki şarkının akorlarını YALNIZCA şu JSON biçiminde ver:
   ]
 }
 Kurallar:
+- Sadece yapıştırılan akor şemasını dönüştür. Şema yapıştırılmamışsa ya da eksikse akor üretme, hafızandan tamamlama; eksik kısmı warnings'e yaz.
+- Kaynak linkini source_notes.other alanına yaz.
 - chords: bölümde çalındığı sırayla, tekrarlar dahil; akor yoksa "N.C.". Slash akorları "A/C#" gibi yaz.
 - bars: her akorun süresi ölçü cinsinden (yarım ölçü = 0.5), chords ile aynı uzunlukta. Süreleri bilmiyorsan null yaz; tahmin etme.
 - key_proposals: en olası önce. mode: major, minor, harmonic_minor, dorian, phrygian, lydian, mixolydian, locrian, major_pentatonic, minor_pentatonic.
 - degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta; her öğe üç katman:
   core: Romen rakamı merkezin MAJÖR gamına göre — büyük harf majör, küçük minör, ° dim, + aug; power chord ve sus akorlarında nitelik belirsizdir, kök derecesini büyük harfle yaz (ör. "♭VII", "V").
   color: ek (maj7, 7, sus2, sus4, add9, 5 …) ya da null. bass: slash akorda bas derecesi (ör. "III") ya da null. N.C. için core "N.C.".
-- source_notes: capo (sayı ya da null), tuning, other. Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz ve notta belirt.
+- source_notes: capo (sayı ya da null), tuning, other (kaynak linki). Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz.
 - Emin olmadığın her şeyi warnings içine yaz.

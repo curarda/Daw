@@ -368,6 +368,8 @@ function sectionCard(s, sec, si, unk) {
         ${editing ? '' : `<button data-act="editChords" data-id="${s.id}" data-si="${si}">Akorları düzenle</button>`}</div>
     </div>
     <div>${pvTxt}</div>
+    ${(() => { const ck = St.checkChatKey(s, sec); if (ck.verdict === 'none') return ''; const amb = ck.est.ambiguity.map((a) => `<div class="hint">${esc(a.text)}</div>`).join('');
+      return `<div class="${ck.verdict === 'agree' ? 'hint' : 'st-warn'}">${ck.verdict === 'agree' ? '✓' : '⚠'} ${esc(ck.text)}</div>${ck.verdict === 'agree' ? amb : ''}`; })()}
     ${sec.warnings.length ? `<div class="st-warn"><b>Uyarılar:</b> ${sec.warnings.map(esc).join(' · ')}</div>` : ''}
   </div>`;
 }

@@ -884,6 +884,26 @@ function suggestKeys(notes, g, topK = 3) {
   return { candidates: top, hist: h, last: lastN ? { pc: lastPc, name: pcName(lastPc, keyUsesFlats(top[0].tonic, top[0].mode)), q0: lastN.q0 } : null };
 }
 
+// Ton adaylarının belirsizlik notları (melodi histogramı ya da akor histogramı için ortak):
+//  • noDistinct: aynı merkez, farklı mod; ayıran notalar (ör. G / G#) hiç duyulmuyor → "ayırt edici nota yok"
+//  • sameSet:    aynı nota kümesi, farklı merkez; merkez kanıtı zayıf → "merkez belirsiz"
+function keyAmbiguity(cands, h, gap = 0.2) {
+  const out = [];
+  const top = cands[0];
+  if (!top) return out;
+  for (const c of cands.slice(1)) {
+    if (c.tonic === top.tonic && c.mode !== top.mode) {
+      const a = new Set(top.pcs), b = new Set(c.pcs);
+      const diff = [...new Set([...a, ...b])].filter((p) => a.has(p) !== b.has(p));
+      const w = diff.reduce((acc, p) => acc + (h[p] || 0), 0);
+      if (w < 0.02) out.push({ type: 'noDistinct', a: top, b: c, pcs: diff, text: `Ayırt edici nota yok: ${keyName(top.tonic, top.mode)} ile ${keyName(c.tonic, c.mode)} arasındaki fark (${diff.map((p) => pcName(p, keyUsesFlats(top.tonic, top.mode))).join(' / ')}) hiç duyulmuyor; bu ikisi ayırt edilemiyor.` });
+    } else if (c.tonic !== top.tonic && c.pcs.join() === top.pcs.join() && top.score - c.score < gap) {
+      out.push({ type: 'sameSet', a: top, b: c, text: `Aynı nota kümesi, merkez belirsiz: ${keyName(top.tonic, top.mode)} ile ${keyName(c.tonic, c.mode)} aynı notaları kullanıyor; hangisinin merkez olduğuna dair kanıt zayıf.` });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- AUTOTUNE / DÜZELTME EĞRİSİ
 // target: 'semitone' (varsayılan) = söylenen notanın en yakın yarım sesine çek, notanın kimliği ASLA değişmez;
 //         'scale' = scale'in en yakın notasına çek (kimliği değiştirebilir; yalnızca açıkça seçilirse)
@@ -1894,7 +1914,7 @@ const Core = {
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
-  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift,
+  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
@@ -2383,6 +2403,61 @@ function comparePreview(song, sec, key) {
     if (layers.length) mismatches.push({ index: i, chord: it.sym, expected: it.nc ? 'N.C.' : it.label + (it.bassLabel ? '/' + it.bassLabel : ''), preview: previewText(pe), layers });
   });
   return { valid: true, mismatches, lengthMismatch: prev.length !== an.items.length, previewLength: prev.length };
+}
+
+// ---------------------------------------------------------------- akorlardan ton tahmini (sohbetin önerisini denetler)
+const COLOR_EXTRA = { '7': [10], maj7: [11], '6': [9], '6/9': [9, 2], add9: [2], '9': [10, 2], maj9: [11, 2], '11': [10, 2, 5], '13': [10, 2, 9], add11: [5], 'ø7': [10], '°7': [9] };
+function estimateKeyFromChords(song, sec, topK = 3) {
+  const h = new Float64Array(12), rootH = new Float64Array(12);
+  const hasDur = sectionHasBars(sec);
+  const syms = sectionSymbols(song, sec);
+  const chords = [];
+  let prev = null;
+  syms.forEach((sym, i) => {
+    let p = parseSymbol(sym);
+    if (p.ok && p.repeat) p = prev;
+    if (!p || !p.ok || p.nc) { prev = null; return; }
+    prev = p;
+    const w = hasDur ? sec.bars[i] : 1;
+    const ivs = p.tq === 'x' ? [0, 7, ...(SUS_TONES[p.color] || [])] : [...TQ_IV[p.tq], ...(COLOR_EXTRA[p.color] || [])];
+    for (const iv of new Set(ivs.map(mod12))) h[mod12(p.root + iv)] += w;
+    rootH[p.root] += w;
+    chords.push(p);
+  });
+  const tot = h.reduce((a, b) => a + b, 0), rtot = rootH.reduce((a, b) => a + b, 0);
+  if (!tot) return { candidates: [], hist: h, ambiguity: [] };
+  for (let i = 0; i < 12; i++) { h[i] /= tot; rootH[i] /= rtot; }
+  const first = chords[0], last = chords[chords.length - 1];
+  const all = [];
+  for (let t = 0; t < 12; t++) for (const mode of MODE_ORDER) {
+    const set = new Set(scalePcs(t, mode));
+    let inS = 0;
+    for (let pc = 0; pc < 12; pc++) if (set.has(pc)) inS += h[pc];
+    let s = inS - 2 * (1 - inS) + 0.45 * rootH[t];
+    const homeQ = C.homeChord(t, mode).q, homeTq = homeQ === 'm' ? 'm' : homeQ === 'dim' ? 'd' : 'M';
+    const tonicMatch = (c) => (c.root !== t ? 0 : c.tq === homeTq ? 1 : c.tq === 'x' ? 0.5 : 0);
+    s += 0.1 * tonicMatch(first) + 0.2 * tonicMatch(last);
+    s -= (1 - MODES[mode].prior) * 0.5;
+    all.push({ tonic: t, mode, score: s, pcs: [...set].sort((a, b) => a - b) });
+  }
+  all.sort((a, b) => b.score - a.score);
+  const top = all.slice(0, topK);
+  for (const c of top) c.name = C.keyName(c.tonic, c.mode);
+  return { candidates: top, hist: h, ambiguity: C.keyAmbiguity(top, h) };
+}
+// Sohbetin ilk önerisi ile uygulamanın akorlardan tahmini: agree / sameSet (merkez belirsiz) / differ
+function checkChatKey(song, sec) {
+  const est = estimateKeyFromChords(song, sec);
+  const chat = sec.proposals[0] || null;
+  if (!chat || !est.candidates.length) return { est, chat, verdict: 'none' };
+  const top = est.candidates[0];
+  const rank = est.candidates.findIndex((c) => sameKey(c, chat)) + 1;
+  const chatSet = scalePcs(chat.tonic, chat.mode).sort((a, b) => a - b).join();
+  let verdict, text;
+  if (sameKey(top, chat)) { verdict = 'agree'; text = `Uygulamanın akorlardan tahmini de ${top.name}.`; }
+  else if (top.pcs.join() === chatSet) { verdict = 'sameSet'; text = `Aynı nota kümesi, merkez belirsiz: uygulama akorlardan ${top.name} diyor, sohbet ${keyLabel(chat)}. Akorlar merkezi netleştirmiyor — kararı sen ver.`; }
+  else { verdict = 'differ'; text = `Uyuşmuyor: uygulamanın akorlardan tahmini ${est.candidates.map((c) => c.name).join(', ')}; sohbetin önerisi ${keyLabel(chat)}${rank ? ` (uygulamada ${rank}. sırada)` : ' (uygulamanın ilk 3 adayında yok)'}.`; }
+  return { est, chat, verdict, text, rank };
 }
 
 // ---------------------------------------------------------------- istatistik
@@ -2954,7 +3029,7 @@ root.Style = {
   MODEL_DEFAULTS, PROG_DEFAULTS, buildModel, diatonicCores, modeColors, homeCore, suggestKAlpha, songTransitions,
   chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,
   fitDurations, progDisplay, durBin, durLabel, fmtDur, DUR_BINS, sectionHasBars,
-  romanNumeral, changeHazard, normColor, previewText, FB_LIKE, FB_DISLIKE,
+  romanNumeral, changeHazard, normColor, previewText, FB_LIKE, FB_DISLIKE, estimateKeyFromChords, checkChatKey,
   newDataset, newFeedback, checkFile,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.Style;
@@ -4345,7 +4420,7 @@ view.addEventListener('change', (e) => { const t = e.target; if (t.dataset.act &
 
 // ---------------------------------------------------------------- 1) İÇE AKTARMA
 // tek kaynak: src/import-prompt.txt (derlemede buraya gömülür)
-const PROMPT = "Aşağıdaki şarkının akorlarını YALNIZCA şu JSON biçiminde ver:\n{\n  \"schema_version\": 1,\n  \"artist\": \"Sanatçı\",\n  \"title\": \"Şarkı adı\",\n  \"source_notes\": { \"capo\": null, \"tuning\": null, \"other\": null },\n  \"warnings\": [],\n  \"sections\": [\n    {\n      \"label\": \"Verse 1\",\n      \"type\": \"verse\",\n      \"chords\": [\"C#m\", \"D\", \"C#m\", \"D\"],\n      \"bars\": [2, 2, 2, 2],\n      \"key_proposals\": [\n        { \"tonic\": \"C#\", \"mode\": \"phrygian\", \"confidence\": 0.7, \"reason\": \"C# merkezde, D ♭II\" },\n        { \"tonic\": \"A\", \"mode\": \"major\", \"confidence\": 0.3, \"reason\": \"D, A majörde IV\" }\n      ],\n      \"degrees_preview\": [\n        { \"core\": \"i\", \"color\": null, \"bass\": null },\n        { \"core\": \"♭II\", \"color\": null, \"bass\": null },\n        { \"core\": \"i\", \"color\": null, \"bass\": null },\n        { \"core\": \"♭II\", \"color\": null, \"bass\": null }\n      ]\n    }\n  ]\n}\nKurallar:\n- chords: bölümde çalındığı sırayla, tekrarlar dahil; akor yoksa \"N.C.\". Slash akorları \"A/C#\" gibi yaz.\n- bars: her akorun süresi ölçü cinsinden (yarım ölçü = 0.5), chords ile aynı uzunlukta. Süreleri bilmiyorsan null yaz; tahmin etme.\n- key_proposals: en olası önce. mode: major, minor, harmonic_minor, dorian, phrygian, lydian, mixolydian, locrian, major_pentatonic, minor_pentatonic.\n- degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta; her öğe üç katman:\n  core: Romen rakamı merkezin MAJÖR gamına göre — büyük harf majör, küçük minör, ° dim, + aug; power chord ve sus akorlarında nitelik belirsizdir, kök derecesini büyük harfle yaz (ör. \"♭VII\", \"V\").\n  color: ek (maj7, 7, sus2, sus4, add9, 5 …) ya da null. bass: slash akorda bas derecesi (ör. \"III\") ya da null. N.C. için core \"N.C.\".\n- source_notes: capo (sayı ya da null), tuning, other. Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz ve notta belirt.\n- Emin olmadığın her şeyi warnings içine yaz.";
+const PROMPT = "Aşağıya yapıştırdığım akor şemasını YALNIZCA şu JSON biçimine dönüştür:\n{\n  \"schema_version\": 1,\n  \"artist\": \"Sanatçı\",\n  \"title\": \"Şarkı adı\",\n  \"source_notes\": { \"capo\": null, \"tuning\": null, \"other\": null },\n  \"warnings\": [],\n  \"sections\": [\n    {\n      \"label\": \"Verse 1\",\n      \"type\": \"verse\",\n      \"chords\": [\"C#m\", \"D\", \"C#m\", \"D\"],\n      \"bars\": [2, 2, 2, 2],\n      \"key_proposals\": [\n        { \"tonic\": \"C#\", \"mode\": \"phrygian\", \"confidence\": 0.7, \"reason\": \"C# merkezde, D ♭II\" },\n        { \"tonic\": \"A\", \"mode\": \"major\", \"confidence\": 0.3, \"reason\": \"D, A majörde IV\" }\n      ],\n      \"degrees_preview\": [\n        { \"core\": \"i\", \"color\": null, \"bass\": null },\n        { \"core\": \"♭II\", \"color\": null, \"bass\": null },\n        { \"core\": \"i\", \"color\": null, \"bass\": null },\n        { \"core\": \"♭II\", \"color\": null, \"bass\": null }\n      ]\n    }\n  ]\n}\nKurallar:\n- Sadece yapıştırılan akor şemasını dönüştür. Şema yapıştırılmamışsa ya da eksikse akor üretme, hafızandan tamamlama; eksik kısmı warnings'e yaz.\n- Kaynak linkini source_notes.other alanına yaz.\n- chords: bölümde çalındığı sırayla, tekrarlar dahil; akor yoksa \"N.C.\". Slash akorları \"A/C#\" gibi yaz.\n- bars: her akorun süresi ölçü cinsinden (yarım ölçü = 0.5), chords ile aynı uzunlukta. Süreleri bilmiyorsan null yaz; tahmin etme.\n- key_proposals: en olası önce. mode: major, minor, harmonic_minor, dorian, phrygian, lydian, mixolydian, locrian, major_pentatonic, minor_pentatonic.\n- degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta; her öğe üç katman:\n  core: Romen rakamı merkezin MAJÖR gamına göre — büyük harf majör, küçük minör, ° dim, + aug; power chord ve sus akorlarında nitelik belirsizdir, kök derecesini büyük harfle yaz (ör. \"♭VII\", \"V\").\n  color: ek (maj7, 7, sus2, sus4, add9, 5 …) ya da null. bass: slash akorda bas derecesi (ör. \"III\") ya da null. N.C. için core \"N.C.\".\n- source_notes: capo (sayı ya da null), tuning, other (kaynak linki). Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz.\n- Emin olmadığın her şeyi warnings içine yaz.";
 function tabImport() {
   const errs = SS.importErrors.length ? `<div class="st-err" role="alert"><b>İçe aktarılamadı — bozuk alanlar:</b><ul>${SS.importErrors.map((x) => `<li><code>${esc(x)}</code></li>`).join('')}</ul></div>` : '';
   const pend = SS.pending.map((p, i) => `<div class="st-warn" role="alert">⚠ <b>${esc(songName(p.song))}</b> zaten veri setinde (${esc(songName(p.dup))}).
@@ -4637,6 +4712,8 @@ function sectionCard(s, sec, si, unk) {
         ${editing ? '' : `<button data-act="editChords" data-id="${s.id}" data-si="${si}">Akorları düzenle</button>`}</div>
     </div>
     <div>${pvTxt}</div>
+    ${(() => { const ck = St.checkChatKey(s, sec); if (ck.verdict === 'none') return ''; const amb = ck.est.ambiguity.map((a) => `<div class="hint">${esc(a.text)}</div>`).join('');
+      return `<div class="${ck.verdict === 'agree' ? 'hint' : 'st-warn'}">${ck.verdict === 'agree' ? '✓' : '⚠'} ${esc(ck.text)}</div>${ck.verdict === 'agree' ? amb : ''}`; })()}
     ${sec.warnings.length ? `<div class="st-warn"><b>Uyarılar:</b> ${sec.warnings.map(esc).join(' · ')}</div>` : ''}
   </div>`;
 }

@@ -481,6 +481,26 @@ function suggestKeys(notes, g, topK = 3) {
   return { candidates: top, hist: h, last: lastN ? { pc: lastPc, name: pcName(lastPc, keyUsesFlats(top[0].tonic, top[0].mode)), q0: lastN.q0 } : null };
 }
 
+// Ton adaylarının belirsizlik notları (melodi histogramı ya da akor histogramı için ortak):
+//  • noDistinct: aynı merkez, farklı mod; ayıran notalar (ör. G / G#) hiç duyulmuyor → "ayırt edici nota yok"
+//  • sameSet:    aynı nota kümesi, farklı merkez; merkez kanıtı zayıf → "merkez belirsiz"
+function keyAmbiguity(cands, h, gap = 0.2) {
+  const out = [];
+  const top = cands[0];
+  if (!top) return out;
+  for (const c of cands.slice(1)) {
+    if (c.tonic === top.tonic && c.mode !== top.mode) {
+      const a = new Set(top.pcs), b = new Set(c.pcs);
+      const diff = [...new Set([...a, ...b])].filter((p) => a.has(p) !== b.has(p));
+      const w = diff.reduce((acc, p) => acc + (h[p] || 0), 0);
+      if (w < 0.02) out.push({ type: 'noDistinct', a: top, b: c, pcs: diff, text: `Ayırt edici nota yok: ${keyName(top.tonic, top.mode)} ile ${keyName(c.tonic, c.mode)} arasındaki fark (${diff.map((p) => pcName(p, keyUsesFlats(top.tonic, top.mode))).join(' / ')}) hiç duyulmuyor; bu ikisi ayırt edilemiyor.` });
+    } else if (c.tonic !== top.tonic && c.pcs.join() === top.pcs.join() && top.score - c.score < gap) {
+      out.push({ type: 'sameSet', a: top, b: c, text: `Aynı nota kümesi, merkez belirsiz: ${keyName(top.tonic, top.mode)} ile ${keyName(c.tonic, c.mode)} aynı notaları kullanıyor; hangisinin merkez olduğuna dair kanıt zayıf.` });
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- AUTOTUNE / DÜZELTME EĞRİSİ
 // target: 'semitone' (varsayılan) = söylenen notanın en yakın yarım sesine çek, notanın kimliği ASLA değişmez;
 //         'scale' = scale'in en yakın notasına çek (kimliği değiştirebilir; yalnızca açıkça seçilirse)
@@ -1491,7 +1511,7 @@ const Core = {
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
-  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift,
+  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
