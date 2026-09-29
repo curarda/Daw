@@ -14,7 +14,7 @@ const shotDir = process.env.SHOT_DIR;
 const TEST_JSON = {
   schema_version: 1, artist: 'Test Sanatçı', title: 'Frig–Dorian Testi',
   sections: [
-    { name: 'Verse 1', chords: ['C#m', 'D', 'C#m', 'D', 'C#m', 'D', 'C#m', 'D'], key_proposals: [{ tonic: 'C#', mode: 'phrygian', confidence: 0.8 }, { tonic: 'A', mode: 'major', confidence: 0.2 }], degrees_preview: ['i', '♭II', 'i', '♭II', 'i', '♭II', 'i', '♭II'], warnings: ['D, A majörde IV de olabilir'] },
+    { name: 'Verse 1', chords: ['C#m', 'D', 'C#m', 'D', 'C#m', 'D', 'C#m', 'D'], key_proposals: [{ tonic: 'C#', mode: 'phrygian', confidence: 0.8 }, { tonic: 'A', mode: 'major', confidence: 0.2 }], degrees_preview: ['i', '♭II', 'i', '♭II', 'i', '♭II', 'i', '♭II'], bars: [2, 1, 2, 1, 2, 1, 2, 1], warnings: ['D, A majörde IV de olabilir'] },
     // (b) bilerek yanlış: A, B Dorian'da ♭VII'dir
     { name: 'Chorus', chords: ['Bm', 'E', 'A', 'Bm'], key_proposals: [{ tonic: 'B', mode: 'dorian' }], degrees_preview: ['i', 'IV', 'VII', 'i'] },
   ],
@@ -102,9 +102,18 @@ try {
     assert.ok(titles.some((t) => /^♭II → i: 1 şarkı \(%100\), 3 tekrar/.test(t)));
     await cells.first().click();
     assert.match(await page.textContent('#stDrill'), /Test Sanatçı – Frig–Dorian Testi.*Verse 1/s);
+    // harmonik ritim: verse'te bars var (C#m 2, D 1), chorus'ta yok
+    const hr = await page.locator('h3:has-text("Harmonik ritim")').textContent();
+    assert.match(hr, /süre bilgisi olan 1 \/ 1 şarkı/);
+    const durRows = await page.locator('h4:has-text("Akor süresi dağılımı") ~ table tbody tr').allTextContents();
+    assert.match(durRows[1], /^1\s*1\s*100%\s*4/); assert.match(durRows[2], /^2\s*1\s*100%\s*4/);
+    const rateRows = await page.locator('h4:has-text("kaç ölçüde bir") ~ table tbody tr').allTextContents();
+    assert.match(rateRows[2], /^2\s*1\s*100%/); // 12 ölçü / 8 akor = 1.5 → 2 sınıfı
     await page.click('.st-modes button[data-m=dorian]');
     const dor = await page.textContent('.st-body');
     assert.match(dor, /♭VII/); assert.match(dor, /IV/);
+    assert.match(dor, /süre bilgisi olan 0 \/ 1 şarkı/);
+    assert.match(dor, /süre istatistiğine girmez/);
     const shift = await page.locator('h3:has-text("modal kayma") + table').textContent();
     assert.match(shift, /Frig → Dorian.*-2 yarım ses.*1/s);
     const inter = await page.locator('h3:has-text("modal kayma") + table + table').textContent();
@@ -145,6 +154,11 @@ try {
     const n = await page.locator('.st-prog').count();
     assert.equal(n, 5);
     const first = await page.locator('.st-prog .syms').first().textContent();
+    const degs = await page.locator('.st-prog .degs').first().textContent();
+    assert.match(degs, /^i \([\d.]+\) → .+ → .+$/, degs);
+    const sums = await E(() => window.StyleUI.state.prog.items.map((i) => i.durations.reduce((a, b) => a + b, 0)));
+    assert.deepEqual(sums, [8, 8, 8, 8, 8]);
+    if (shotDir) await page.screenshot({ path: path.join(shotDir, 'style-prog.png') });
     assert.match(await page.locator('.st-prog').first().textContent(), /Sürpriz noktası/);
     await page.locator('.st-prog').first().locator('button[data-act=playProg]').click();
     await page.waitForFunction(() => /Önizleme:/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
@@ -157,7 +171,18 @@ try {
     await page.click('button[data-act=runTrans]');
     const tr = await page.locator('h3:has-text("İki bölüm arası") ~ ul').textContent();
     assert.match(tr, /D.*♭II.*→.*Bm.*i/s);
-    return `${n} öneri; ilk "${first.trim()}" beğenilmedi → listeden çıktı · geçiş: ${tr.replace(/\s+/g, ' ').trim().slice(0, 80)}`;
+    return `${n} öneri, ilk: ${degs} ("${first.replace('↻', '').trim()}") beğenilmedi → listeden çıktı · geçiş: ${tr.replace(/\s+/g, ' ').trim().slice(0, 60)}`;
+  });
+
+  await step('10) değişim sayısı 1 → ev akorunda drone önerisi', async () => {
+    await page.fill('input[data-act=prog][data-k=changes]', '1'); await page.dispatchEvent('input[data-act=prog][data-k=changes]', 'change');
+    await page.click('button[data-act=runProg]');
+    assert.equal(await page.locator('.st-prog').count(), 1);
+    const t = (await page.locator('.st-prog .degs').textContent()).trim();
+    assert.equal(t, 'i (8)');
+    assert.match(await page.locator('.st-prog').textContent(), /değişim yok \(tek akor \/ drone\)/);
+    await page.fill('input[data-act=prog][data-k=changes]', '3'); await page.dispatchEvent('input[data-act=prog][data-k=changes]', 'change');
+    return `${(await E(() => window.StyleUI.state.prog.items[0].displaySymbols))} = ${t}`;
   });
 
   await step('9) akor bulucu: aday puanı melodi + stil payı; geri bildirim; λ=0 saf teori', async () => {
@@ -183,13 +208,23 @@ try {
   await step('10) progresyonu zaman çizelgesine akor şablonu olarak yerleştir', async () => {
     await page.click('.views input[value=style] + span');
     await tab('Progresyon önerici');
+    await page.fill('input[data-act=prog][data-k=bars]', '4'); await page.dispatchEvent('input[data-act=prog][data-k=bars]', 'change');
     await page.click('button[data-act=runProg]');
-    const syms = (await page.locator('.st-prog .syms').first().textContent()).replace('↻', '').trim().split(' – ');
+    // süreleri elle değiştir: 1.5 + 0.5 + 2
+    for (const [j, v] of [[0, '1.5'], [1, '0.5'], [2, '2']]) {
+      const inp = page.locator(`.st-prog input[data-act=progDur][data-i="0"][data-j="${j}"]`);
+      await inp.fill(v); await inp.dispatchEvent('change');
+    }
+    const it = await E(() => window.StyleUI.state.prog.items[0]);
+    assert.deepEqual(it.durations, [1.5, 0.5, 2]);
+    assert.match(await page.locator('.st-prog .degs').first().textContent(), /\(1\.5\) → .+ \(0\.5\) → .+ \(2\)/);
+    assert.match(await page.locator('.st-prog').first().textContent(), /toplam 4 ölçü \(süreler elle değiştirildi\)/);
     await page.fill('#stPlace0', '1');
     await page.locator('.st-prog').first().locator('button[data-act=placeProg]').click();
-    const placed = await E(() => window.__daw.d.chords.filter((c) => c.bar <= 4 && c.locked).map((c) => window.Core.chordName(c.chord)));
-    assert.deepEqual(placed, syms);
-    return `ölçü 1–4 kilitli: ${placed.join(' ')}`;
+    const placed = await E(() => window.__daw.d.chords.filter((c) => c.bar <= 4).map((c) => [c.bar, c.half, window.Core.chordName(c.chord), c.locked]));
+    const [a, b, c] = it.symbols;
+    assert.deepEqual(placed, [[1, null, a, true], [2, 0, a, true], [2, 1, b, true], [3, null, c, true], [4, null, c, true]]);
+    return `${it.displaySymbols} → ölçü 1: ${a} | ölçü 2: ${a} ${b} (yarım) | ölçü 3–4: ${c}`;
   });
 
   await step('7) k ve α öner (en az 3 şarkı gerekir) + 11) üç ayrı JSON dışa/içe aktarım', async () => {

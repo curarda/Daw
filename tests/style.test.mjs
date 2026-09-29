@@ -103,23 +103,85 @@ await step('e) 2 şarkıyla progresyon önericisi: "az veri" uyarısı + yumuşa
   confirmAll(r.songs[0]);
   const d2 = { songs: [ds.songs[0], r.songs[0]] };
   const model = Style.buildModel(d2);
-  const res = Style.suggestProgressions(model, { tonic: 1, mode: 'phrygian', length: 4, loop: true, ending: 'home', count: 5 });
+  const res = Style.suggestProgressions(model, { tonic: 1, mode: 'phrygian', changes: 4, bars: 8, loop: true, ending: 'home', count: 5 });
   assert.ok(res.warnings.some((w) => /Az veri/.test(w)));
+  assert.ok(res.warnings.some((w) => /Süre verisi yok/.test(w)));
   assert.equal(res.items.length, 5);
-  const keys = new Set(res.items.map((i) => i.cores.join()));
-  assert.equal(keys.size, 5, 'aynı progresyon iki kez');
+  assert.equal(new Set(res.items.map((i) => i.cores.join())).size, 5, 'aynı progresyon iki kez');
   for (const it of res.items) {
     assert.ok(it.cores.includes('0m'), 'ev akoru yok');
     assert.equal(it.cores[3], '0m');
-    for (let i = 1; i < 4; i++) assert.notEqual(it.cores[i], it.cores[i - 1]);
-    assert.notEqual(it.cores[0], it.cores[3]);
+    assert.equal(it.durations.reduce((a, b) => a + b, 0), 8, 'toplam uzunluk');
   }
-  const t = Style.suggestProgressions(model, { tonic: 1, mode: 'phrygian', length: 8, loop: false, ending: 'open', temperature: 1, count: 5, seed: 3 });
-  assert.ok(t.items.length >= 3 && t.items.every((i) => i.cores[7] !== '0m'));
+  // "aynı akor art arda gelmesin" kuralı yok: döngüde ilk = son (ev akoru) serbest; sınırda değişim sayılmaz
+  assert.deepEqual(res.items[0].durations, [2, 2, 2, 2], 'süre verisi yokken eşit bölüşüm');
+  assert.ok(res.items.some((i) => i.cores[0] === i.cores[3]), 'ilk = son olan döngü önerisi yok');
+  const loopSame = res.items.find((i) => i.cores[0] === i.cores[3]);
+  assert.ok(!loopSame.steps.some((st) => st.loop), 'aynı akorda döngü dönüşü geçiş sayıldı');
+  const t = Style.suggestProgressions(model, { tonic: 1, mode: 'phrygian', changes: 8, bars: 16, loop: false, ending: 'open', temperature: 1, count: 5, seed: 3 });
+  assert.ok(t.items.length >= 3 && t.items.every((i) => i.cores[7] !== '0m' && i.durations.reduce((a, b) => a + b, 0) === 16));
   const tr = Style.suggestSectionTransition(model, { tonic: 1, mode: 'phrygian' }, { tonic: 11, mode: 'dorian' });
   assert.equal(tr.items[0].from.symbol + ' → ' + tr.items[0].to.symbol, 'D → Bm');
   const top = res.items[0];
-  return `${res.warnings[0]}\n    ${res.items.map((i) => `${i.symbols.join(' ')} [${i.degrees.join(' ')}] p=${i.prob.toExponential(2)}`).join('\n    ')}\n    sürpriz: ${L(top.rarest.a, 'phrygian')}→${L(top.rarest.b, 'phrygian')} p=${top.rarest.p.toFixed(3)} (${top.rarest.mode.length} şarkıda)\n    bölüm geçişi C# Frig → B Dorian: ${tr.items[0].from.symbol} → ${tr.items[0].to.symbol} (${tr.basis})`;
+  return `${res.warnings.join(' | ')}\n    ${res.items.map((i) => `${i.displaySymbols}  [${i.display}] p=${i.prob.toExponential(2)}`).join('\n    ')}\n    bölüm geçişi C# Frig → B Dorian: ${tr.items[0].from.symbol} → ${tr.items[0].to.symbol} (${tr.basis})${top.rarest ? '' : ''}`;
+});
+
+await step('Harmonik ritim: "bars" kaydedilir; yoksa süre istatistiğine girmez (değişim istatistiğine girer)', () => {
+  const song = (title, verseChords, verseBars, withChorusBars) => {
+    const r = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'Ritim', title, sections: [
+      { name: 'Verse', chords: verseChords, bars: verseBars, key_proposals: [{ tonic: 'C#', mode: 'phrygian' }] },
+      Object.assign({ name: 'Chorus', chords: ['Bm', 'E', 'A', 'Bm'], key_proposals: [{ tonic: 'B', mode: 'dorian' }] }, withChorusBars ? { bars: [2, 2, 2, 2] } : {}),
+    ] }));
+    assert.deepEqual(r.errors, []);
+    confirmAll(r.songs[0]);
+    return r.songs[0];
+  };
+  const h1 = song('H1', ['C#m', 'D', 'C#m', 'D'], [4, 2, 1, 1], false);
+  // C#m → C#m7 aynı core: süreleri birleşir (1+1 = 2); şarkı 2 kez tekrar etse de şarkı başına 1
+  const h2 = song('H2', ['C#m', 'C#m7', 'D', 'C#m', 'C#m7', 'D'], [1, 1, 2, 1, 1, 2], false);
+  const st = Style.buildStats({ songs: [h1, h2] });
+  const ph = st.byMode.get('phrygian'), dor = st.byMode.get('dorian'), all = st.byMode.get(Style.ALL);
+  const bins = (b) => Object.fromEntries([...b.dur].sort((x, y) => x[0] - y[0]).map(([k, e]) => [Style.durLabel(k), `${e.songs.size} şarkı/${e.occ}`]));
+  assert.deepEqual(bins(ph), { 1: '1 şarkı/2', 2: '2 şarkı/5', 4: '1 şarkı/1' });
+  assert.equal(ph.durSongs.size, 2);
+  assert.equal(dor.durSongs.size, 0, 'bars olmayan bölüm süre istatistiğine girdi');
+  assert.equal(dor.trans.get('0m>5M').songs.size, 2, 'bars olmayan bölüm değişim istatistiğine girmeli');
+  assert.equal(all.durSongs.size, 2);
+  // bölüm başına "kaç ölçüde bir akor değişiyor": H1 8/4 = 2, H2 8/4 = 2
+  assert.deepEqual([...ph.rate].map(([k, e]) => [k, e.songs.size]), [[2, 2]]);
+  // şema: uzunluk uyuşmazlığı ve geçersiz süre
+  const bad = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'a', title: 'b', sections: [{ name: 'x', chords: ['C', 'F'], bars: [1, 0, 2] }] }));
+  assert.deepEqual(bad.errors, ['sections[0].bars: chords ile aynı uzunlukta olmalı (3 ≠ 2)', 'sections[0].bars[1]: pozitif sayı olmalı (0)']);
+  // düz metin: ölçü çizgileri ve "akor:süre"
+  const tx = Style.parseImportText('Sanatçı: M\nŞarkı: N\n[Verse] C# Frig — ölçü 1–4\n| C#m | % | Dmaj7 C#m |\n[B: B dorian] Bm:4 E:2 A:2\n[C: B dorian] Bm E', {}).songs[0];
+  assert.deepEqual(tx.sections.map((x) => x.bars), [[1, 1, 0.5, 0.5], [4, 2, 2], null]);
+  const txs = Style.buildStats({ songs: [Object.assign(tx, { sections: tx.sections.map((x) => Object.assign(x, { confirmed: true })) })] }).byMode.get('phrygian');
+  assert.deepEqual([...txs.dur.keys()].sort(), [0.5, 2]); // C#m + % = 2 ölçü
+  return `Frig süre dağılımı ${JSON.stringify(bins(ph))} · süre bilgisi olan şarkı: Frig ${ph.durSongs.size}, Dorian ${dor.durSongs.size} · bölüm başına değişim: her 2 ölçüde (2 şarkı)`;
+});
+
+await step('Önerici: değişim sayısı + toplam uzunluk; süreler dağılımdan, toplam oturtulur; drone', () => {
+  const r = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'Ritim', title: 'Süreli', sections: [
+    { name: 'Verse', chords: ['C#m', 'D', 'C#m', 'D', 'C#m', 'D'], bars: [4, 2, 4, 2, 4, 2], key_proposals: [{ tonic: 'C#', mode: 'phrygian' }] }] }));
+  confirmAll(r.songs[0]);
+  const m = Style.buildModel({ songs: [r.songs[0]] });
+  const one = Style.suggestProgressions(m, { tonic: 1, mode: 'phrygian', changes: 1, bars: 8, loop: true, ending: 'home' });
+  assert.equal(one.items.length, 1);
+  assert.deepEqual([one.items[0].symbols, one.items[0].durations, one.items[0].display], [['C#m'], [8], 'i (8)']);
+  assert.ok(one.warnings.some((w) => /drone/.test(w)));
+  const three = Style.suggestProgressions(m, { tonic: 1, mode: 'phrygian', changes: 3, bars: 8, loop: false, ending: 'home' });
+  const top = three.items[0];
+  assert.equal(top.display, 'i (4) → ♭II (2) → i (2)');
+  for (const it of three.items) assert.equal(it.durations.reduce((a, b) => a + b, 0), 8);
+  // oturtma: 3 değişim, 3 ölçü → ara değerler de kullanılabilir; sığmayan istek uyarı verir
+  assert.deepEqual(Style.fitDurations(m, 'phrygian', 1, 3).durs, [3]);
+  const no = Style.suggestProgressions(m, { tonic: 1, mode: 'phrygian', changes: 20, bars: 8 });
+  assert.equal(no.items.length, 0);
+  assert.ok(no.warnings.some((w) => /sığmaz/.test(w)));
+  const hot = new Set();
+  for (let seed = 1; seed <= 10; seed++) hot.add(Style.fitDurations(m, 'phrygian', 3, 8, 1, Style.mulberry32(seed)).durs.join(','));
+  assert.ok(hot.size > 1, 'sıcaklıkla süreler çeşitlenmeli');
+  return `drone: ${one.items[0].displaySymbols} · 3 değişim / 8 ölçü: ${top.displaySymbols} = ${top.display} · sıcaklık 1 ile süre kalıpları: ${[...hot].join(' | ')}`;
 });
 
 await step('Şema hataları alan yoluyla bildirilir; tanınmayan akorlar listelenir', () => {
@@ -180,9 +242,9 @@ await step('Model: kısmi havuzlama formülü, α yumuşatma, 2. derece backoff,
   assert.deepEqual([...Style.buildModel(ds, {}, fb).next('dorian', '0m')], [...raw]);
   // beğenilmeyen progresyon tekrar önerilmez
   const fb2 = Style.newFeedback();
-  const first = Style.suggestProgressions(Style.buildModel(ds), { tonic: 1, mode: 'phrygian', length: 2, loop: true, ending: 'home', count: 5 }).items[0];
+  const first = Style.suggestProgressions(Style.buildModel(ds), { tonic: 1, mode: 'phrygian', changes: 2, bars: 4, loop: true, ending: 'home', count: 5 }).items[0];
   fb2.banned.push(first.key);
-  const again = Style.suggestProgressions(Style.buildModel(ds, {}, fb2), { tonic: 1, mode: 'phrygian', length: 2, loop: true, ending: 'home', count: 5 }).items;
+  const again = Style.suggestProgressions(Style.buildModel(ds, {}, fb2), { tonic: 1, mode: 'phrygian', changes: 2, bars: 4, loop: true, ending: 'home', count: 5 }).items;
   assert.ok(!again.some((i) => i.key === first.key));
   return `P(IV | i, Dorian) = ${expectIV.toFixed(4)} · 20 beğeni → çarpan 2 (sınır) · beğenilmeyen "${first.symbols.join(' ')}" tekrar önerilmedi`;
 });

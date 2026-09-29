@@ -89,6 +89,7 @@ const PROMPT = `Aşağıdaki şarkının akorlarını YALNIZCA şu JSON biçimin
         { "tonic": "A", "mode": "major", "confidence": 0.3 }
       ],
       "degrees_preview": ["i", "♭II", "i", "♭II"],
+      "bars": [2, 2, 2, 2],
       "warnings": []
     }
   ],
@@ -97,6 +98,7 @@ const PROMPT = `Aşağıdaki şarkının akorlarını YALNIZCA şu JSON biçimin
 Kurallar:
 - chords: bölümde çalındığı sırayla, tekrarlar dahil; akor yoksa "N.C.". Slash akorları "A/C#" gibi yaz.
 - key_proposals: en olası önce. mode: major, minor, harmonic_minor, dorian, phrygian, lydian, mixolydian, locrian, major_pentatonic, minor_pentatonic.
+- bars: (biliniyorsa) her akorun süresi ölçü cinsinden, chords ile aynı uzunlukta (yarım ölçü = 0.5). Emin değilsen bars alanını hiç yazma.
 - degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta. Romen rakamı merkezin MAJÖR gamına göre: büyük harf majör, küçük minör, ° dim, + aug; power chord için "5" (ör. ♭VII5); N.C. için "N.C.".
 - Emin olmadığın her şeyi warnings içine yaz.`;
 function tabImport() {
@@ -106,7 +108,7 @@ function tabImport() {
   return `<div class="st-grid2">
     <div>
       <h3>Şarkı ekle</h3>
-      <p class="hint">Claude chat'in ürettiği JSON'u (schema_version 1) yapıştırın ya da dosyadan yükleyin. Yedek olarak düz metin akor şeması da olur: <code>[Verse: C# phrygian] C#m D C#m D</code> ya da DAW'ın dışa aktardığı akor şeması.</p>
+      <p class="hint">Claude chat'in ürettiği JSON'u (schema_version 1) yapıştırın ya da dosyadan yükleyin. Yedek olarak düz metin akor şeması da olur: <code>[Verse: C# phrygian] C#m D C#m D</code>, süreli <code>C#m:4 D:2</code> ya da ölçü çizgili <code>| C#m | D C#m |</code> (DAW'ın dışa aktardığı akor şeması da olur).</p>
       <div class="row">
         <label>Biçim <select id="stFmt" style="width:auto"><option value="auto">otomatik</option><option value="json">JSON</option><option value="text">düz metin</option></select></label>
         <label class="file-btn">Dosyadan yükle<input type="file" id="stFile" accept=".json,.txt,application/json,text/plain" hidden></label>
@@ -126,7 +128,7 @@ function tabImport() {
 const EXAMPLE = {
   schema_version: 1, artist: 'Örnek Sanatçı', title: 'Frig ve Dorian',
   sections: [
-    { name: 'Verse 1', chords: ['C#m', 'D', 'C#m', 'D', 'C#m', 'D', 'C#m', 'D'], key_proposals: [{ tonic: 'C#', mode: 'phrygian', confidence: 0.8, reason: 'C# merkez, D ♭II' }, { tonic: 'A', mode: 'major', confidence: 0.2 }], degrees_preview: ['i', '♭II', 'i', '♭II', 'i', '♭II', 'i', '♭II'], warnings: ['D, A majörde IV olarak da okunabilir'] },
+    { name: 'Verse 1', chords: ['C#m', 'D', 'C#m', 'D', 'C#m', 'D', 'C#m', 'D'], key_proposals: [{ tonic: 'C#', mode: 'phrygian', confidence: 0.8, reason: 'C# merkez, D ♭II' }, { tonic: 'A', mode: 'major', confidence: 0.2 }], degrees_preview: ['i', '♭II', 'i', '♭II', 'i', '♭II', 'i', '♭II'], bars: [1, 1, 1, 1, 1, 1, 1, 1], warnings: ['D, A majörde IV olarak da okunabilir'] },
     { name: 'Chorus', chords: ['Bm', 'E', 'A', 'Bm'], key_proposals: [{ tonic: 'B', mode: 'dorian', confidence: 0.7 }], degrees_preview: ['i', 'IV', '♭VII', 'i'] },
   ],
   warnings: [],
@@ -206,7 +208,14 @@ const ACTIONS = {
     const s = songById(b.dataset.id), sec = s.sections[+b.dataset.si];
     const toks = $(`#stChordEdit`).value.split(/[\s|,]+/).filter(Boolean);
     if (!toks.length) { A.status('Bölümde en az bir akor olmalı.', 'err'); return; }
-    sec.chords = toks; SS.chordEdit = null; changed();
+    // "akor:süre" (ölçü); ya hepsinde ya hiçbirinde
+    const parsed = toks.map((t) => { const m = /^(.+?):(\d+(?:[.,]\d+)?)$/.exec(t); return m ? [m[1], parseFloat(m[2].replace(',', '.'))] : [t, null]; });
+    const withDur = parsed.filter((x) => x[1] != null).length;
+    if (withDur && withDur !== parsed.length) { A.status('Süre ya tüm akorlarda ya hiçbirinde olmalı (ör. C#m:2 D:2).', 'err'); return; }
+    if (parsed.some((x) => x[1] != null && !(x[1] > 0))) { A.status('Süreler pozitif olmalı.', 'err'); return; }
+    sec.chords = parsed.map((x) => x[0]);
+    sec.bars = withDur ? parsed.map((x) => x[1]) : null;
+    SS.chordEdit = null; changed();
   },
   cancelChords: () => { SS.chordEdit = null; render(); },
   // ---- istatistik
@@ -221,7 +230,7 @@ const ACTIONS = {
   fbReset: () => { if (!confirm('Tüm kişisel geri bildirim silinsin mi? (şarkı verisi etkilenmez)')) return; SS.feedback = Object.assign(St.newFeedback(), { on: SS.feedback.on }); changed(); },
   // ---- progresyon
   runProg: () => runProg(),
-  playProg: (b) => { const it = SS.prog.items[+b.dataset.i]; A.preview(it.chords, SS.prog.opts.tonic, SS.prog.opts.mode); },
+  playProg: (b) => { const it = SS.prog.items[+b.dataset.i]; A.preview(it.chords, SS.prog.opts.tonic, SS.prog.opts.mode, it.durations); },
   stopProg: () => A.stop(),
   fbProg: (b) => {
     const it = SS.prog.items[+b.dataset.i], like = +b.dataset.v;
@@ -235,7 +244,7 @@ const ACTIONS = {
   placeProg: (b) => {
     const it = SS.prog.items[+b.dataset.i];
     const bar = Math.max(1, parseInt($(`#stPlace${b.dataset.i}`).value, 10) || 1);
-    A.placeChords(it.chords, bar, { tonic: SS.prog.opts.tonic, mode: SS.prog.opts.mode });
+    A.placeChords(it.chords, bar, { tonic: SS.prog.opts.tonic, mode: SS.prog.opts.mode }, it.durations);
   },
   runTrans: () => {
     const g = (id) => +$(id).value;
@@ -279,6 +288,16 @@ const CHANGES = {
   },
   fbOn: (t) => { SS.feedback.on = t.checked; changed(); },
   prog: (t) => { const k = t.dataset.k; SS.progOpts[k] = t.type === 'checkbox' ? t.checked : k === 'mode' || k === 'ending' ? t.value : +t.value; },
+  // kullanıcı süreleri elle değiştirir (yarım ölçü adımı); gösterim ve toplam güncellenir
+  progDur: (t) => {
+    const it = SS.prog.items[+t.dataset.i];
+    const v = Math.max(0.5, Math.round((parseFloat(t.value) || 0.5) * 2) / 2);
+    it.durations[+t.dataset.j] = v;
+    it.display = St.progDisplay(it.degrees, it.durations);
+    it.displaySymbols = St.progDisplay(it.symbols, it.durations);
+    it.edited = true;
+    render();
+  },
   imp: async (t) => {
     const f = t.files[0]; t.value = '';
     if (!f) return;
@@ -344,7 +363,7 @@ function sectionCard(s, sec, si, unk) {
     const cls = it.unknown ? 'unk' : it.nc ? 'nc' : bad.has(i) ? 'bad' : it.borrowed ? 'borrow' : '';
     const pv = bad.has(i) ? cmp.mismatches.find((m) => m.index === i).preview : null;
     const title = it.unknown ? 'tanınmadı' : bad.has(i) ? `önizleme "${pv}" diyor, hesaplanan ${it.label}` : it.borrowed ? 'moda ait değil (ödünç)' : it.power ? 'power chord: nitelik belirsiz' : '';
-    return `<span class="chip ${cls}" title="${esc(title)}"><b>${esc(sec.chords[i])}</b><small>${it.unknown ? '?' : it.nc ? '—' : esc(it.label)}${it.bassLabel ? `<br>bas ${esc(it.bassLabel)}` : ''}${pv ? `<br>önizleme: ${esc(pv)}` : ''}${it.borrowed ? '<br>ödünç' : ''}</small></span>`;
+    return `<span class="chip ${cls}" title="${esc(title)}"><b>${esc(sec.chords[i])}</b><small>${it.unknown ? '?' : it.nc ? '—' : esc(it.label)}${an.hasDur ? `<br>${St.fmtDur(sec.bars[i])} ölçü` : ''}${it.bassLabel ? `<br>bas ${esc(it.bassLabel)}` : ''}${pv ? `<br>önizleme: ${esc(pv)}` : ''}${it.borrowed ? '<br>ödünç' : ''}</small></span>`;
   }).join('');
   const props = sec.proposals.map((p, pi) => `<label class="chk"><input type="radio" name="prop-${s.id}-${si}" data-act="pickProposal" data-click="1" data-id="${s.id}" data-si="${si}" data-pi="${pi}"${St.sameKey(p, key) ? ' checked' : ''}>
       ${esc(St.keyLabel(p))}${p.confidence != null ? ` <span class="hint">${Math.round(p.confidence * 100)}%</span>` : ''}${p.reason ? ` <span class="hint">— ${esc(p.reason)}</span>` : ''}${pi === 0 ? ' <span class="hint">(ilk öneri)</span>' : ''}</label>`).join('');
@@ -356,8 +375,9 @@ function sectionCard(s, sec, si, unk) {
   const editing = SS.chordEdit === `${s.id}:${si}`;
   return `<div class="st-sec ${sec.confirmed ? 'ok' : ''}">
     <div class="row"><b>${esc(sec.name)}</b> ${sec.confirmed ? '<span class="tag ok">onaylı — istatistikte</span>' : '<span class="tag warn">onaysız — istatistiğe girmez</span>'}
-      ${an.loop ? `<span class="hint">döngü: ${esc(an.loop.pattern.join(' '))} ×${an.loop.repeats}</span>` : ''}</div>
-    ${editing ? `<div class="row"><input type="text" id="stChordEdit" value="${esc(sec.chords.join(' '))}" style="flex:1"><button data-act="saveChords" data-id="${s.id}" data-si="${si}" class="accent">Kaydet</button><button data-act="cancelChords">Vazgeç</button></div>`
+      ${an.loop ? `<span class="hint">döngü: ${esc(an.loop.pattern.join(' '))} ×${an.loop.repeats}</span>` : ''}
+      <span class="hint">${an.hasDur ? `süre: ${St.fmtDur(sec.bars.reduce((a, b) => a + b, 0))} ölçü` : 'süre bilgisi yok — süre istatistiğine girmez'}</span></div>
+    ${editing ? `<div class="row"><input type="text" id="stChordEdit" value="${esc(sec.chords.map((c, i) => (St.sectionHasBars(sec) ? `${c}:${St.fmtDur(sec.bars[i])}` : c)).join(' '))}" style="flex:1" title="süre için akor:ölçü (ör. C#m:2)"><button data-act="saveChords" data-id="${s.id}" data-si="${si}" class="accent">Kaydet</button><button data-act="cancelChords">Vazgeç</button></div>`
       : `<div class="chips">${chips}</div>`}
     <div class="st-keys">
       <div>${props || '<span class="hint">Öneri yok — elle girin.</span>'}</div>
@@ -443,9 +463,24 @@ function tabStats() {
       <div><h3>Açılış (bölümün ilk akoru)</h3><table class="st-t"><tbody>${edge(b.open, 'açılış')}</tbody></table></div>
       <div><h3>Kapanış (bölümün son akoru)</h3><table class="st-t"><tbody>${edge(b.close, 'kapanış')}</tbody></table></div>
     </div>
+    <h3>Harmonik ritim <span class="hint">(süre bilgisi olan ${b.durSongs.size} / ${N} şarkı)</span></h3>
+    ${b.durSongs.size ? `<div class="st-grid2">
+      <div><h4>Akor süresi dağılımı</h4><p class="hint">Bir akorda (core'da) kalma süresi; % = süre bilgisi olan şarkılar içinde.</p>${durTable(b.dur, b.durSongs.size, 'akor süresi')}</div>
+      <div><h4>Bölüm başına: kaç ölçüde bir akor değişiyor</h4><p class="hint">bölüm uzunluğu ÷ akor sayısı</p>${durTable(b.rate, b.durSongs.size, 'değişim aralığı')}</div>
+    </div>` : '<p class="hint">Bu kapsamda süre bilgisi (JSON "bars") olan onaylı bölüm yok. Bu bölümler değişim istatistiğine girer, süre istatistiğine girmez.</p>'}
     <h3>Bölümler arası modal kayma <span class="hint">(tüm modlar)</span></h3>
     <table class="st-t"><thead><tr><th>modlar</th><th>merkez aralığı</th><th>şarkı</th></tr></thead><tbody>${shifts || '<tr><td class="hint">Bölüm geçişi yok (ardışık iki onaylı bölüm gerekir; N.C. sınırında sayılmaz).</td></tr>'}</tbody></table>
     <table class="st-t"><thead><tr><th>son akor → ilk akor</th><th>şarkı</th><th>örnek</th></tr></thead><tbody>${inter}</tbody></table>`;
+}
+
+function durTable(map, n, what) {
+  let max = 1;
+  for (const e of map.values()) max = Math.max(max, e.songs.size);
+  return `<table class="st-t"><thead><tr><th>ölçü</th><th>şarkı</th><th>%</th><th>tekrar</th><th></th></tr></thead><tbody>${St.DUR_BINS.map((bin) => {
+    const e = map.get(bin);
+    const k = e ? e.songs.size : 0;
+    return `<tr><td>${St.durLabel(bin)}</td>${e ? drillCell(e, `${what}: ${St.durLabel(bin)} ölçü`, k) : '<td class="hint">0</td>'}<td>${pct(k, n)}%</td><td class="hint">${e ? e.occ : 0}</td><td class="durbar"><i style="width:${Math.round((100 * k) / max)}%"></i></td></tr>`;
+  }).join('')}</tbody></table>`;
 }
 
 // ---------------------------------------------------------------- 7–8) MODEL + GERİ BİLDİRİM
@@ -502,11 +537,15 @@ function tabProg() {
   const items = P ? P.items.map((it, i) => {
     const r = it.rarest;
     const songs = r ? (r.mode.length ? r.mode : r.pool) : [];
-    const surprise = r ? `${esc(lab(r.a))} → ${esc(lab(r.b))}${r.loop ? ' (döngü dönüşü)' : ''} · p=${r.p.toFixed(3)} · ${songs.length ? `görüldüğü şarkılar${r.mode.length ? '' : ' (havuz)'}: ${songs.map((id) => esc(songName(songById(id)))).join(', ')}` : '<span class="bad">hiç görülmedi — yalnızca yumuşatmadan</span>'}` : '';
+    const surprise = r ? `${esc(lab(r.a))} → ${esc(lab(r.b))}${r.loop ? ' (döngü dönüşü)' : ''} · p=${r.p.toFixed(3)} · ${songs.length ? `görüldüğü şarkılar${r.mode.length ? '' : ' (havuz)'}: ${songs.map((id) => esc(songName(songById(id)))).join(', ')}` : '<span class="bad">hiç görülmedi — yalnızca yumuşatmadan</span>'}` : 'değişim yok (tek akor / drone)';
+    const total = it.durations.reduce((a, x) => a + x, 0);
+    const durInputs = it.symbols.map((sy, j) => `<label class="dur">${esc(sy)} <input type="number" data-act="progDur" data-i="${i}" data-j="${j}" value="${it.durations[j]}" min="0.5" step="0.5" aria-label="${esc(sy)} süresi (ölçü)"></label>`).join('');
     return `<li class="st-prog ${it.fb > 0 ? 'liked' : it.fb < 0 ? 'disliked' : ''}">
-      <div class="syms">${it.symbols.map(esc).join(' – ')}${P.opts.loop ? ' <span class="hint">↻</span>' : ''}</div>
-      <div class="hint">${it.degrees.map(esc).join(' – ')} · toplam olasılık ${it.prob.toExponential(2)} (log ${it.logP.toFixed(2)})</div>
+      <div class="syms">${esc(it.displaySymbols)}${P.opts.loop ? ' <span class="hint">↻</span>' : ''}</div>
+      <div class="degs">${esc(it.display)}</div>
+      <div class="hint">toplam ${St.fmtDur(total)} ölçü${it.edited ? ' (süreler elle değiştirildi)' : ''} · toplam olasılık ${it.prob.toExponential(2)} (log: değişim ${it.logPHarm.toFixed(2)} + süre ${it.logPDur.toFixed(2)})</div>
       <div class="hint">Sürpriz noktası: ${surprise}</div>
+      <div class="row durs"><span class="hint">Süreler (ölçü):</span> ${durInputs}</div>
       <div class="row"><button data-act="playProg" data-i="${i}">▶ Çal</button><button data-act="stopProg">■</button>
         <button data-act="fbProg" data-v="1" data-i="${i}" title="beğen">👍</button><button data-act="fbProg" data-v="-1" data-i="${i}" title="beğenme — bir daha önerilmez">👎</button>
         <span class="hint">Zaman çizelgesine yerleştir: ölçü</span><input type="number" id="stPlace${i}" min="1" value="1" style="width:60px"><button data-act="placeProg" data-i="${i}">Yerleştir</button></div></li>`;
@@ -520,7 +559,8 @@ function tabProg() {
       <h3>Melodisiz progresyon önerici</h3>
       <div class="row">${tonicSel(o.tonic, 'prog', 'data-k="tonic" style="width:70px"')} ${modeSel(o.mode, 'prog', 'data-k="mode" style="width:auto"')} ${dawSectionButtons('prog')}</div>
       <div class="grid2">
-        <label>Uzunluk<select data-act="prog" data-k="length">${[2, 4, 8].map((n) => `<option${o.length === n ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+        <label title="Kaç farklı akor (değişim) — 1 = tek akorda kalma / drone">Değişim sayısı (akor)<input type="number" data-act="prog" data-k="changes" value="${o.changes}" min="1" max="32"></label>
+        <label title="Değişimlerin süreleri süre dağılımından seçilip bu toplama oturtulur">Toplam uzunluk (ölçü)<input type="number" data-act="prog" data-k="bars" value="${o.bars}" min="0.5" max="128" step="0.5"></label>
         <label>Kapanış<select data-act="prog" data-k="ending"><option value="home"${o.ending === 'home' ? ' selected' : ''}>eve dön</option><option value="open"${o.ending === 'open' ? ' selected' : ''}>açık bırak</option><option value="data"${o.ending === 'data' ? ' selected' : ''}>verideki kapanış dağılımı</option></select></label>
         <label>Sıcaklık (0 = en olası)<input type="number" data-act="prog" data-k="temperature" value="${o.temperature}" min="0" max="5" step="0.1"></label>
         <label>Kaç öneri<input type="number" data-act="prog" data-k="count" value="${o.count}" min="1" max="20"></label>
@@ -529,7 +569,7 @@ function tabProg() {
       </div>
       <button class="accent" data-act="runProg">Öner</button>
       ${P ? P.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('') : ''}
-      ${P ? `<p class="hint">${esc(St.keyLabel(P.opts))} · ev akoru ${esc(lab(P.home))} · ${P.opts.length} akor${P.opts.loop ? ', döngü' : ''}</p><ol class="st-progs">${items}</ol>` : ''}
+      ${P ? `<p class="hint">${esc(St.keyLabel(P.opts))} · ev akoru ${esc(lab(P.home))} · ${P.opts.changes} akor, ${St.fmtDur(P.opts.bars)} ölçü${P.opts.loop ? ', döngü' : ''} · süre verisi: bu modda ${P.nd}, havuzda ${P.ndAll} şarkı</p><ol class="st-progs">${items}</ol>` : ''}
     </div><div>
       <h3>İki bölüm arası geçiş</h3>
       <p class="hint">Verideki bölümler arası geçişlerden (bir bölümün son akoru → sonrakinin ilk akoru) aynı mod çiftine ve merkez aralığına göre öneri.</p>

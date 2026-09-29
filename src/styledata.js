@@ -193,6 +193,14 @@ function validateSongJson(obj, path = '') {
       });
     }
     if (s.degrees_preview != null && !(Array.isArray(s.degrees_preview) && s.degrees_preview.every((d) => typeof d === 'string'))) errs.push(`${sp}.degrees_preview: metin dizisi olmalı`);
+    // isteğe bağlı: her akorun süresi (ölçü), chords ile aynı uzunlukta
+    if (s.bars != null) {
+      if (!Array.isArray(s.bars)) errs.push(`${sp}.bars: sayı dizisi olmalı`);
+      else {
+        if (Array.isArray(s.chords) && s.bars.length !== s.chords.length) errs.push(`${sp}.bars: chords ile aynı uzunlukta olmalı (${s.bars.length} ≠ ${s.chords.length})`);
+        s.bars.forEach((b, j) => { if (!(typeof b === 'number' && Number.isFinite(b) && b > 0)) errs.push(`${sp}.bars[${j}]: pozitif sayı olmalı (${JSON.stringify(b)})`); });
+      }
+    }
     if (s.warnings != null && !(Array.isArray(s.warnings) && s.warnings.every((w) => typeof w === 'string'))) errs.push(`${sp}.warnings: metin dizisi olmalı`);
   });
   return errs;
@@ -221,7 +229,7 @@ function songFromJson(o) {
     sections: o.sections.map((s) => {
       const proposals = (s.key_proposals || []).map(proposalFrom);
       return {
-        name: s.name.trim(), chords: s.chords.map((c) => c.trim()), proposals,
+        name: s.name.trim(), chords: s.chords.map((c) => c.trim()), bars: s.bars ? s.bars.slice() : null, proposals,
         degreesPreview: s.degrees_preview || null, warnings: s.warnings || [],
         selected: proposals[0] ? { tonic: proposals[0].tonic, mode: proposals[0].mode } : null, confirmed: false,
       };
@@ -244,7 +252,7 @@ function parseImportText(text, meta = {}) {
     let body = l;
     if (sm) {
       const inner = sm[1].split(/[:|]/);
-      cur = { name: inner[0].trim(), chords: [], proposals: [], degreesPreview: null, warnings: [], selected: null, confirmed: false };
+      cur = { name: inner[0].trim(), chords: [], durs: [], proposals: [], degreesPreview: null, warnings: [], selected: null, confirmed: false };
       // anahtar: "[Chorus: B dorian]" ya da başlıktan sonra mod adıyla "B Dorian — ölçü 5–8"
       // (başlıktan sonraki "A" / "C#m" tek başına akordur, ton sayılmaz)
       let k = inner[1] ? parseKeyText(inner[1].replace(/\(öneri\)/, '').trim()) : null;
@@ -260,10 +268,26 @@ function parseImportText(text, meta = {}) {
       sections.push(cur);
     }
     if (!body) return;
-    if (!cur) { cur = { name: 'Bölüm', chords: [], proposals: [], degreesPreview: null, warnings: [], selected: null, confirmed: false }; sections.push(cur); }
-    for (const tok of body.split(/[\s|]+/)) if (tok) cur.chords.push(tok);
+    if (!cur) { cur = { name: 'Bölüm', chords: [], durs: [], proposals: [], degreesPreview: null, warnings: [], selected: null, confirmed: false }; sections.push(cur); }
+    const push = (tok, dflt) => {
+      const m = /^(.+?):(\d+(?:[.,]\d+)?)$/.exec(tok);
+      cur.chords.push(m ? m[1] : tok);
+      cur.durs.push(m ? parseFloat(m[2].replace(',', '.')) : dflt);
+    };
+    if (body.includes('|')) { // ölçü çizgileri: her hücre 1 ölçü, içindeki akorlara eşit bölünür
+      for (const cell of body.split('|').map((x) => x.trim()).filter(Boolean)) {
+        const toks = cell.split(/\s+/).filter(Boolean);
+        for (const t of toks) push(t, 1 / toks.length);
+      }
+    } else for (const tok of body.split(/\s+/)) if (tok) push(tok, null);
     void li;
   });
+  for (const sec of sections) {
+    const durs = sec.durs || [];
+    delete sec.durs;
+    sec.bars = durs.length && durs.every((d) => d > 0) ? durs : null;
+    if (!sec.bars && durs.some((d) => d > 0)) sec.warnings.push('Süre bilgisi yalnızca bazı akorlarda var — bölüm süre istatistiğine girmez.');
+  }
   if (!artist.trim()) errors.push('artist: sanatçı adı gerekli (başlık satırı "Sanatçı: …" ya da form alanı)');
   if (!title.trim()) errors.push('title: şarkı adı gerekli (başlık satırı "Şarkı: …" ya da form alanı)');
   if (!sections.length) errors.push('sections: en az bir "[Bölüm] akorlar" satırı gerekli');
@@ -300,6 +324,20 @@ function analyzeSection(song, sec, key) {
     if (p.ok && p.nc) prev = null;
   }
   const unknown = items.some((x) => x.unknown);
+  const hasDur = sectionHasBars(sec);
+  if (hasDur) items.forEach((it, i) => { it.dur = sec.bars[i]; });
+  // harmonik ritim: aynı core'da kalma süresi (C → Cmaj7 tek akor sayılır); N.C. süresi sayılmaz
+  const durRuns = [];
+  if (hasDur) {
+    let run = [];
+    for (const it of items) {
+      if (it.unknown) continue;
+      if (it.nc) { if (run.length) durRuns.push(run); run = []; continue; }
+      const last = run[run.length - 1];
+      if (last && last.core === it.core) last.dur += it.dur; else run.push({ core: it.core, dur: it.dur, sym: it.sym });
+    }
+    if (run.length) durRuns.push(run);
+  }
   // aynı akor art arda → tek akor; N.C. segmentleri böler
   const segments = [];
   let seg = [];
@@ -316,12 +354,25 @@ function analyzeSection(song, sec, key) {
   const coreSegs = segments.map((sg) => sg.reduce((a, it) => { if (!a.length || a[a.length - 1].core !== it.core) a.push(it); return a; }, []));
   const nonNc = items.filter((x) => !x.nc && !x.unknown);
   return {
-    items, segments, coreSegs, unknown,
+    items, segments, coreSegs, unknown, hasDur, durRuns: hasDur ? durRuns : null,
     first: nonNc[0] || null, last: nonNc[nonNc.length - 1] || null,
     startsNc: !!items[0] && !!items[0].nc, endsNc: !!items[items.length - 1] && !!items[items.length - 1].nc,
     loop: key ? detectLoop(chordSeq.filter((x) => !x.nc)) : null,
   };
 }
+function sectionHasBars(sec) {
+  return Array.isArray(sec.bars) && sec.bars.length === sec.chords.length && sec.bars.every((b) => typeof b === 'number' && b > 0);
+}
+// süre sınıfları (ölçü): 0.5, 1, 2, 4, 8+ — log ölçekte en yakın sınıf
+const DUR_BINS = [0.5, 1, 2, 4, 8];
+function durBin(d) {
+  if (!(d > 0)) return 0.5;
+  if (d >= 4 * Math.SQRT2) return 8;
+  const e = Math.round(Math.log2(d));
+  return Math.pow(2, Math.max(-1, Math.min(2, e)));
+}
+const durLabel = (b) => (b === 8 ? '8+' : String(b));
+const fmtDur = (d) => String(Math.round(d * 100) / 100);
 // Tekrar eden döngü: en kısa periyot p (≥2) ile dizinin tamamı kendini tekrarlıyorsa
 function detectLoop(seq) {
   const n = seq.length;
@@ -361,7 +412,8 @@ function comparePreview(song, sec, key) {
 // ---------------------------------------------------------------- istatistik
 const ALL = '*';
 function emptyBucket() {
-  return { songs: new Set(), degrees: new Map(), colors: new Map(), trans: new Map(), trans2: new Map(), ctx1: new Map(), ctx2: new Map(), open: new Map(), close: new Map(), qual: new Map() };
+  return { songs: new Set(), degrees: new Map(), colors: new Map(), trans: new Map(), trans2: new Map(), ctx1: new Map(), ctx2: new Map(), open: new Map(), close: new Map(), qual: new Map(),
+    dur: new Map(), rate: new Map(), durSongs: new Set() };
 }
 // map: key → { songs:Set, occ, refs:[{song, section}] }
 function bump(map, key, songId, secName, occ = 1) {
@@ -408,6 +460,12 @@ function buildStats(dataset) {
               bump(b.ctx2, `${cs[i - 2].core}>${cs[i - 1].core}`, song.id, nm);
             }
           }
+        }
+        if (a.an.hasDur) {
+          b.durSongs.add(song.id);
+          let total = 0, n = 0;
+          for (const run of a.an.durRuns) for (const r of run) { bump(b.dur, durBin(r.dur), song.id, nm); total += r.dur; n++; }
+          if (n) bump(b.rate, durBin(total / n), song.id, nm); // bu bölümde kaç ölçüde bir akor değişiyor
         }
         if (a.an.first) bump(b.open, a.an.first.core, song.id, nm);
         if (a.an.last) bump(b.close, a.an.last.core, song.id, nm);
@@ -561,7 +619,17 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const ep = pool[kind].get(key);
     return { mode: e ? [...e.songs] : [], pool: ep ? [...ep.songs] : [], refs: (e || ep || { refs: [] }).refs };
   }
-  return { settings: o, stats, vocab, next, open: (m) => edge(m, 'open'), close: (m) => edge(m, 'close'), color, nMode, songsFor, feedback: fb, diatonic: diatonicCores };
+  // P(süre sınıfı | mod): süre verisi olan şarkılardan, aynı havuzlama + yumuşatma
+  function dur(mode) {
+    const ck = `${mode}|dur`;
+    if (cache.has(ck)) return cache.get(ck);
+    const all = new Set(DUR_BINS);
+    const d = pooled(smooth((b) => nSongs(B(mode).dur.get(b)), DUR_BINS, all), smooth((b) => nSongs(pool.dur.get(b)), DUR_BINS, all), B(mode).durSongs.size);
+    cache.set(ck, d);
+    return d;
+  }
+  const durSongs = (m) => B(m).durSongs.size;
+  return { settings: o, stats, vocab, next, open: (m) => edge(m, 'open'), close: (m) => edge(m, 'close'), color, dur, durSongs, nMode, songsFor, feedback: fb, diatonic: diatonicCores };
 }
 
 // ---------------------------------------------------------------- k ve α önerisi: şarkı bazlı çapraz doğrulama
@@ -646,19 +714,86 @@ function makeStyleScorer(model, opts = {}) {
 }
 
 // ---------------------------------------------------------------- PROGRESYON ÖNERİCİ
-const PROG_DEFAULTS = { length: 4, loop: true, ending: 'home', temperature: 0, count: 5, seed: 1 };
+// changes: akor (değişim) sayısı — 1 = tek akorda kalma / drone; bars: toplam uzunluk (ölçü)
+const PROG_DEFAULTS = { changes: 3, bars: 8, loop: true, ending: 'home', temperature: 0, count: 5, seed: 1 };
 const progKey = (mode, cores, loop) => `${mode}|${cores.join(',')}|${loop ? 'L' : ''}`;
+// Değişim sürelerini süre dağılımından seçip toplamı tam olarak `bars`a oturtur (yarım ölçü adımlı DP).
+// Her sınıfın olasılığı kanonik değerine (0.5, 1, 2, 4, 8) gider; ara değerler (1.5, 3…) küçük pay alır,
+// böylece her toplam uzunluk tutturulabilir. Sıcaklık 0 → en olası; > 0 → örnekleme.
+function fitDurations(model, mode, n, bars, temperature = 0, rng = Math.random) {
+  const U = Math.round(bars * 2);
+  if (n < 1 || n > U) return null;
+  const pb = model.dur(mode);
+  const maxU = U - (n - 1);
+  const cnt = new Map();
+  for (let u = 1; u <= maxU; u++) { const b = durBin(u / 2); cnt.set(b, (cnt.get(b) || 0) + 1); }
+  const pd = new Float64Array(maxU + 1);
+  for (let u = 1; u <= maxU; u++) {
+    const d = u / 2, b = durBin(d), c = cnt.get(b), canon = d === b;
+    // kanonik değer sınıf olasılığının %90'ını, ara değerler kalan %10'u paylaşır (tüm sınıflarda aynı oran)
+    const hasCanon = b * 2 <= maxU;
+    const share = canon ? 0.9 : 0.1 / (hasCanon ? c - 1 : c);
+    pd[u] = (pb.get(b) || 0) * share;
+  }
+  const T = temperature;
+  const w = (u) => (T ? Math.pow(pd[u], 1 / T) : pd[u]);
+  // f[i][s]: ilk i akor s yarım ölçü → T=0'da en iyi log olasılık, T>0'da ağırlık toplamı
+  const f = Array.from({ length: n + 1 }, () => new Float64Array(U + 1).fill(T ? 0 : -Infinity));
+  f[0][0] = T ? 1 : 0;
+  for (let i = 1; i <= n; i++) for (let sum = i; sum <= U; sum++) {
+    let acc = T ? 0 : -Infinity;
+    for (let u = 1; u <= Math.min(maxU, sum); u++) {
+      if (!(pd[u] > 0)) continue;
+      if (T) acc += f[i - 1][sum - u] * w(u);
+      else acc = Math.max(acc, f[i - 1][sum - u] + Math.log(pd[u]));
+    }
+    f[i][sum] = acc;
+  }
+  if (T ? !(f[n][U] > 0) : f[n][U] === -Infinity) return null;
+  const durs = new Array(n);
+  let sum = U;
+  for (let i = n; i >= 1; i--) {
+    let pick = -1;
+    if (T) {
+      let r = rng() * f[i][sum];
+      for (let u = 1; u <= Math.min(maxU, sum); u++) { if (!(pd[u] > 0)) continue; r -= f[i - 1][sum - u] * w(u); if (r <= 0) { pick = u; break; } }
+      if (pick < 0) for (let u = Math.min(maxU, sum); u >= 1; u--) if (pd[u] > 0 && f[i - 1][sum - u] > 0) { pick = u; break; }
+    } else {
+      let best = -Infinity;
+      for (let u = 1; u <= Math.min(maxU, sum); u++) {
+        if (!(pd[u] > 0)) continue;
+        const v = f[i - 1][sum - u] + Math.log(pd[u]);
+        // eşitlikte kalan uzunluğun eşit bölüşümüne en yakın süre (veri yokken 2-2-2-2 gibi)
+        if (v > best + 1e-9 || (Math.abs(v - best) <= 1e-9 && Math.abs(u - sum / i) < Math.abs(pick - sum / i))) { best = Math.max(best, v); pick = u; }
+      }
+    }
+    durs[i - 1] = pick / 2;
+    sum -= pick;
+  }
+  const logP = durs.reduce((a, d) => a + Math.log(pd[d * 2]), 0);
+  return { durs, logP };
+}
+function progDisplay(labels, durs) { return labels.map((l, i) => `${l} (${fmtDur(durs[i])})`).join(' → '); }
 function suggestProgressions(model, opts) {
   const o = Object.assign({}, PROG_DEFAULTS, opts);
   const { tonic, mode } = o;
-  const L = o.length;
+  const N = Math.max(1, Math.round(o.changes));
   const home = homeCore(mode);
-  const V = model.vocab(mode);
   const warnings = [];
   const n = model.nMode(mode), nAll = model.stats.byMode.get(ALL).songs.size;
   if (n < model.settings.lowDataSongs) warnings.push(`Az veri: ${modeName(mode)} modunda ${n} şarkı var (${model.settings.lowDataSongs}'den az). Öneriler havuzdan (${nAll} şarkı) ve yumuşatmadan (α=${model.settings.alpha}) besleniyor.`);
-  const rng = mulberry32(o.seed * 7919 + L);
+  const nd = model.durSongs(mode), ndAll = model.durSongs(ALL);
+  if (!ndAll) warnings.push(`Süre verisi yok: süreler tekdüze dağılımdan seçilip ${fmtDur(o.bars)} ölçüye oturtuldu.`);
+  else if (nd < model.settings.lowDataSongs) warnings.push(`Süre verisi az: bu modda ${nd}, havuzda ${ndAll} şarkıda akor süresi var.`);
+  if (N > Math.round(o.bars * 2)) {
+    warnings.push(`${N} akor ${fmtDur(o.bars)} ölçüye sığmaz (en kısa süre yarım ölçü).`);
+    return { items: [], warnings, home, n, nAll, nd, ndAll };
+  }
+  if (N === 1) warnings.push('Tek akor: ev akorunda kalan drone önerisi.');
+  const rng = mulberry32(o.seed * 7919 + N);
   const lp = (d, b) => Math.log(Math.max(1e-9, d.get(b) || 0));
+  // Model akor DEĞİŞİMLERİNİ üretir (bir core'dan kendisine geçiş yok); kalma süresi ayrı modellenir.
+  // Döngüde son akor ilk akorla aynıysa sınırda değişim yoktur (süreler birleşir), geçiş puanı eklenmez.
   function scoreSeq(seq) {
     let s = lp(model.open(mode), seq[0]);
     const steps = [];
@@ -666,18 +801,16 @@ function suggestProgressions(model, opts) {
       const d = model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null);
       s += lp(d, seq[i]); steps.push({ a: seq[i - 1], b: seq[i], p: d.get(seq[i]) || 0 });
     }
-    if (o.loop) {
-      const d = model.next(mode, seq[L - 1], L >= 2 ? seq[L - 2] : null);
-      s += lp(d, seq[0]); steps.push({ a: seq[L - 1], b: seq[0], p: d.get(seq[0]) || 0, loop: true });
+    if (o.loop && seq.length > 1 && seq[N - 1] !== seq[0]) {
+      const d = model.next(mode, seq[N - 1], N >= 2 ? seq[N - 2] : null);
+      s += lp(d, seq[0]); steps.push({ a: seq[N - 1], b: seq[0], p: d.get(seq[0]) || 0, loop: true });
     }
-    if (o.ending === 'data') s += lp(model.close(mode), seq[L - 1]);
+    if (o.ending === 'data') s += lp(model.close(mode), seq[N - 1]);
     return { logP: s, steps };
   }
   const banned = model.feedback.banned;
   const valid = (seq) => {
-    if (!seq.includes(home)) return false;
-    for (let i = 1; i < seq.length; i++) if (seq[i] === seq[i - 1]) return false;
-    if (o.loop && seq.length > 1 && seq[seq.length - 1] === seq[0]) return false;
+    if (!seq.includes(home)) return false; // ev akoru en az bir kez
     if (o.ending === 'home' && seq[seq.length - 1] !== home) return false;
     if (o.ending === 'open' && seq[seq.length - 1] === home) return false;
     if (banned.has(progKey(mode, seq, o.loop))) return false;
@@ -685,33 +818,32 @@ function suggestProgressions(model, opts) {
   };
   const found = new Map();
   if (!o.temperature) {
-    // ışın araması (sıcaklık 0 = hep en olası)
     let beam = [...model.open(mode)].map(([b, p]) => ({ seq: [b], s: Math.log(p) }));
-    for (let i = 1; i < L; i++) {
+    for (let i = 1; i < N; i++) {
       const nx = [];
-      for (const it of beam) for (const [b, p] of model.next(mode, it.seq[i - 1], i >= 2 ? it.seq[i - 2] : null)) if (b !== it.seq[i - 1]) nx.push({ seq: [...it.seq, b], s: it.s + Math.log(p) });
+      for (const it of beam) for (const [b, p] of model.next(mode, it.seq[i - 1], i >= 2 ? it.seq[i - 2] : null)) nx.push({ seq: [...it.seq, b], s: it.s + Math.log(p) });
       nx.sort((a, b) => b.s - a.s);
       beam = nx.slice(0, 400);
     }
     for (const it of beam) if (valid(it.seq)) { const k = it.seq.join(','); if (!found.has(k)) found.set(k, it.seq); }
   } else {
     const T = o.temperature;
-    const sample = (d, exclude) => {
-      const arr = [...d].filter(([b]) => b !== exclude).map(([b, p]) => [b, Math.pow(p, 1 / T)]);
-      const sum = arr.reduce((a, x) => a + x[1], 0);
-      let r = rng() * sum;
+    const sample = (d) => {
+      const arr = [...d].map(([b, p]) => [b, Math.pow(p, 1 / T)]);
+      let r = rng() * arr.reduce((a, x) => a + x[1], 0);
       for (const [b, w] of arr) { r -= w; if (r <= 0) return b; }
       return arr[arr.length - 1][0];
     };
     for (let tries = 0; tries < 3000 && found.size < o.count * 4; tries++) {
-      const seq = [sample(model.open(mode), null)];
-      for (let i = 1; i < L; i++) seq.push(sample(model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null), seq[i - 1]));
+      const seq = [sample(model.open(mode))];
+      for (let i = 1; i < N; i++) seq.push(sample(model.next(mode, seq[i - 1], i >= 2 ? seq[i - 2] : null)));
       if (valid(seq)) { const k = seq.join(','); if (!found.has(k)) found.set(k, seq); }
     }
   }
   const flats = keyUsesFlats(tonic, mode);
   const items = [...found.values()].map((seq) => {
     const sc = scoreSeq(seq);
+    const fit = fitDurations(model, mode, N, o.bars, o.temperature, rng);
     const colors = seq.map((c) => {
       const d = model.color(mode, c);
       if (!o.temperature) return argmaxKey(d);
@@ -723,15 +855,16 @@ function suggestProgressions(model, opts) {
     const chords = seq.map((c, i) => coreToChord(c, colors[i], tonic));
     const rare = sc.steps.slice().sort((a, b) => a.p - b.p)[0] || null;
     const rarest = rare ? Object.assign({}, rare, model.songsFor(mode, `${rare.a}>${rare.b}`)) : null;
+    const symbols = chords.map((c) => C.chordName(c, flats));
+    const degrees = seq.map((c, i) => degreeLabel(c, colors[i], mode));
     return {
-      cores: seq, colors, chords, key: progKey(mode, seq, o.loop),
-      symbols: chords.map((c) => C.chordName(c, flats)),
-      degrees: seq.map((c, i) => degreeLabel(c, colors[i], mode)),
-      logP: sc.logP, prob: Math.exp(sc.logP), steps: sc.steps, rarest,
+      cores: seq, colors, chords, key: progKey(mode, seq, o.loop), durations: fit.durs,
+      symbols, degrees, display: progDisplay(degrees, fit.durs), displaySymbols: progDisplay(symbols, fit.durs),
+      logPHarm: sc.logP, logPDur: fit.logP, logP: sc.logP + fit.logP, prob: Math.exp(sc.logP + fit.logP), steps: sc.steps, rarest,
     };
   }).sort((a, b) => b.logP - a.logP).slice(0, o.count);
-  if (!items.length) warnings.push('Kurallara uyan progresyon bulunamadı (uzunluk/kapanış/beğenilmeyenler).');
-  return { items, warnings, home, n, nAll };
+  if (!items.length) warnings.push('Kurallara uyan progresyon bulunamadı (kapanış tipi / beğenilmeyenler).');
+  return { items, warnings, home, n, nAll, nd, ndAll };
 }
 // İki bölüm arası: "verse modu → nakarat modu" için modal kayma istatistiğinden geçiş akoru
 function suggestSectionTransition(model, from, to, top = 3) {
@@ -776,6 +909,7 @@ root.Style = {
   buildStats, modeSongCounts, nSongs, ALL, confirmedKey,
   MODEL_DEFAULTS, PROG_DEFAULTS, buildModel, diatonicCores, modeColors, homeCore, suggestKAlpha, songTransitions,
   chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,
+  fitDurations, progDisplay, durBin, durLabel, fmtDur, DUR_BINS, sectionHasBars,
   newDataset, newFeedback, checkFile,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = root.Style;

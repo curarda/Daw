@@ -29,28 +29,37 @@ window.__dawCal = () => Cal.last;
 window.__dawAPI = {
   S, C, status, esc, getCtx,
   refresh: () => refresh(),
-  preview: (chords, tonic, mode) => Player.previewChords(chords, tonic, mode),
+  preview: (chords, tonic, mode, durs) => Player.previewChords(chords, tonic, mode, durs),
   stop: () => Player.stop(),
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
-  placeChords(chords, startBar, key) {
-    const end = startBar + chords.length - 1;
-    const covering = S.proj.sections.filter((s) => !(end < s.startBar || startBar > s.endBar));
+  // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir; durs: ölçü cinsinden süreler
+  placeChords(chords, startBar, key, durs) {
+    const g = C.makeGrid(S.proj.settings);
+    let d = durs ? durs.slice() : chords.map(() => 1);
     let note = '';
+    if (!g.split && d.some((x) => x % 1)) { d = d.map((x) => Math.max(1, Math.round(x))); note += ' Bu ölçüde yarım ölçü kilidi yok: süreler tam ölçüye yuvarlandı.'; }
+    // yarım ölçü hücreleri
+    const cells = [];
+    d.forEach((x, i) => { for (let k = 0; k < Math.round(x * 2); k++) cells.push(chords[i]); });
+    if (cells.length % 2) cells.push(cells[cells.length - 1]);
+    const nBars = cells.length / 2, end = startBar + nBars - 1;
+    const covering = S.proj.sections.filter((s) => !(end < s.startBar || startBar > s.endBar));
     if (!covering.length) {
       S.proj.sections.push({ id: uid(), name: 'Öneri', startBar, endBar: end, tonic: key.tonic, mode: key.mode });
       S.proj.sections.sort((a, b) => a.startBar - b.startBar);
-      note = ` "Öneri" bölümü (${C.keyName(key.tonic, key.mode)}) oluşturuldu.`;
+      note = ` "Öneri" bölümü (${C.keyName(key.tonic, key.mode)}) oluşturuldu.` + note;
     } else if (covering.some((s) => s.startBar > startBar || s.endBar < end)) {
       status(`Ölçü ${startBar}–${end} birden fazla bölüme ya da bölüm dışına taşıyor; tek bir bölümün içine yerleştirin.`, 'err');
       return false;
     }
-    chords.forEach((ch, i) => {
-      const bar = startBar + i;
+    for (let i = 0; i < nBars; i++) {
+      const bar = startBar + i, h0 = cells[2 * i], h1 = cells[2 * i + 1];
       S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar !== bar);
-      S.proj.chordLocks.push({ bar, half: null, chord: { root: ch.root, q: ch.q, bass: null } });
-    });
+      const lk = (ch, half) => S.proj.chordLocks.push({ bar, half, chord: { root: ch.root, q: ch.q, bass: null } });
+      if (C.sameChord(h0, h1) || !g.split) lk(h0, null); else { lk(h0, 0); lk(h1, 1); }
+    }
     refresh();
-    status(`${chords.length} akor ölçü ${startBar}–${end} arasına kilitli şablon olarak yerleştirildi.${note}`);
+    status(`${chords.length} akor ölçü ${startBar}–${end} arasına kilitli şablon olarak yerleştirildi (${d.join(' + ')} ölçü).${note}`);
     return true;
   },
 };
@@ -283,13 +292,14 @@ const Player = {
     };
     this.raf = requestAnimationFrame(loop);
   },
-  // melodisiz akor önizleme (progresyon önericisi): 1 akor = 1 ölçü, DAW temposunda
-  async previewChords(chords, tonic, mode) {
+  // melodisiz akor önizleme (progresyon önericisi): süreler ölçü cinsinden (yoksa akor başına 1 ölçü), DAW temposunda
+  async previewChords(chords, tonic, mode, durs) {
     try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
     this.stop(true);
     const g = C.makeGrid(S.proj.settings);
     const sec = { id: 'preview', tonic, mode };
-    const slots = chords.map((ch, i) => ({ chord: ch, section: 'preview', q0: i * g.barQ, q1: (i + 1) * g.barQ }));
+    let at = 0;
+    const slots = chords.map((ch, i) => { const d = durs ? durs[i] : 1; const sl = { chord: ch, section: 'preview', q0: at * g.barQ, q1: (at + d) * g.barQ }; at += d; return sl; });
     C.voiceChords(slots, [], [sec]);
     const T = this.transport();
     T.cancel(0);
@@ -299,8 +309,8 @@ const Player = {
     }
     T.start(Tone.now() + 0.1, 0);
     clearTimeout(this.previewTimer);
-    this.previewTimer = setTimeout(() => { T.stop(); T.cancel(0); }, (chords.length * g.barSec + 2) * 1000);
-    status(`Önizleme: ${chords.map((c) => C.chordName(c)).join(' – ')} (${S.proj.settings.bpm} BPM, akor başına 1 ölçü)`);
+    this.previewTimer = setTimeout(() => { T.stop(); T.cancel(0); }, (at * g.barSec + 2) * 1000);
+    status(`Önizleme: ${chords.map((c, i) => `${C.chordName(c)} (${durs ? durs[i] : 1})`).join(' → ')} · ${S.proj.settings.bpm} BPM`);
   },
   stop(silent) {
     if (!this.ready) return;

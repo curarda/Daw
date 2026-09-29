@@ -191,3 +191,8 @@ td.clk:hover { outline: 2px solid var(--accent); outline-offset: -2px; }
 .st-prog.liked { border-color: var(--ok); } .st-prog.disliked { opacity: 0.55; }
 .st-prog .syms { font-size: 16px; font-weight: 600; }
 .st-store { border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; background: var(--panel); }
+.st-prog .degs { font-size: 13px; margin: 2px 0; }
+.st-prog .durs label.dur { display: inline-flex; gap: 4px; align-items: center; color: var(--text); font-size: 12px; margin-right: 6px; }
+.st-prog .durs input { width: 58px; }
+td.durbar { width: 120px; }
+td.durbar i { display: block; height: 8px; border-radius: 0 4px 4px 0; background: #3987e5; }

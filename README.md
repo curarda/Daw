@@ -36,6 +36,7 @@ Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kil
       "chords": ["C#m", "D", "C#m", "D"],
       "key_proposals": [{ "tonic": "C#", "mode": "phrygian", "confidence": 0.8, "reason": "…" }],
       "degrees_preview": ["i", "♭II", "i", "♭II"],
+      "bars": [2, 2, 2, 2],
       "warnings": []
     }
   ],
@@ -45,7 +46,8 @@ Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kil
 
 - Birden çok şarkı için `{"schema_version": 1, "songs": [ … ]}` de kabul edilir. `key_proposals[].key: "C# phrygian"` biçimi de geçerlidir.
 - Şema hatası olursa içe aktarım durur ve bozuk alanlar yol ile listelenir (ör. `sections[0].key_proposals[0].mode: tanınmayan mod "phrigian"`).
-- Yedek giriş olarak düz metin kabul edilir: `Sanatçı:` / `Şarkı:` satırları ve `[Verse: C# phrygian] C#m D …`. DAW'ın dışa aktardığı akor şeması da okunur.
+- `bars` isteğe bağlıdır: her akorun süresi ölçü cinsinden, `chords` ile aynı uzunlukta (yarım ölçü = 0.5). `bars` olmayan bölüm süre istatistiğine girmez ama değişim istatistiğine girer.
+- Yedek giriş olarak düz metin kabul edilir: `Sanatçı:` / `Şarkı:` satırları ve `[Verse: C# phrygian] C#m D …`. Süre iki yolla verilebilir: `C#m:4 D:2` ya da ölçü çizgileriyle `| C#m | D C#m |` (her hücre 1 ölçü, içindeki akorlara eşit bölünür). DAW'ın dışa aktardığı akor şeması da okunur.
 - Aynı sanatçı + şarkı ikinci kez gelirse uyarı çıkar (üzerine yaz / vazgeç). Tanınamayan akor sembolleri listelenir. Kullanıcı düzeltene kadar o bölüm onaylanamaz.
 
 **Onay.** İlk ton önerisi ön-seçili gelir ama onaysızdır. Onaylanmamış bölüm istatistiğe girmez. Uygulama dereceleri seçilen merkez + moda göre kendisi hesaplar ve `degrees_preview` ile karşılaştırır; uyuşmayanlar kırmızı gösterilir. Önizlemenin ait olduğu tondan farklı bir ton seçilirse önizleme geçersiz sayılır ve uyarı çıkmaz.
@@ -64,12 +66,18 @@ Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kil
 
 **Sayma.** Temel birim şarkıdır: her derece, geçiş, açılış ve kapanış bir şarkıda en fazla 1 kez sayılır. Toplam tekrar sayısı yalnızca bilgi olarak gösterilir. İstatistik mod bazında ve tüm modların havuzu olarak ayrı tutulur. 20 şarkıdan az olan modlarda "az veri", 3 şarkıdan az görülen geçişlerde "belirsiz" işareti çıkar. Hücreye tıklayınca verinin hangi şarkılardan geldiği listelenir.
 
+**Harmonik ritim.** Akor süresi, bir core'da kalma süresidir: C → Cmaj7 tek akor sayılır, süreleri toplanır; N.C. süresi sayılmaz. Süreler 0.5 / 1 / 2 / 4 / 8+ ölçü sınıflarına log ölçekte en yakın sınıfa göre konur (1.5 → 2, 3 → 4, 6 ve üstü → 8+).
+- Dağılım mod bazında ve havuz olarak tutulur; şarkı başına sayma kuralı aynen geçerlidir.
+- Ayrıca bölüm başına "kaç ölçüde bir akor değişiyor" dağılımı tutulur (bölüm uzunluğu ÷ akor sayısı).
+- Panelde süre bilgisi olan şarkı sayısı görünür.
+
 **Model.**
 - Birinci derece Markov: P(core | önceki core, mod).
 - İkinci derece yalnızca bağlam en az 5 şarkıda görüldüyse kullanılır; görülmediyse birinci dereceye geri dönülür (backoff).
 - Kısmi havuzlama: `P = (n_mod·P_mod + k·P_havuz)/(n_mod + k)`, varsayılan k = 10.
 - Moda uygun ama hiç görülmemiş her geçişe α = 0.5 şarkı eklenir.
 - Renk ayrı bir dağılım: P(color | core, mod), aynı havuzlama ve yumuşatmayla.
+- Süre de ayrı bir dağılım: P(süre sınıfı | mod), aynı havuzlama ve yumuşatmayla. Havuzlamadaki n, o modda süre bilgisi olan şarkı sayısıdır.
 - "k ve α öner" düğmesi, bir-şarkı-dışarıda çapraz doğrulamayla log-olabilirliği en yüksek (k, α) çiftini bulur.
 
 **Geri bildirim.** Beğen / beğenme şarkı verisinden ayrı bir katmanda tutulur. Her tıklama ilgili geçişi ×1.25 ya da ×0.8 ile çarpar; toplam çarpan 0.5 ile 2 arasında sınırlıdır. Beğenilmeyen progresyon bir daha önerilmez. Katman kapatılabilir ve sıfırlanabilir.
@@ -81,10 +89,14 @@ Orijinal kayıt hiçbir aşamada değiştirilmez: düzeltmeler, etiketler ve kil
 - Aday tablosu puanı melodi payı ve stil payı olarak ayrı gösterir.
 
 **Progresyon önerici.**
-- Girdiler: merkez + mod, uzunluk 2/4/8, döngü, kapanış tipi, sıcaklık, öneri sayısı.
+- Girdiler: merkez + mod, değişim sayısı (1 = tek akorda kalma / drone), toplam uzunluk (ölçü), döngü, kapanış tipi, sıcaklık, öneri sayısı.
+- Model akor değişimlerini üretir (bir core'dan kendisine geçiş yoktur); bir akorda kalmak ayrı modellenen bir süre kararıdır. Bu yüzden "aynı akor art arda gelmesin" diye bir kural yok. Döngüde son akor ilk akorla aynıysa sınırda değişim sayılmaz, süreler birleşir.
 - Açılış dağılımından başlar; sıcaklık 0'da ışın araması, üstünde örnekleme yapar.
+- Değişimlerin süreleri süre dağılımından seçilir ve toplam, istenen uzunluğa tam oturtulur (yarım ölçü adımlı dinamik programlama). Sınıf olasılığının %90'ı kanonik değere (0.5, 1, 2, 4, 8), %10'u ara değerlere gider; böylece her uzunluk tutturulabilir. Eşit olasılıkta eşit bölüşüm seçilir, yani süre verisi yokken 4 akor / 8 ölçü → 2-2-2-2. Süreler öneride elle değiştirilebilir.
+- Değişim sayısı 1 seçilirse ev akorunda kalan drone geçerli bir çıktıdır.
+- Gösterim süreleri de yazar, ör. `i (4) → ♭II (2) → i (2)`. Toplam olasılık = değişim olasılığı × süre olasılığı.
 - Her önerinin yanında toplam olasılık, en nadir geçiş (sürpriz noktası) ve bu geçişin görüldüğü şarkılar yazar.
-- Öneri piyanoyla çalınabilir ya da zaman çizelgesine kilitli akor şablonu olarak yerleştirilebilir.
+- Öneri, süreleriyle birlikte piyanoyla çalınabilir ya da zaman çizelgesine kilitli akor şablonu olarak yerleştirilebilir. Yarım ölçülük süreler yarım ölçü kilidine dönüşür; 3/4'te süreler tam ölçüye yuvarlanır.
 - İki bölüm arası geçiş önerisi, modal kayma istatistiğinden gelir.
 
 **Saklama.** Veri seti, model ayarları ve geri bildirim ayrı JSON dosyaları olarak dışa ve içe aktarılır. Ayrıca tarayıcıda (localStorage) otomatik saklanır.
