@@ -168,7 +168,7 @@ try {
     assert.ok(rows >= 3);
     const insp = await page.textContent('#inspector');
     assert.match(insp, /kök/);
-    await page.locator('#inspector tbody tr').nth(1).locator('button').click();
+    await page.locator('#inspector tbody tr').nth(1).locator('button[data-act=pickChord]').click();
     const lk = await S(() => window.__daw.proj.chordLocks.length);
     assert.equal(lk, 1);
     await page.fill('#chInput', 'F#m7/A');
@@ -402,6 +402,48 @@ try {
     assert.deepEqual(await rm(), ['✕ Bölümü sil']);
     assert.equal(await S(() => window.__daw.proj.chordLocks.length), 0);
     return 'nota: etiket / kilit / hepsi · akor: kilidi kaldır · bölüm: sil / kilitleri kaldır';
+  });
+
+  await step('Akora tıklayınca duyulur; adaylar ▶ ile kilitlemeden dinlenir; kilit ✕ / Delete / "Tüm kilitleri kaldır" ile kalkar', async () => {
+    const tl = await page.locator('#tl').boundingBox();
+    const cy = tl.y + 22 + 26 + 18;
+    const geo = (bar) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === ${bar}); const px = window.__daw.view.pxPerQ; return { mid: 46 + ((s.q0 + s.q1) / 2) * px - sc.scrollLeft, right: 46 + s.q1 * px - sc.scrollLeft }; })()`);
+    const locks = () => S(() => window.__daw.proj.chordLocks.length);
+    // tıkla → çalar (durum satırı "▶ akor"), kilit yok
+    let g2 = await geo(2);
+    await page.mouse.click(tl.x + g2.mid, cy);
+    await waitStatus(/^▶ /);
+    const heard = await page.textContent('#status');
+    assert.equal(await locks(), 0);
+    // aday ▶: çalar, kilitlemez
+    await page.locator('#inspector button[data-act=hearChord][data-r]').nth(1).click();
+    await page.waitForFunction((h) => document.querySelector('#status').textContent !== h, heard);
+    assert.match(await page.textContent('#status'), /^▶ /);
+    assert.equal(await locks(), 0);
+    // kilitle → ✕ ile kaldır
+    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    assert.equal(await locks(), 1);
+    g2 = await geo(2);
+    if (shotDir) await page.screenshot({ path: path.join(shotDir, 'chord-lock-x.png'), clip: { x: tl.x, y: tl.y, width: 700, height: 90 } });
+    await page.mouse.click(tl.x + g2.right - 10, cy - 4);
+    assert.equal(await locks(), 0);
+    assert.match(await page.textContent('#status'), /kilit kaldırıldı/);
+    // kilitle → seçiliyken Delete
+    await page.mouse.click(tl.x + g2.mid, cy);
+    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    assert.equal(await locks(), 1);
+    await page.keyboard.press('Delete');
+    assert.equal(await locks(), 0);
+    // iki kilit → "Tüm akor kilitlerini kaldır (2)"
+    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    const g3 = await geo(3);
+    await page.mouse.click(tl.x + g3.mid, cy);
+    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    assert.match(await page.textContent('#btnUnlockAll'), /\(2\)/);
+    await page.click('#btnUnlockAll');
+    assert.equal(await locks(), 0);
+    assert.ok(await page.isDisabled('#btnUnlockAll'));
+    return `tıkla → "${heard}" · aday ▶ kilitlemedi · ✕, Delete ve "Tüm akor kilitlerini kaldır (2)" çalıştı`;
   });
 
   assert.deepEqual(errors, [], 'tarayıcı hataları');
