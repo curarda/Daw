@@ -970,7 +970,7 @@ function renderNoteInspector(box, n) {
   else soundDesc = S.proj.autotune.enabled ? 'Düzeltme yok' : 'Düzeltme yok (autotune kapalı)';
   box.innerHTML = `<h3>Nota ${esc(nn(n.effMidi))}${n.label != null ? ' <span class="tag warn">etiket</span>' : ''}${n.locked ? ' <span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : ''}</h3>
     <div class="kv">
-      <span>Algılanan</span><span>${esc(nn(n.nearest))} ${n.cents > 0 ? '+' : ''}${n.cents} cent (medyan MIDI ${n.median.toFixed(2)})</span>
+      <span>Algılanan</span><span>${esc(nn(n.nearest))} ${n.cents > 0 ? '+' : ''}${n.cents} cent <span class="hint">(kişisel akort referansına göre${n.refCents ? `; referans ${n.refCents >= 0 ? '+' : ''}${n.refCents.toFixed(0)}c` : ''} · A4=440'a göre ${esc(nn(n.absNearest))} ${n.absCents > 0 ? '+' : ''}${n.absCents}c · medyan MIDI ${n.median.toFixed(2)})</span></span>
       <span>Konum</span><span>ölçü ${mp.bar + 1}, vuruş ${beat} · ${(n.tl1 - n.tl0).toFixed(2)} s (${((n.q1 - n.q0) / g.pulseQ).toFixed(2)} vuruş)</span>
       <span>Bölüm</span><span>${sec ? esc(sec.name) + (sec.tonic != null ? ' · ' + esc(C.keyName(sec.tonic, sec.mode)) : '') : '—'} · ${n.inScale ? 'scale içinde' : '<b style="color:var(--note-out)">scale dışı</b>'}</span>
       <span>Akor ağırlığı</span><span>×${n.cw}</span>
@@ -1075,7 +1075,8 @@ function renderChordInspector(box, slot) {
 function renderInfo() {
   const a = S.audio;
   $('#audioInfo').textContent = a ? `${a.name} · ${(a.data.length / a.sr).toFixed(1)} s · ${a.sr} Hz${S.proj.audio.source === 'record' ? ` · gecikme telafisi ${S.proj.settings.latencyMs} ms` : ''}` : 'Ses yok';
-  $('#pitchInfo').textContent = S.d && S.rawNotes ? `${S.d.notes.length} nota · ${S.d.notes.filter((n) => !n.inScale).length} scale dışı · ${S.d.notes.filter((n) => n.label != null).length} etiket · ${S.d.notes.filter((n) => n.manualTarget != null).length} manuel` : '';
+  const tu = S.d && S.d.tuning;
+  $('#pitchInfo').textContent = S.d && S.rawNotes ? `${tu && !tu.off ? `Akort referansı: A4 ≈ ${tu.a4.toFixed(1)} Hz (${tu.global >= 0 ? '+' : ''}${tu.global.toFixed(0)} cent), zamanla kayma ${tu.driftMin.toFixed(0)}…+${tu.driftMax.toFixed(0)} cent · ` : 'Akort referansı: A4 = 440 Hz · '}${S.d.notes.length} nota · ${S.d.notes.filter((n) => !n.inScale).length} scale dışı · ${S.d.notes.filter((n) => n.label != null).length} etiket · ${S.d.notes.filter((n) => n.manualTarget != null).length} manuel` : '';
   const at = S.proj.autotune;
   const nAuto = S.d ? S.d.notes.filter((n) => n.corr && n.corr.source === 'auto' && Math.abs(n.corr.applied) >= 1).length : 0;
   $('#renderInfo').textContent = !a ? '' : (at.enabled ? `Autotune açık · ${nAuto} nota kaydırıldı. ` : 'Autotune kapalı. ') + (renderReady() ? 'Düzeltilmiş iz güncel.' : 'Render bekliyor…');
@@ -1094,6 +1095,7 @@ function syncInputs() {
   if (p.audio.alignMode) $('#inAlign').value = p.audio.alignMode;
   $('#inFmin').value = p.pitch.fmin; $('#inFmax').value = p.pitch.fmax; $('#inSilence').value = p.pitch.silenceDb;
   $('#inMinNote').value = p.pitch.minNoteMs; $('#inChange').value = p.pitch.changeSemis;
+  $('#inTuning').value = p.pitch.tuning || 'auto'; $('#inTuneWin').value = p.pitch.tuningWindowSec ?? 8;
   $('#inAmount').value = p.autotune.amount; $('#outAmount').textContent = p.autotune.amount + '%';
   $('#inRetune').value = p.autotune.retuneMs; $('#outRetune').textContent = p.autotune.retuneMs + ' ms';
   $('#inKeepVib').checked = p.autotune.keepVibrato; $('#inSkipChrom').checked = p.autotune.skipChromatic;
@@ -1124,6 +1126,8 @@ $('#btnLatencyGuess').onclick = () => {
 const pitchInput = (id, key) => onNum(id, (v) => { S.proj.pitch[key] = v; });
 pitchInput('#inFmin', 'fmin'); pitchInput('#inFmax', 'fmax'); pitchInput('#inSilence', 'silenceDb'); pitchInput('#inMinNote', 'minNoteMs'); pitchInput('#inChange', 'changeSemis');
 $('#btnAnalyze').onclick = () => analyze();
+$('#inTuning').addEventListener('change', (e) => { S.proj.pitch.tuning = e.target.value; refresh(); });
+onNum('#inTuneWin', (v) => { S.proj.pitch.tuningWindowSec = Math.max(2, v); refresh(); });
 $('#inAmount').addEventListener('input', (e) => { S.proj.autotune.amount = +e.target.value; $('#outAmount').textContent = e.target.value + '%'; if (S.proj.autotune.enabled) refresh(); });
 $('#inRetune').addEventListener('input', (e) => { S.proj.autotune.retuneMs = +e.target.value; $('#outRetune').textContent = e.target.value + ' ms'; if (S.proj.autotune.enabled) refresh(); });
 $('#inKeepVib').addEventListener('change', (e) => { S.proj.autotune.keepVibrato = e.target.checked; if (S.proj.autotune.enabled) refresh(); });

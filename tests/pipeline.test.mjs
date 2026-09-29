@@ -280,6 +280,35 @@ await step('9) Dışa aktarım: MIDI, akor şeması, WAV, proje JSON', () => {
   return chart.replace(/\n/g, '\n    ');
 });
 
+await step('Kişisel akort referansı: genel sapma + kayma; yuvarlama referansa göre', async () => {
+  // Tüm kayıt 30 cent pes, sonuna doğru 20 cent yükseliyor (−30 → −10). Pes D: −40 daha.
+  const tv = Core.synthTestVocal(44100, { offsetCents: -30, driftCents: 20 });
+  const stv = { duration: tv.signal.length / tv.sr };
+  stv.track = await Core.detectPitch(tv.signal, tv.sr, proj.pitch);
+  stv.rawNotes = Core.segmentNotes(stv.track, proj.pitch);
+  const pA = JSON.parse(JSON.stringify(proj)); pA.autotune.enabled = false; pA.noteEdits = []; pA.chordLocks = [];
+  const auto = Core.derive(pA, stv);
+  pA.pitch.tuning = 'a440';
+  const a440 = Core.derive(pA, stv);
+  assert.equal(a440.notes[3].nearest, 61, 'A440 yuvarlaması pes D\'yi C# sanmalı (−67 cent)');
+  assert.equal(auto.notes[3].nearest, 62, 'kişisel referansla D');
+  assert.ok(Math.abs(auto.notes[3].cents + 40) <= 8, 'pes D referansa göre −40 cent: ' + auto.notes[3].cents);
+  const others = auto.notes.filter((_, i) => i !== 3).map((x) => Math.abs(x.cents));
+  assert.ok(Math.max(...others) <= 10, 'diğer notalar referansa göre tam tonunda: ' + Math.max(...others));
+  assert.ok(auto.tuning.global < -12 && auto.tuning.global > -28, 'genel sapma ' + auto.tuning.global);
+  assert.ok(auto.tuning.driftMax - auto.tuning.driftMin > 8, 'kayma yakalanmalı');
+  const names = (dd) => dd.chords.map((c) => Core.chordName(c.chord)).join(' ');
+  pA.pitch.tuning = 'auto';
+  const ref = Core.derive(Object.assign({}, pA, { pitch: Object.assign({}, pA.pitch) }), st);
+  assert.equal(names(auto), names(ref), 'kayık sesle akorlar tam tonundaki sesle aynı olmalı');
+  // autotune: kimlik referanstan, hedef standart akort (piyanoyla uyum): pes D +~67 cent çekilir
+  pA.autotune = Object.assign({}, pA.autotune, { enabled: true, target: 'semitone' });
+  const at = Core.derive(pA, stv);
+  assert.equal(at.notes[3].corr.target, 62);
+  assert.ok(at.notes[3].corr.applied > 55, 'uygulanan ' + at.notes[3].corr.applied);
+  return `A4 ≈ ${auto.tuning.a4.toFixed(1)} Hz (${auto.tuning.global.toFixed(0)} cent), kayma ${auto.tuning.driftMin.toFixed(0)}…+${auto.tuning.driftMax.toFixed(0)} cent · pes D: A440'a göre ${a440.notes[3].nearest === 61 ? 'C#4 (yanlış)' : '?'} ${a440.notes[3].cents}c, referansa göre D4 ${auto.notes[3].cents}c · akorlar: ${names(auto)}`;
+});
+
 await step('3/4 ve 6/8 ölçülerinde de akor/voicing üretilir', () => {
   const out = [];
   for (const meter of ['3/4', '6/8']) {

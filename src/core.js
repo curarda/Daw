@@ -288,7 +288,8 @@ async function detectPitch(signal, sr, opts = {}, onProgress) {
 }
 
 // ---------------------------------------------------------------- NOTA SEGMENTASYONU
-const SEG_DEFAULTS = { minNoteMs: 70, changeSemis: 0.5 };
+// tuning: 'auto' = kişisel akort referansı (genel sapma + zamanla kayma), 'a440' = sabit A4 = 440 Hz
+const SEG_DEFAULTS = { minNoteMs: 70, changeSemis: 0.5, tuning: 'auto', tuningWindowSec: 8 };
 function segmentNotes(track, opts = {}) {
   const o = Object.assign({}, SEG_DEFAULTS, opts);
   const hop = track.hopSec, n = track.f0.length;
@@ -398,6 +399,41 @@ function segmentNotes(track, opts = {}) {
       median: nt.median, nearest, cents: Math.round((nt.median - nearest) * 100),
     };
   });
+}
+
+// ---------------------------------------------------------------- KİŞİSEL AKORT REFERANSI
+// Eşliksiz söyleyen biri çoğu zaman A4=440'a göre hafif kayık söyler ve zamanla kayar. Notanın kimliği
+// (hangi yarım ses) bu kişisel referansa göre yuvarlanır. Genel sapma: dairesel ortalama (±50 cent
+// sarmasına dayanıklı) + süre ağırlıklı medyan. Kayma: ±window saniyedeki notaların kayan medyanı.
+// Medyan olduğu için tek bir bilerek pes/tiz nota referansı sürüklemez.
+const wrap50 = (c) => ((((c + 50) % 100) + 100) % 100) - 50;
+function weightedMedian(vals, ws) {
+  const idx = vals.map((_, i) => i).sort((a, b) => vals[a] - vals[b]);
+  const tot = ws.reduce((a, b) => a + b, 0);
+  let acc = 0;
+  for (const i of idx) { acc += ws[i]; if (acc >= tot / 2) return vals[i]; }
+  return 0;
+}
+function tuningReference(notes, opts = {}) {
+  const win = opts.windowSec ?? 8, minN = opts.minNotes ?? 6;
+  const n = notes.length;
+  if (!n) return { global: 0, perNote: [], driftMin: 0, driftMax: 0 };
+  const d = notes.map((x) => (x.median - Math.round(x.median)) * 100);
+  const w = notes.map((x) => Math.max(0.05, x.t1 - x.t0));
+  let C = 0, S = 0;
+  d.forEach((v, i) => { C += w[i] * Math.cos((2 * Math.PI * v) / 100); S += w[i] * Math.sin((2 * Math.PI * v) / 100); });
+  const c0 = (Math.atan2(S, C) / (2 * Math.PI)) * 100;
+  const global = c0 + weightedMedian(d.map((v) => wrap50(v - c0)), w);
+  const t = notes.map((x) => 0.5 * (x.t0 + x.t1));
+  let local = notes.map((_, i) => {
+    const js = [];
+    for (let j = 0; j < n; j++) if (Math.abs(t[j] - t[i]) <= win) js.push(j);
+    if (js.length < minN) return 0;
+    return Math.max(-30, Math.min(30, weightedMedian(js.map((j) => wrap50(d[j] - global)), js.map((j) => w[j]))));
+  });
+  local = local.map((v, i) => (local[Math.max(0, i - 1)] + v + local[Math.min(n - 1, i + 1)]) / 3);
+  const perNote = local.map((v) => global + v);
+  return { global, perNote, driftMin: Math.min(...local), driftMax: Math.max(...local), a4: 440 * Math.pow(2, global / 1200) };
 }
 
 // ---------------------------------------------------------------- nota ağırlıkları
@@ -1250,7 +1286,9 @@ function synthTestVocal(sr = 44100, opts = {}) {
   let rnd = 12345;
   const rand = () => { rnd = (rnd * 1103515245 + 12345) & 0x7fffffff; return rnd / 0x7fffffff; };
   const ev = TEST_SCORE.map(([bar, beat, dur, midi, cents, legato]) => ({
-    t0: lead + ((bar - 1) * 4 + (beat - 1)) * spb, dur: dur * spb, m: midi + cents / 100, legato,
+    // isteğe bağlı: sabit akort sapması + zamanla doğrusal kayma (kişisel referans testleri için)
+    t0: lead + ((bar - 1) * 4 + (beat - 1)) * spb, dur: dur * spb, legato,
+    m: midi + cents / 100 + ((opts.offsetCents || 0) + (opts.driftCents || 0) * (((bar - 1) * 4 + (beat - 1)) / 32)) / 100,
   }));
   ev.forEach((e, i) => {
     const next = ev[i + 1];
@@ -1353,7 +1391,14 @@ function derive(proj, st) {
   sections.sort((a, b) => a.startBar - b.startBar);
   const secOfQ = (q) => { const bar = Math.floor(q / g.barQ + 1e-6) + 1; return sections.find((s) => bar >= s.startBar && bar <= s.endBar) || null; };
   // 3) notalar (zaman çizelgesi + düzenlemeler)
-  const notes = (st.rawNotes || []).map((r, i) => {
+  // kişisel akort referansı → notanın kimliği (yarım ses) bu referansa göre yuvarlanır
+  const tuning = proj.pitch.tuning === 'a440' || !(st.rawNotes || []).length
+    ? { global: 0, perNote: (st.rawNotes || []).map(() => 0), driftMin: 0, driftMax: 0, a4: 440, off: true }
+    : tuningReference(st.rawNotes, { windowSec: proj.pitch.tuningWindowSec });
+  const notes = (st.rawNotes || []).map((r0, i) => {
+    const ref = tuning.perNote[i] || 0;
+    const nearest = Math.round(r0.median - ref / 100);
+    const r = Object.assign({}, r0, { nearest, cents: Math.round((r0.median - ref / 100 - nearest) * 100), refCents: ref, absNearest: r0.nearest, absCents: r0.cents });
     const t0 = r.t0 - off, t1 = r.t1 - off;
     const n = Object.assign({}, r, { idx: i, id: 'n' + Math.round(r.t0 * 1000), tl0: t0, tl1: t1, q0: t0 / g.spq, q1: t1 / g.spq, detMidi: r.nearest });
     const ed = findEdit(proj.noteEdits, r);
@@ -1402,7 +1447,7 @@ function derive(proj, st) {
   const chords = buildChords(notes, sections, g, chordOpts, proj.chordLocks);
   // 8) voicing
   voiceChords(chords, notes, sections, { pedal: proj.mixer.pedal });
-  return { g, off, bars, sections, notes, keyInfo, correction, chords };
+  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning };
 }
 
 // Nota olayları (oynatma + MIDI)
@@ -1511,7 +1556,7 @@ const Core = {
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
-  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity,
+  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
