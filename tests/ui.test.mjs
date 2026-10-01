@@ -202,7 +202,7 @@ try {
     return `B3 etiketi → C#4, ses kaydırma değişmedi`;
   });
 
-  await step('5b) manuel ses düzeltme (sürükle) → kilitlenir, autotune dokunmaz', async () => {
+  await step('5b) notayı sürükle: taşı / Shift ince akort / Alt etiket; her biri geri alınır', async () => {
     await page.click('.seg input[value=sound] + span');
     const geo = await S(() => {
       const d = window.__daw.d, n = d.notes[0], sc = document.querySelector('#tlScroll');
@@ -219,16 +219,47 @@ try {
     await waitStatus(/Düzeltilmiş vokal hazır/);
     const r = await S(() => { const n = window.__daw.d.notes[0]; return { t: n.corr.target, src: n.corr.source, locked: n.locked, eff: n.effMidi, ap: n.corr.applied }; });
     assert.equal(r.t, 62); assert.equal(r.src, 'manual'); assert.ok(r.locked);
-    assert.equal(r.eff, 61, 'ses kaydırma akor bulucunun gördüğü notayı değiştirmemeli');
+    assert.equal(r.eff, 62, 'notayı taşı: kastedilen nota da D4 olur (akorlar onu kullanır)');
+    assert.match(await page.textContent('#inspector .rm-bar'), /Taşındı: C#4 → D4/);
+    assert.match(await page.textContent('#editSummary'), /Taşınan nota: 1/);
     // Shift ile cent hassasiyeti
     await page.keyboard.down('Shift');
     await page.keyboard.press('ArrowUp');
     await page.keyboard.up('Shift');
     const t2 = await S(() => window.__daw.d.notes[0].corr.target);
     assert.equal(t2, 62.05);
-    await page.click('#btnClearManual');
-    await page.click('.seg input[value=select] + span');
-    return `ses C#4 → D4 (+${Math.round(r.ap)}c), akor bulucu C#4 görmeye devam ediyor · Shift+↑ → +5c`;
+    // taşımayı geri al (panelin üstündeki ✕)
+    await page.click('#inspector .rm-bar button');
+    assert.deepEqual(await S(() => { const n = window.__daw.d.notes[0]; return [n.effMidi, n.manualTarget, n.locked]; }), [61, null, false]);
+    // hassasiyet: 3 satır sürükle → tam 3 yarım ses (ölçek sürüklerken donar)
+    let g0 = await noteGeo(0);
+    await page.mouse.move(box.x + g0.x, box.y + g0.y); await page.mouse.down();
+    await page.mouse.move(box.x + g0.x, box.y + g0.y - g0.rowH * 3, { steps: 8 }); await page.mouse.up();
+    assert.equal(await S(() => window.__daw.d.notes[0].effMidi), 64, '3 satır = 3 yarım ses');
+    await page.click('#editSummary button[data-clear=move]');
+    assert.equal(await S(() => window.__daw.d.notes[0].effMidi), 61);
+    // Shift+sürükle: ince akort — nota aynı, yalnızca cent
+    g0 = await noteGeo(0);
+    await page.mouse.move(box.x + g0.x, box.y + g0.y);
+    await page.keyboard.down('Shift'); await page.mouse.down();
+    await page.mouse.move(box.x + g0.x, box.y + g0.y - g0.rowH * 0.6, { steps: 5 });
+    await page.mouse.up(); await page.keyboard.up('Shift');
+    const fine = await S(() => { const n = window.__daw.d.notes[0]; return { t: n.manualTarget, eff: n.effMidi }; });
+    assert.equal(fine.eff, 61); assert.ok(fine.t > 61 && fine.t < 61.5, 'ince akort ' + fine.t);
+    assert.match(await page.textContent('#inspector .rm-bar'), /Elle ince akort: C#4 \+\d+ cent/);
+    // Alt+sürükle: yalnızca etiket — ses aynı
+    await page.click('#editSummary button[data-clear=fine]');
+    g0 = await noteGeo(0);
+    await page.mouse.move(box.x + g0.x, box.y + g0.y);
+    await page.keyboard.down('Alt'); await page.mouse.down();
+    await page.mouse.move(box.x + g0.x, box.y + g0.y - g0.rowH, { steps: 5 });
+    await page.mouse.up(); await page.keyboard.up('Alt');
+    const lab = await S(() => { const n = window.__daw.d.notes[0]; return { l: n.label, t: n.manualTarget, eff: n.effMidi }; });
+    assert.deepEqual(lab, { l: 62, t: null, eff: 62 });
+    assert.match(await page.textContent('#inspector .rm-bar'), /Etiket \(yalnızca analiz\)/);
+    await page.click('#inspector .rm-bar button[data-act=labelReset]');
+    assert.equal(await S(() => window.__daw.d.notes[0].edit), null);
+    return `sürükle → ses ve nota C#4 → D4 (+${Math.round(r.ap)}c), panelde "Taşındı" + ✕ · Shift+↑ → +5c · Shift+sürükle → ince akort ${Math.round((fine.t - 61) * 100)}c, nota aynı · Alt+sürükle → yalnızca etiket`;
   });
 
   await step('8) oynatma (Tone.js) + mikser + A/B', async () => {
@@ -381,10 +412,10 @@ try {
     assert.deepEqual(await rm(), []);
     await page.click('#inspector button[data-act=label][data-v="1"]');
     await page.check('#inspector input[data-act=lock]');
-    assert.deepEqual(await rm(), ['✕ Etiketi kaldır', '✕ Kilidi kaldır', '✕ Hepsini kaldır']);
+    assert.deepEqual(await rm(), ['✕ Etiketi kaldır', "✕ Autotune'a geri ver", '✕ Hepsini kaldır']);
     if (shotDir) await page.locator('#inspector').screenshot({ path: path.join(shotDir, 'remove-bar.png') });
     await page.click('#inspector button[data-act=labelReset]');
-    assert.deepEqual(await rm(), ['✕ Kilidi kaldır']);
+    assert.deepEqual(await rm(), ["✕ Autotune'a geri ver"]);
     await page.click('#inspector button[data-act=noteUnlock]');
     assert.deepEqual(await rm(), []);
     assert.equal(await S(() => window.__daw.proj.noteEdits.length), 0);

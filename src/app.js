@@ -18,7 +18,7 @@ const S = {
   d: null,
   corrected: null, correctedShift: null,
   sel: null,              // {type:'note', id} | {type:'chord', q} | {type:'section', id}
-  editMode: 'select',
+  editMode: 'sound', // sürükleyince: 'sound' = notayı taşı (varsayılan), 'label' = yalnızca etiket, 'select' = yalnızca seç
   view: { pxPerQ: 44 },
   pos: 0,                 // oynatma imleci (zaman çizelgesi saniyesi)
   drag: null,
@@ -583,6 +583,8 @@ function pitchRange() {
   return { lo, hi };
 }
 function rollGeom() {
+  // nota sürüklenirken ölçek donar: aralık genişleyip satırlar küçülürse nota imleçten kaçardı
+  if (S.drag && S.drag.type === 'note' && S.drag.geo) return S.drag.geo;
   const H = sc.clientHeight, { lo, hi } = pitchRange();
   const rowH = (H - TL.TOP) / (hi - lo + 1);
   return { lo, hi, rowH, yOf: (m) => TL.TOP + (hi - m + 0.5) * rowH, mOf: (y) => hi + 0.5 - (y - TL.TOP) / rowH };
@@ -715,9 +717,10 @@ function draw() {
         roundRect(c, x0, y - h / 2, Math.max(3, x1 - x0 - 1), h, 3); c.stroke();
         c.setLineDash([]); c.lineWidth = 1;
       }
+      const moved = n.manualTarget != null;
       if (selN || n.locked || n.label != null) {
         c.lineWidth = selN ? 2 : 1.5;
-        c.strokeStyle = selN ? '#fff' : n.locked ? '#f4d35e' : '#ffb454';
+        c.strokeStyle = selN ? '#fff' : moved ? '#5fd08a' : n.locked ? '#f4d35e' : '#ffb454';
         if (n.label != null && !selN) c.setLineDash([4, 2]);
         roundRect(c, x0, y - h / 2, Math.max(3, x1 - x0 - 1), h, 3); c.stroke();
         c.setLineDash([]); c.lineWidth = 1;
@@ -725,12 +728,25 @@ function draw() {
       if (x1 - x0 > 34 && h >= 10) {
         c.fillStyle = '#0b0d12';
         let t = C.noteName(n.effMidi, false);
-        if (x1 - x0 > 70) t += ` ${n.cents > 0 ? '+' : ''}${n.cents}c`;
+        if (moved && n.label != null && n.label !== n.nearest) t = `${C.noteName(n.nearest, false)}→${t}`;
+        else if (moved) { const mc = Math.round((n.manualTarget - Math.round(n.manualTarget)) * 100); t += mc ? ` ${mc > 0 ? '+' : ''}${mc}c` : ' ✓'; }
+        else if (x1 - x0 > 70) t += ` ${n.cents > 0 ? '+' : ''}${n.cents}c`;
         if (n.locked) t = '🔒' + t;
         if (n.modeSuspect) t = '? ' + t;
         c.save(); c.beginPath(); c.rect(x0, y - h / 2, x1 - x0 - 2, h); c.clip();
         c.fillText(t, x0 + 4, y + 0.5);
         c.restore();
+      }
+    }
+    // sürüklerken canlı ipucu: ne olacağı (taşı / ince akort / etiket)
+    if (S.drag && S.drag.type === 'note' && S.drag.moved && S.drag.tip) {
+      const n = ns.find((k) => k.id === S.drag.id);
+      if (n) {
+        c.font = '600 12px system-ui, sans-serif';
+        const tw = c.measureText(S.drag.tip).width + 14, tx = Math.max(TL.KW + 4, Math.min(W - tw - 4, qToX(n.q0))), ty = Math.max(TL.TOP + 4, rg.yOf(n.effMidi) - rg.rowH / 2 - 28);
+        c.fillStyle = 'rgba(11,13,18,0.92)'; roundRect(c, tx, ty, tw, 22, 5); c.fill();
+        c.strokeStyle = S.drag.mode === 'label' ? '#ffb454' : '#5fd08a'; roundRect(c, tx + 0.5, ty + 0.5, tw - 1, 21, 5); c.stroke();
+        c.fillStyle = '#fff'; c.fillText(S.drag.tip, tx + 7, ty + 12);
       }
     }
     // ham ve düzeltilmiş perde eğrileri
@@ -819,15 +835,21 @@ cv.addEventListener('pointerdown', (e) => {
   const n = noteAt(x, y);
   if (!n) { select(null); return; }
   select({ type: 'note', id: n.id });
-  if (S.editMode !== 'select') {
-    S.drag = { type: 'note', id: n.id, y0: y, mode: S.editMode, base: S.editMode === 'sound' ? (n.manualTarget ?? n.soundMidi) : n.effMidi, moved: false };
+  // Alt + sürükle: her modda yalnızca etiket (ses aynı kalır)
+  const mode = e.altKey ? 'label' : S.editMode;
+  if (mode !== 'select') {
+    const ed0 = editFor(n);
+    S.drag = { type: 'note', id: n.id, y0: y, mode, geo: rollGeom(), baseRow: n.effMidi, baseSound: n.manualTarget ?? n.soundMidi ?? n.median, orig: C.noteName(n.effMidi, false), moved: false,
+      prev: ed0 ? { target: ed0.target ?? null, label: ed0.label ?? null, locked: !!ed0.locked } : { target: null, label: null, locked: false } };
     cv.setPointerCapture(e.pointerId);
   }
 });
 cv.addEventListener('pointermove', (e) => {
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
   if (!S.drag) {
-    cv.style.cursor = y > TL.TOP && S.editMode !== 'select' && noteAt(x, y) ? 'ns-resize' : y < TL.TOP && y > TL.RULER ? 'pointer' : 'default';
+    const over = y > TL.TOP && noteAt(x, y);
+    cv.style.cursor = over && (S.editMode !== 'select' || e.altKey) ? 'ns-resize' : over ? 'pointer' : y < TL.TOP && y > TL.RULER ? 'pointer' : 'default';
+    cv.title = over ? 'Sürükle: notayı taşı · Shift+sürükle: cent ince ayar · Alt+sürükle: yalnızca etiket (ses aynı)' : '';
     return;
   }
   const g = grid();
@@ -844,11 +866,26 @@ cv.addEventListener('pointermove', (e) => {
     if (!n) return;
     const semis = dy / rollGeom().rowH;
     const ed = editFor(n, true);
-    if (S.drag.mode === 'sound') {
-      ed.target = e.shiftKey ? Math.round((S.drag.base + semis) * 100) / 100 : Math.round(S.drag.base + semis);
+    if (S.drag.mode === 'sound' && e.shiftKey) {
+      // ince akort: yalnızca cent, notanın kimliği değişmez (bir sonraki yarım sese geçemez)
+      const lim = Math.round(S.drag.baseSound);
+      ed.target = Math.round(C.clamp(S.drag.baseSound + semis * 0.25, lim - 0.49, lim + 0.49) * 100) / 100;
       ed.locked = true;
+      const c = Math.round((ed.target - Math.round(ed.target)) * 100);
+      S.drag.tip = `İnce akort: ${C.noteName(Math.round(ed.target), false)} ${c >= 0 ? '+' : ''}${c} cent · nota aynı`;
+    } else if (S.drag.mode === 'sound') {
+      // notayı taşı: ses yeni yarım sese kayar VE kastedilen nota o olur (akorlar onu kullanır)
+      const R = Math.round(S.drag.baseRow + semis);
+      if (R === Math.round(S.drag.baseRow)) { Object.assign(ed, S.drag.prev); S.drag.tip = `${S.drag.orig} — değişiklik yok`; }
+      else {
+        ed.target = R; ed.locked = true;
+        ed.label = R !== n.nearest ? R : null;
+        S.drag.tip = `Taşı: ${S.drag.orig} → ${C.noteName(R, false)} · ses ve akorlar ${C.noteName(R, false)}`;
+      }
     } else {
-      ed.label = Math.round(S.drag.base + semis);
+      const R = Math.round(S.drag.baseRow + semis);
+      ed.label = R !== n.nearest ? R : null;
+      S.drag.tip = R === Math.round(S.drag.baseRow) ? `${S.drag.orig} — değişiklik yok` : `Etiket: ${S.drag.orig} → ${C.noteName(R, false)} · ses aynı, akorlar ${C.noteName(R, false)}`;
     }
     refresh();
   }
@@ -863,6 +900,7 @@ cv.addEventListener('pointerup', () => {
     else addSection(null, Math.min(dr.b0, dr.b1), Math.max(dr.b0, dr.b1));
   } else if (dr.type === 'note' && dr.moved) {
     cleanupEdits(); refresh();
+    if (dr.tip) status(dr.tip.replace(' — değişiklik yok', ': değişiklik yok') + (dr.tip.includes('değişiklik yok') ? '' : ' · geri almak için notaya tıklayıp "✕ Geri al"'));
     if (dr.mode === 'sound') scheduleRender(true);
   }
   draw();
@@ -1044,34 +1082,50 @@ function renderNoteInspector(box, n) {
   else if (n.locked) soundDesc = 'Kilitli — autotune dokunmaz';
   else soundDesc = S.proj.autotune.enabled ? 'Düzeltme yok' : 'Düzeltme yok (autotune kapalı)';
   const manual = n.manualTarget != null;
-  const rms = [
-    n.label != null && { text: `Etiket: algılanan ${esc(nn(n.detMidi))} → <b>${esc(nn(n.label))}</b>`, act: 'labelReset', btn: 'Etiketi kaldır' },
-    manual && { text: `Ses düzeltmesi: <b>${esc(soundDesc)}</b>`, act: 'sndReset', btn: 'Ses düzeltmesini kaldır' },
-    !manual && n.locked && { text: 'Nota kilidi: autotune bu notaya dokunmuyor', act: 'noteUnlock', btn: 'Kilidi kaldır' },
-  ].filter(Boolean);
+  const isMove = manual && n.label != null && n.label === Math.round(n.manualTarget);
+  const fine = manual && !isMove ? Math.round((n.manualTarget - Math.round(n.manualTarget)) * 100) : 0;
+  const rms = isMove
+    ? [{ text: `Taşındı: <b>${esc(nn(n.nearest))} → ${esc(nn(n.label))}</b> <span class="hint">(ses ${Math.round(corr.applied || 0) >= 0 ? '+' : ''}${Math.round(corr.applied || 0)} cent kaydırıldı; akorlar ${esc(nn(n.label))} kullanıyor)</span>`, act: 'noteResetAll', btn: 'Taşımayı geri al' }]
+    : [
+      n.label != null && { text: `Etiket (yalnızca analiz): algılanan ${esc(nn(n.nearest))} → <b>${esc(nn(n.label))}</b> <span class="hint">(ses aynı)</span>`, act: 'labelReset', btn: 'Etiketi kaldır' },
+      manual && { text: `Elle ince akort: <b>${esc(nn(Math.round(n.manualTarget)))} ${fine >= 0 ? '+' : ''}${fine} cent</b> <span class="hint">(ses ${Math.round(corr.applied || 0)} cent kaydırıldı; nota aynı)</span>`, act: 'sndReset', btn: 'Elle akordu kaldır' },
+      !manual && n.locked && { text: 'Autotune bu notada kapalı (bu nota olduğu gibi kalıyor)', act: 'noteUnlock', btn: 'Autotune\'a geri ver' },
+    ].filter(Boolean);
   if (rms.length > 1) rms.push({ text: 'Bu notadaki bütün değişiklikler', act: 'noteResetAll', btn: 'Hepsini kaldır' });
-  box.innerHTML = `<h3>Nota ${esc(nn(n.effMidi))}${n.label != null ? ' <span class="tag warn">etiket</span>' : ''}${n.locked ? ' <span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : ''}</h3>
+  const atLine = manual ? 'Elle düzeltildi — autotune bu notaya dokunmaz.'
+    : corr.source === 'auto' ? `Autotune bu notayı ${Math.round(corr.applied) >= 0 ? '+' : ''}${Math.round(corr.applied)} cent kaydırıyor → ${esc(nn(corr.target))}${corr.identityChange ? ' — ⚠ scale\'e çekme notayı başka yarım sese taşıdı' : ''}.`
+    : corr.chromatic ? 'Kromatik geçiş notası — autotune dokunmadı.'
+    : n.locked ? 'Autotune bu notada kapalı.'
+    : S.proj.autotune.enabled ? 'Autotune bu notada düzeltme gerektirmedi.' : 'Autotune kapalı (5. adım).';
+  box.innerHTML = `<h3>Nota ${esc(nn(n.effMidi))}${isMove ? ' <span class="tag" style="color:#5fd08a;border-color:#5fd08a">taşındı</span>' : n.label != null ? ' <span class="tag warn">etiket</span>' : ''}${manual && !isMove ? ' <span class="tag" style="color:#5fd08a;border-color:#5fd08a">elle akort</span>' : ''}</h3>
     ${rmBar(rms)}
     <div class="kv">
       <span>Algılanan</span><span>${esc(nn(n.nearest))} ${n.cents > 0 ? '+' : ''}${n.cents} cent <span class="hint">(kişisel akort referansına göre${n.refCents ? `; referans ${n.refCents >= 0 ? '+' : ''}${n.refCents.toFixed(0)}c` : ''} · A4=440'a göre ${esc(nn(n.absNearest))} ${n.absCents > 0 ? '+' : ''}${n.absCents}c · medyan MIDI ${n.median.toFixed(2)})</span></span>
       <span>Konum</span><span>ölçü ${mp.bar + 1}, vuruş ${beat} · ${(n.tl1 - n.tl0).toFixed(2)} s (${((n.q1 - n.q0) / g.pulseQ).toFixed(2)} vuruş)</span>
       <span>Bölüm</span><span>${sec ? esc(sec.name) + (sec.tonic != null ? ' · ' + esc(C.keyName(sec.tonic, sec.mode)) : '') : '—'} · ${n.inScale ? 'scale içinde' : '<b style="color:var(--note-out)">scale dışı</b>'}</span>
       <span>Akor ağırlığı</span><span>×${n.cw}</span>
+      <span>Autotune</span><span>${atLine}</span>
       ${n.modeSuspect ? `<span>Mod</span><span><b style="color:#c792ea">Mod yanlış olabilir:</b> bu nota tam tonunda söylenmiş (${n.cents > 0 ? '+' : ''}${n.cents} cent) ama ${sec && sec.tonic != null ? esc(C.keyName(sec.tonic, sec.mode)) : 'seçili scale'} dışında. Büyük ihtimalle kasıtlı — bölümün modunu kontrol edin; autotune bu notanın kimliğini değiştirmez.</span>` : ''}
     </div>
-    <div class="cols">
-      <div class="box a"><h4>a) Etiket düzeltme — ses değişmez</h4>
-        <div class="row">Analizdeki nota: <b>${esc(nn(n.label ?? n.detMidi))}</b>
-          <button data-act="label" data-v="-1">−1</button><button data-act="label" data-v="1">+1</button></div>
-        <p class="hint">Pitch detection yanlış algıladığında kullanın. Ton önerisi (4. adım) ve akor bulma bu etiketi kullanır.</p></div>
-      <div class="box b"><h4>b) Ses düzeltme — perde kaydırılır</h4>
-        <div class="row">${esc(soundDesc)}</div>
-        <p class="hint">Yalnızca sesi değiştirir: ton önerisine ve akor bulmaya girmez — ikisi de kastedilen notayı (algılanan nota ya da etiket) kullanır. Notanın kendisi yanlışsa (a) etiketini düzeltin.</p>
-        <div class="row">Hedef: <button data-act="snd" data-v="-1">−1 yarım ses</button><button data-act="snd" data-v="1">+1 yarım ses</button>
-          <button data-act="snd" data-v="-0.05">−5c</button><button data-act="snd" data-v="0.05">+5c</button>
-          <button data-act="sndSnap">En yakın yarım sese çek</button></div>
-        <label class="chk"><input type="checkbox" data-act="lock"${n.locked ? ' checked' : ''}${n.manualTarget != null ? ' disabled' : ''}> Kilitli (autotune dokunmaz)</label></div>
+    <div class="cols ops">
+      <div class="box b"><h4>Notayı taşı <small class="hint">— ses + kastedilen nota</small></h4>
+        <div class="row"><button data-act="move" data-v="-1">▼ yarım ses</button><button data-act="move" data-v="1">▲ yarım ses</button></div>
+        <p class="hint">Yanlış nota söylediysen. Ses yeni notaya kayar, akorlar da onu kullanır. Kısayol: <b>sürükle</b> ya da <kbd>↑</kbd>/<kbd>↓</kbd>.</p></div>
+      <div class="box b"><h4>İnce akort <small class="hint">— yalnızca cent</small></h4>
+        <div class="row"><button data-act="snd" data-v="-0.05">−5 cent</button><button data-act="snd" data-v="0.05">+5 cent</button><button data-act="sndSnap">Tam yarım sese çek</button></div>
+        <label class="chk"><input type="checkbox" data-act="lock"${n.locked ? ' checked' : ''}${manual ? ' disabled' : ''}> Autotune bu notaya dokunmasın</label>
+        <p class="hint">Nota doğru ama biraz pes/tiz ise. Nota değişmez, akorlar etkilenmez. Kısayol: <kbd>Shift</kbd>+sürükle ya da <kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>.</p></div>
+      <div class="box a"><h4>Etiketi düzelt <small class="hint">— yalnızca analiz, ses aynı</small></h4>
+        <div class="row">Analizdeki nota: <b>${esc(nn(n.effMidi))}</b> <button data-act="label" data-v="-1">−1</button><button data-act="label" data-v="1">+1</button></div>
+        <p class="hint">Program notayı yanlış algıladıysa (sen doğru söyledin). Ses değişmez; ton önerisi ve akorlar bu etiketi kullanır. Kısayol: <kbd>Alt</kbd>+sürükle.</p></div>
     </div>`;
+}
+// Notayı taşı: ses R yarım sesine kayar ve kastedilen nota R olur (akorlar onu kullanır)
+function moveNote(n, R) {
+  const ed = editFor(n, true);
+  ed.target = R; ed.locked = true; ed.label = R !== n.nearest ? R : null;
+  cleanupEdits(); refresh(); scheduleRender(true);
+  status(`Taşındı: ${C.noteName(n.nearest, false)} → ${C.noteName(R, false)} (ses ve akorlar). Geri almak için notanın panelindeki "✕ Taşımayı geri al".`);
 }
 function soundEdit(n, fn) {
   const ed = editFor(n, true);
@@ -1092,9 +1146,10 @@ $('#inspector').addEventListener('click', (e) => {
   if (S.sel.type === 'note') {
     const n = S.d.notes.find((x) => x.id === S.sel.id);
     if (!n) return;
-    if (act === 'label') { const ed = editFor(n, true); ed.label = (n.label ?? n.detMidi) + +b.dataset.v; refresh(); }
+    if (act === 'label') { const ed = editFor(n, true); const R = n.effMidi + +b.dataset.v; ed.label = R !== n.nearest ? R : null; cleanupEdits(); refresh(); }
+    if (act === 'move') moveNote(n, n.effMidi + +b.dataset.v);
     if (act === 'labelReset') { const ed = editFor(n); if (ed) ed.label = null; cleanupEdits(); refresh(); }
-    if (act === 'snd') soundEdit(n, (t) => { const v = +b.dataset.v; return Math.abs(v) >= 1 ? Math.round(t) + v : Math.round((t + v) * 100) / 100; });
+    if (act === 'snd') soundEdit(n, (t) => { const v = +b.dataset.v; const lim = Math.round(n.manualTarget ?? n.nearest); return Math.round(C.clamp(t + v, lim - 0.49, lim + 0.49) * 100) / 100; });
     if (act === 'sndSnap') soundEdit(n, () => n.nearest);
     if (act === 'sndReset') { const ed = editFor(n); if (ed) { ed.target = null; ed.locked = false; } cleanupEdits(); refresh(); scheduleRender(true); }
     if (act === 'noteUnlock') { const ed = editFor(n); if (ed) ed.locked = false; cleanupEdits(); refresh(); }
@@ -1255,7 +1310,19 @@ function renderInfo() {
   $('#pitchInfo').textContent = S.d && S.rawNotes ? `${tu && !tu.off ? `Akort referansı: A4 ≈ ${tu.a4.toFixed(1)} Hz (${tu.global >= 0 ? '+' : ''}${tu.global.toFixed(0)} cent), zamanla kayma ${tu.driftMin.toFixed(0)}…+${tu.driftMax.toFixed(0)} cent · ` : 'Akort referansı: A4 = 440 Hz · '}${S.d.notes.length} nota · ${S.d.notes.filter((n) => !n.inScale).length} scale dışı · ${S.d.notes.filter((n) => n.label != null).length} etiket · ${S.d.notes.filter((n) => n.manualTarget != null).length} manuel` : '';
   const at = S.proj.autotune;
   const nAuto = S.d ? S.d.notes.filter((n) => n.corr && n.corr.source === 'auto' && Math.abs(n.corr.applied) >= 1).length : 0;
-  $('#renderInfo').textContent = !a ? '' : (at.enabled ? `Autotune açık · ${nAuto} nota kaydırıldı. ` : 'Autotune kapalı. ') + (renderReady() ? 'Düzeltilmiş iz güncel.' : 'Render bekliyor…');
+  const ns = S.d ? S.d.notes : [];
+  const cnt = {
+    move: ns.filter((n) => n.manualTarget != null && n.label != null && n.label === Math.round(n.manualTarget)).length,
+    fine: ns.filter((n) => n.manualTarget != null && !(n.label != null && n.label === Math.round(n.manualTarget))).length,
+    label: ns.filter((n) => n.label != null && !(n.manualTarget != null && n.label === Math.round(n.manualTarget))).length,
+    atOff: ns.filter((n) => n.locked && n.manualTarget == null).length,
+  };
+  const row = (k, txt, what) => cnt[k] ? `<div class="rm-row"><span>${txt} <b>${cnt[k]}</b></span><button class="danger" data-clear="${k}" data-what="${what}">✕ Hepsini geri al</button></div>` : '';
+  const sum = row('move', 'Taşınan nota:', 'taşımalar') + row('fine', 'Elle ince akort:', 'ince akortlar') + row('label', 'Etiket düzeltmesi:', 'etiketler') + row('atOff', 'Autotune\'un dokunmadığı (kilitli) nota:', 'autotune kilitleri');
+  $('#editSummary').innerHTML = sum ? `<div class="rm-bar"><div class="hint">Elle yapılan değişiklikler — tek tek geri almak için notaya tıkla</div>${sum}</div>` : (a ? '<p class="hint">Henüz elle değişiklik yok.</p>' : '');
+  const avg = nAuto ? Math.round(ns.filter((n) => n.corr && n.corr.source === 'auto' && Math.abs(n.corr.applied) >= 1).reduce((s2, n) => s2 + Math.abs(n.corr.applied), 0) / nAuto) : 0;
+  $('#renderInfo').textContent = !a ? '' : (at.enabled ? `Autotune AÇIK · ${nAuto} nota kaydırıldı (ortalama ${avg} cent)${cnt.move + cnt.fine + cnt.atOff ? ` · ${cnt.move + cnt.fine + cnt.atOff} notaya dokunmadı (elle / kilitli)` : ''}. ` : 'Autotune KAPALI. ') + (renderReady() ? 'Düzeltilmiş iz güncel.' : 'Render bekliyor…');
+  $('#btnAutoApply').classList.toggle('on', at.enabled); $('#btnAutoOff').classList.toggle('on', !at.enabled);
   $('#btnAB').textContent = 'A/B: ' + (S.proj.mixer.ab === 'original' ? 'Orijinal' : 'Düzeltilmiş');
   $('#btnAB').classList.toggle('on', S.proj.mixer.ab === 'original');
   renderAlternatives();
@@ -1347,7 +1414,19 @@ $('#btnUnlockAll').onclick = () => {
   S.proj.chordLocks = []; S.proj.chordPins = []; refresh();
   status(`${n} akor kilidi kaldırıldı; bütün akorlar otomatiğe döndü.`);
 };
-$('#btnClearManual').onclick = () => { S.proj.noteEdits.forEach((e) => { e.target = null; e.locked = false; }); cleanupEdits(); refresh(); scheduleRender(true); };
+const isMoveEdit = (e) => e.target != null && e.label != null && e.label === Math.round(e.target);
+function clearEdits(kind) {
+  for (const e of S.proj.noteEdits) {
+    if (kind === 'move' && isMoveEdit(e)) { e.target = null; e.label = null; e.locked = false; }
+    if (kind === 'fine' && e.target != null && !isMoveEdit(e)) { e.target = null; e.locked = false; }
+    if (kind === 'label' && e.label != null && !isMoveEdit(e)) e.label = null;
+    if (kind === 'atOff' && e.target == null) e.locked = false;
+    if (kind === 'all') { e.target = null; e.label = null; e.locked = false; }
+  }
+  cleanupEdits(); refresh(); scheduleRender(true);
+}
+$('#btnClearManual').onclick = () => { clearEdits('move'); clearEdits('fine'); };
+$('#editSummary').addEventListener('click', (e) => { const b = e.target.closest('button[data-clear]'); if (b) { clearEdits(b.dataset.clear); status('Kaldırıldı: ' + b.dataset.what + '.'); } });
 $('#btnClearLabels').onclick = () => { S.proj.noteEdits.forEach((e) => { e.label = null; }); cleanupEdits(); refresh(); };
 $('#inPct').addEventListener('input', (e) => { S.proj.chordOpts.changePct = +e.target.value; $('#outPct').textContent = '%' + e.target.value; refresh(); });
 onNum('#inMaxBars', (v) => { S.proj.chordOpts.maxBars = Math.max(1, Math.round(v)); refresh(); });
@@ -1355,7 +1434,6 @@ onNum('#inHomeEvery', (v) => { S.proj.chordOpts.homeEvery = Math.max(0, Math.rou
 $('#inEngine').addEventListener('change', (e) => { S.proj.chordOpts.engine = e.target.value; refresh(); });
 $('#inColorPen').addEventListener('input', (e) => { S.proj.chordOpts.colorPenalty = +e.target.value; $('#outColorPen').textContent = e.target.value; refresh(); });
 $('#btnModeLabel').onclick = () => setEditMode('label');
-$('#btnModeSound').onclick = () => setEditMode('sound');
 $('#btnLatencyCal').onclick = () => Cal.run();
 $('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; refresh(); };
 $('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
@@ -1401,8 +1479,9 @@ document.addEventListener('keydown', (e) => {
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && S.editMode !== 'select') {
       e.preventDefault();
       const dir = e.key === 'ArrowUp' ? 1 : -1;
-      if (S.editMode === 'label') { const ed = editFor(n, true); ed.label = (n.label ?? n.detMidi) + dir; refresh(); }
-      else soundEdit(n, (t) => (e.shiftKey ? Math.round((t + dir * 0.05) * 100) / 100 : Math.round(t) + dir));
+      if (S.editMode === 'label' || e.altKey) { const ed = editFor(n, true); const R = n.effMidi + dir; ed.label = R !== n.nearest ? R : null; cleanupEdits(); refresh(); }
+      else if (e.shiftKey) soundEdit(n, (t) => Math.round((t + dir * 0.05) * 100) / 100);
+      else moveNote(n, n.effMidi + dir);
     }
     if (e.key === 'l' || e.key === 'L') { const ed = editFor(n, true); ed.locked = !n.locked; cleanupEdits(); refresh(); }
   }
@@ -1516,7 +1595,7 @@ $('#btnExpMix').onclick = async () => {
 };
 
 // ---------------------------------------------------------------- başlangıç
-setEditMode('select');
+setEditMode('sound'); // varsayılan: notayı sürükleyerek taşı
 syncInputs();
 refresh();
 loadPianoSamples(); // hangi piyanonun çalacağı baştan görünsün

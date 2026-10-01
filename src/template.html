@@ -95,7 +95,7 @@
         <button id="btnModeLabel">Etiket düzeltme modunu aç</button>
         <button id="btnClearLabels">Etiketleri sıfırla</button>
       </div>
-      <p class="hint">Modda notayı yukarı/aşağı sürükleyin ya da seçip <kbd>↑</kbd>/<kbd>↓</kbd>.</p>
+      <p class="hint">Her modda <kbd>Alt</kbd>+sürükle etiketi düzeltir; bu mod açıkken düz sürükleme de etiket düzeltir (ya da seçip <kbd>↑</kbd>/<kbd>↓</kbd>).</p>
     </details>
 
     <details class="step" open>
@@ -112,9 +112,14 @@
     </details>
 
     <details class="step" open>
-      <summary><b>5</b> Ses düzeltme</summary>
-      <p class="hint">Sesin kendisi kaydırılır (TD-PSOLA). <b>Manuel</b>: notayı yukarı/aşağı sürükleyin (yarım ses; <kbd>Shift</kbd> ile cent). Manuel düzeltilen nota kilitlenir.</p>
-      <button id="btnModeSound">Manuel ses düzeltme modunu aç</button>
+      <summary><b>5</b> Ses düzeltme (elle ve autotune)</summary>
+      <p class="hint"><b>Elle:</b> piano-roll'da notayı tut ve yukarı/aşağı sürükle. Sürüklerken ne olacağı notanın üstünde yazar. Hiçbiri orijinal kaydı değiştirmez; her biri notaya tıklayınca en üstteki <b>✕</b> ile geri alınır.</p>
+      <table class="ops-legend">
+        <tr><td><b>Sürükle</b> / <kbd>↑</kbd><kbd>↓</kbd></td><td><b>Notayı taşı</b></td><td class="hint">Yanlış nota söyledin: ses yeni yarım sese kayar, akorlar da yeni notayı kullanır.</td></tr>
+        <tr><td><kbd>Shift</kbd>+sürükle</td><td><b>İnce akort</b></td><td class="hint">Nota doğru, biraz pes/tiz: yalnızca cent; nota ve akorlar aynı kalır.</td></tr>
+        <tr><td><kbd>Alt</kbd>+sürükle</td><td><b>Etiketi düzelt</b></td><td class="hint">Program yanlış algıladı: ses aynı, yalnızca analizdeki nota değişir.</td></tr>
+      </table>
+      <div id="editSummary"></div>
       <fieldset>
         <legend>Otomatik (autotune)</legend>
         <div class="modes" role="radiogroup" aria-label="Autotune hedefi">
@@ -131,8 +136,8 @@
           <button id="btnAutoOff">Autotune kapat</button>
         </div>
       </fieldset>
-      <div class="row">
-        <button id="btnClearManual">Manuel düzeltmeleri sil</button>
+      <div class="row" hidden>
+        <button id="btnClearManual">Elle ses düzeltmelerini kaldır</button>
       </div>
       <div id="renderInfo" class="hint"></div>
     </details>
@@ -198,9 +203,10 @@
   <section id="work">
     <div id="tlTools">
       <div class="seg" role="radiogroup" aria-label="Fare düzenleme modu">
-        <label><input type="radio" name="editMode" value="select" checked><span>Seç</span></label>
-        <label><input type="radio" name="editMode" value="label"><span>Etiket düzelt</span></label>
-        <label><input type="radio" name="editMode" value="sound"><span>Ses düzelt</span></label>
+        <span class="hint" style="align-self:center">Sürükleyince:</span>
+        <label title="Ses + kastedilen nota yeni yarım sese geçer (Shift: yalnızca cent)"><input type="radio" name="editMode" value="sound" checked><span>Notayı taşı</span></label>
+        <label title="Yalnızca analizdeki nota değişir, ses aynı (her modda Alt+sürükle)"><input type="radio" name="editMode" value="label"><span>Etiketi düzelt</span></label>
+        <label title="Sürükleme kapalı, yalnızca seç"><input type="radio" name="editMode" value="select"><span>Sadece seç</span></label>
       </div>
       <label>Yakınlaş <input type="range" id="inZoom" min="12" max="160" value="44"></label>
       <span class="legend"><i class="lg in"></i>scale içi <i class="lg out"></i>scale dışı <i class="lg raw"></i>ham perde <i class="lg cor"></i>düzeltilmiş perde</span>

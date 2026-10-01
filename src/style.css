@@ -104,7 +104,7 @@ main { flex: 1; display: flex; min-height: 0; }
 #tlScroll { flex: 1; min-height: 300px; overflow-x: auto; overflow-y: hidden; position: relative; background: #101217; }
 #tlInner { height: 100%; position: relative; }
 #tl { position: sticky; left: 0; top: 0; display: block; height: 100%; cursor: default; touch-action: none; }
-#inspector { flex: none; max-height: 42%; min-height: 120px; overflow-y: auto; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; }
+#inspector { flex: none; height: clamp(170px, 36vh, 380px); overflow-y: auto; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; }
 #inspector h3 { margin: 0 0 6px; font-size: 14px; }
 #inspector .kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; margin: 6px 0; }
 #inspector .kv > :nth-child(odd) { color: var(--muted); }
@@ -203,3 +203,7 @@ td.durbar i { display: block; height: 8px; border-radius: 0 4px 4px 0; backgroun
 /* akor denetçisindeki öneriler: ⚠ önemli (sürtünme, aynı kök), ℹ isteğe bağlı (renk, çevrim) — hiçbiri kendiliğinden uygulanmaz */
 .adv-opt { border: 1px solid #3a4152; background: rgba(106, 167, 255, 0.06); border-radius: 6px; padding: 6px 10px; margin: 6px 0; }
 .adv-imp .row, .adv-opt .row { margin: 4px 0 0; gap: 4px; }
+.ops-legend { width: 100%; border-collapse: collapse; margin: 4px 0 8px; font-size: 12px; }
+.ops-legend td { padding: 3px 6px; border-top: 1px solid #2a2f3b; vertical-align: top; }
+.ops-legend td:first-child { white-space: nowrap; }
+#inspector .cols.ops .box { flex: 1 1 220px; }
