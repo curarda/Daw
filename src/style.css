@@ -219,3 +219,4 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 .drum-grid:empty { display: none; }
 #drumRequest { width: 100%; box-sizing: border-box; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; background: #111318; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
 .drum-rank { margin: 4px 0 0 16px; padding: 0; font-size: 12px; }
+.tapbox { border-top: 1px dashed #ffd16655; margin-top: 8px; padding-top: 6px; }

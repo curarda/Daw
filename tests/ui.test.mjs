@@ -665,6 +665,66 @@ try {
     return `tahmin 4/4 · 3/4 seçilince "Uygula" → 4/4 · ${auto.trim()} · oynatmada davul çaldı · 200 BPM → bulamadım + tarif`;
   });
 
+  await step('Zamanlama: notayı sağa sürükle (ızgaraya yapışır) → ses kayar; quantize; zamanı geri al; piyano tuşu çalar; T ile tap → tempo/ölçü/ızgara', async () => {
+    page.once('dialog', (d) => d.accept());
+    await page.click('#btnTest');
+    await waitStatus(/Test melodisi hazır/);
+    const tl = await page.locator('#tl').boundingBox();
+    // nota 6'yı sağa sürükle: ~0.4 vuruş → 1/8 ızgaraya yapışır
+    const g6 = await noteGeo(6);
+    const q6 = await S(() => window.__daw.d.notes[6].q0);
+    const pxq = await S(() => window.__daw.view.pxPerQ);
+    await page.mouse.move(tl.x + g6.x, tl.y + g6.y); await page.mouse.down();
+    await page.mouse.move(tl.x + g6.x + pxq * 0.4, tl.y + g6.y, { steps: 8 });
+    if (shotDir) await page.screenshot({ path: path.join(shotDir, 'time-drag.png'), clip: { x: tl.x, y: tl.y + g6.y - 120, width: 700, height: 200 } });
+    await page.mouse.up();
+    const m6 = await S(() => { const n = window.__daw.d.notes[6]; return { q0: n.q0, q0to: n.q0to, eff: n.effMidi }; });
+    assert.ok(m6.q0to != null && Math.abs(m6.q0to * 2 - Math.round(m6.q0to * 2)) < 1e-9, '1/8 ızgarada: ' + m6.q0to);
+    assert.ok(m6.q0 > q6 + 0.2, 'nota sağa kaydı');
+    await waitStatus(/Düzeltilmiş vokal hazır/);
+    assert.ok(await S(() => !!window.__daw.d.timeMap && !window.__daw.d.timeMap.identity));
+    assert.match(await page.textContent('#inspector .rm-bar'), /Zaman: ölçü \d+, vuruş [\d.]+'ye kaydırıldı/);
+    assert.match(await page.textContent('#editSummary'), /Zamanı kaydırılan .* 1/);
+    await page.click('#inspector .rm-bar button[data-act=timeReset]');
+    assert.equal(await S(() => window.__daw.d.notes[6].q0to), null);
+    // quantize: 1/16, tüm şarkı → hepsi ızgarada
+    await page.selectOption('#inQuantGrid', '1/16');
+    await page.click('#btnQuantize');
+    await waitStatus(/Düzeltilmiş vokal hazır|Quantize/);
+    const off16 = await S(() => Math.max(...window.__daw.d.notes.map((n) => Math.abs(n.q0 * 4 - Math.round(n.q0 * 4)))));
+    assert.ok(off16 < 1e-6, 'quantize sonrası 1/16 ızgarada: ' + off16);
+    await page.click('#btnQuantClear');
+    assert.equal(await S(() => window.__daw.d.notes.filter((n) => n.q0to != null).length), 0);
+    await page.selectOption('#inQuantGrid', '1/8');
+    // piyano tuşu
+    const k0 = await S(() => window.__dawAPI.player().keyHits || 0);
+    await page.mouse.click(tl.x + 20, tl.y + g6.y);
+    await page.waitForFunction((k) => (window.__dawAPI.player().keyHits || 0) > k, k0, { timeout: 15000 });
+    assert.match(await page.textContent('#status'), /^♪ /);
+    // tap: oynatırken T → nokta eklenir (zaman ~ duyulan an)
+    await page.click('#btnPlay');
+    await page.waitForTimeout(700);
+    await page.keyboard.press('t');
+    await page.waitForTimeout(400);
+    await page.keyboard.press('t');
+    await page.click('#btnPlay');
+    const taps = await S(() => window.__daw.proj.taps.slice());
+    assert.equal(taps.length, 2);
+    assert.ok(taps[1] - taps[0] > 0.25 && taps[1] - taps[0] < 0.7, 'iki tap arası ~0.4 s: ' + (taps[1] - taps[0]));
+    // gerçek akor değişimlerinde tap (120 BPM, 4/4): proje 100 BPM'e alınmışken → Uygula → 120 BPM
+    await page.fill('#inBpm', '100'); await page.dispatchEvent('#inBpm', 'change');
+    await S(() => { const off = window.__daw.proj.audio.offsetSec; window.__daw.proj.taps = [1, 2, 3, 3.5, 4, 5, 6, 7].map((b, i) => off + b * 2 + [0.02, -0.01, 0.015, -0.02, 0.01, 0, -0.015, 0.02][i]); window.__dawAPI.refresh(); });
+    assert.match(await page.textContent('#tapInfo'), /8 noktadan: 4\/4, 120 BPM/);
+    if (shotDir) await page.locator('.tapbox').screenshot({ path: path.join(shotDir, 'taps.png') });
+    await page.click('#btnTapApply');
+    assert.equal(await page.inputValue('#inBpm'), '120');
+    assert.ok(await page.isChecked('#inOnlyMarked'));
+    const mk = await S(() => window.__daw.proj.changeMarks.length);
+    assert.equal(mk, 8);
+    await page.click('#btnTapClear'); await page.click('#btnClearMarks'); await page.uncheck('#inOnlyMarked');
+    return `sürükle → nota ${q6.toFixed(2)} → ${m6.q0to} (1/8), ses render edildi · quantize 1/16 ✓ · piyano tuşu çaldı · T ile 2 nokta (${(taps[1] - taps[0]).toFixed(2)} s arayla) · 8 tap → 4/4, 120 BPM, ${mk} ✂`;
+  });
+
   await step('Piyano örnekleri: birinci kaynak (github.io) engelliyse jsDelivr aynasından yüklenir; ikisi de yoksa yedek + "Tekrar dene"', async () => {
     const wav = Buffer.from(Core.encodeWav([Core.synthPianoSample(69, 44100, 0.5)], 44100));
     const p2 = await context.newPage();

@@ -4,7 +4,7 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const tpl = read('./src/template.html');
 const out = tpl
   .replace('/*__STYLE__*/', () => read('./src/style.css'))
-  .replace('/*__CORE__*/', () => read('./src/core.js') + '\n' + read('./src/drums.js'))
+  .replace('/*__CORE__*/', () => read('./src/core.js') + '\n' + read('./src/drums.js') + '\n' + read('./src/flex.js'))
   .replace('/*__STYLECORE__*/', () => read('./src/styledata.js'))
   .replace('/*__APP__*/', () => read('./src/app.js'))
   .replace('/*__STYLEAPP__*/', () => read('./src/styleui.js')

@@ -225,6 +225,7 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 .drum-grid:empty { display: none; }
 #drumRequest { width: 100%; box-sizing: border-box; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; background: #111318; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
 .drum-rank { margin: 4px 0 0 16px; padding: 0; font-size: 12px; }
+.tapbox { border-top: 1px dashed #ffd16655; margin-top: 8px; padding-top: 6px; }
 </style>
 </head>
 <body>
@@ -346,6 +347,16 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
       </table>
       <div id="editSummary"></div>
       <fieldset>
+        <legend>Zamanlama (quantize)</legend>
+        <p class="hint">Notaların başlangıçlarını ızgaraya çeker; ses bütün olarak kayar (perde değişmez), aradaki boşluklar esner. Tek tek: notayı <b>sağa/sola sürükle</b>.</p>
+        <div class="grid2">
+          <label>Izgara<select id="inQuantGrid"><option value="1/4">1/4 (vuruş)</option><option value="1/8" selected>1/8</option><option value="1/16">1/16</option><option value="1/8T">1/8 üçleme</option><option value="1/16T">1/16 üçleme</option></select></label>
+          <label>Kapsam<select id="inQuantScope"><option value="all">Tüm şarkı</option><option value="section">Seçili bölüm</option><option value="note">Seçili nota</option></select></label>
+        </div>
+        <label title="%100 = tam ızgaraya; daha az = yalnızca yaklaştırır (doğal his kalır)">Güç <output id="outQuantStrength">%100</output><input type="range" id="inQuantStrength" min="0" max="100" step="5" value="100"></label>
+        <div class="row"><button id="btnQuantize" class="accent">Quantize uygula</button><button id="btnQuantClear">Zamanlamayı sıfırla</button></div>
+      </fieldset>
+      <fieldset>
         <legend>Otomatik (autotune)</legend>
         <div class="modes" role="radiogroup" aria-label="Autotune hedefi">
           <label><input type="radio" name="atTarget" value="semitone" checked> En yakın yarım sese çek <small class="hint">(önerilen — notanın kimliği değişmez)</small></label>
@@ -369,6 +380,7 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 
     <details class="step" open>
       <summary><b>6–7</b> Akor bulma ve düzenleme</summary>
+      <p class="hint">Akorlar <b>4. adımdaki ton</b> ve <b>5. adımdaki düzeltmelerden sonra duyduğun notalara</b> göre bulunur: notayı başka sese çektiysen (sürükle / ↑↓ / autotune'un scale'e çekmesi) yeni nota, zamanını kaydırdıysan (quantize / sağa-sola) yeni yeri kullanılır.</p>
       <label title="Süreli Viterbi bütün bölümü birlikte arar ve en iyi 3 alternatifi verir; ölçü ölçü motor her ölçüde yerel karar verir">Motor
         <select id="inEngine"><option value="viterbi">süreli Viterbi (bölüm boyunca, 3 alternatif)</option><option value="greedy">ölçü ölçü (eski)</option></select></label>
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
@@ -381,6 +393,12 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
         <div class="row"><label class="chk"><input type="checkbox" id="inOnlyMarked"> Akor <b>yalnızca</b> ✂ işaretli noktalarda değişsin <small class="hint">(işaret konan bölümlerde)</small></label>
           <button id="btnClearMarks" class="danger">✕ İşaretleri temizle <span id="markCount"></span></button></div>
         <div id="markInfo"></div>
+        <div class="tapbox">
+          <b>🎯 Dinlerken işaretle (tap)</b>
+          <p class="hint">Şarkıyı oynat; akorun değişmesini istediğin her anda <kbd>T</kbd>'ye bas (ya da düğmeye). Cetvelde ◆ olarak görünür; sürükleyerek kaydır, <kbd>Alt</kbd>+tık ile sil. 3+ noktadan tempo, ölçü ve ölçü çizgilerinin yeri hesaplanır; "Uygula" ile ızgara hizalanır ve noktalar ✂ işaretine dönüşür.</p>
+          <div class="row"><button id="btnTap" class="accent">◆ Değişim noktası (T) <span id="tapCount"></span></button><button id="btnTapUndo">Son noktayı sil</button><button id="btnTapClear" class="danger">✕ Hepsini temizle</button></div>
+          <div id="tapInfo"></div>
+        </div>
       </div>
       <details id="chartBox" class="sub">
         <summary>📄 Kendi akorlarım — şablon yükle</summary>
@@ -2188,6 +2206,7 @@ function newProject() {
     chordLocks: [], chordPins: [], changeMarks: [],
     mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
     drums: { on: false, loop: 'auto' },
+    quant: { grid: '1/8', strength: 100 }, taps: [],
   };
 }
 const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
@@ -2221,14 +2240,19 @@ function derive(proj, st) {
   const tuning = proj.pitch.tuning === 'a440' || !(st.rawNotes || []).length
     ? { global: 0, perNote: (st.rawNotes || []).map(() => 0), driftMin: 0, driftMax: 0, a4: 440, off: true }
     : tuningReference(st.rawNotes, { windowSec: proj.pitch.tuningWindowSec });
+  // zaman haritası: quantize / yatay sürükleme ile notaların yeni başlangıçları (q0to, çeyrek) → ses bütün olarak kayar
+  const timeMap = root.Core && root.Core.buildTimeMap
+    ? root.Core.buildTimeMap((st.rawNotes || []).map((r) => { const ed = findEdit(proj.noteEdits, r); return { a: r.t0, e: r.t1, b: ed && ed.q0to != null ? ed.q0to * g.spq + off : null }; }), st.duration)
+    : { identity: true, fwd: (t) => t, inv: (t) => t, sig: '' };
   const notes = (st.rawNotes || []).map((r0, i) => {
     const ref = tuning.perNote[i] || 0;
     const nearest = Math.round(r0.median - ref / 100);
     const r = Object.assign({}, r0, { nearest, cents: Math.round((r0.median - ref / 100 - nearest) * 100), refCents: ref, absNearest: r0.nearest, absCents: r0.cents });
-    const t0 = r.t0 - off, t1 = r.t1 - off;
-    const n = Object.assign({}, r, { idx: i, id: 'n' + Math.round(r.t0 * 1000), tl0: t0, tl1: t1, q0: t0 / g.spq, q1: t1 / g.spq, detMidi: r.nearest });
+    const t0 = timeMap.fwd(r.t0) - off, t1 = timeMap.fwd(r.t1) - off;
+    const n = Object.assign({}, r, { idx: i, id: 'n' + Math.round(r.t0 * 1000), tl0: t0, tl1: t1, q0: t0 / g.spq, q1: t1 / g.spq, detMidi: r.nearest, qOrig: (r.t0 - off) / g.spq });
     const ed = findEdit(proj.noteEdits, r);
     n.edit = ed;
+    n.q0to = ed && ed.q0to != null ? ed.q0to : null;
     n.label = ed && ed.label != null ? ed.label : null;
     n.manualTarget = ed && ed.target != null ? ed.target : null;
     n.locked = !!(ed && (ed.locked || ed.target != null));
@@ -2271,7 +2295,9 @@ function derive(proj, st) {
     n.sungMidi = n.label != null ? n.label : n.nearest;
     const at = n.corr;
     n.autoMoved = n.label == null && !!at && at.source === 'auto' && at.identityChange && proj.autotune.amount >= 50 && at.target !== n.nearest;
-    n.effMidi = n.autoMoved ? at.target : n.sungMidi;
+    // duyulan nota: etiket (senin düzeltmen) > elle ses düzeltmesinin hedefi > autotune'un taşıdığı nota > söylenen
+    const manualHeard = n.label == null && at && at.source === 'manual' && at.target != null ? Math.round(at.target) : null;
+    n.effMidi = manualHeard != null ? manualHeard : n.autoMoved ? at.target : n.sungMidi;
     n.inScale = n.scalePcs ? n.scalePcs.includes(mod12(n.effMidi)) : true;
     // tam tonunda söylenmiş ama scale dışı → büyük ihtimalle kasıtlı: "mod yanlış olabilir" (söylenen notaya göre)
     n.modeSuspect = !!n.scalePcs && !n.scalePcs.includes(mod12(n.sungMidi)) && n.label == null && Math.abs(n.cents) <= IN_TUNE_CENTS;
@@ -2312,7 +2338,7 @@ function derive(proj, st) {
   }
   // kilitli akor için uyarı/öneriler: sürtünme (önemli), renk ve çevrim (isteğe bağlı)
   chords.forEach((sl) => { if (sl.locked) { sl.lockAdvice = lockAdvice(sl, slotNotes(notes, sl.q0, sl.q1, g), chordOpts.colorPenalty || 0); sl.suggest = null; } });
-  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning };
+  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning, timeMap };
 }
 
 // Nota olayları (oynatma + MIDI)
@@ -2905,6 +2931,215 @@ function loopGridText(L) {
 }
 
 Object.assign(C, { estimateMeter, DRUM_LOOPS, loopsFor, suggestDrumLoop, synthDrum, drumEvents, renderDrums, GM_DRUM, loopGridText, loopProfile });
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// ---------------------------------------------------------------- ZAMANLAMA: quantize, nota kaydırma (flex), tap ile ızgara
+// DOM'suz; Core'a eklenir (build'de core.js + drums.js'in ardından aynı <script id="core"> içine girer).
+(function (root) {
+const C = root.Core;
+const { clamp } = C;
+
+// ---- 1) ZAMAN HARİTASI: kayıttaki zaman (s) → çıktı zamanı (s)
+// Her notanın yeni başlangıcı (b) verilirse nota bütün olarak kayar (süresi aynı); notalar arasındaki boşluklar
+// (nefes, geçiş) esner/sıkışır. Notalar sırasını değiştiremez: komşusunun üstüne kayan notanın önündeki notanın
+// sonu kısalır, o da yetmezse nota komşusunun hemen arkasında durur.
+const MIN_GAP = 0.005, MIN_NOTE = 0.03;
+function buildTimeMap(items, duration) {
+  // items: [{a: kayıttaki başlangıç, e: kayıttaki bitiş, b: istenen başlangıç (yoksa a)}] (zaman sıralı)
+  const it = items.filter((x) => x.e > x.a).map((x) => ({ a: x.a, e: x.e, b: x.b != null ? x.b : x.a })).sort((p, q) => p.a - q.a);
+  let moved = false;
+  for (const x of it) { x.f = x.e + (x.b - x.a); if (Math.abs(x.b - x.a) > 5e-4) moved = true; }
+  if (!moved || !it.length) return identityMap();
+  it[0].b = Math.max(it[0].b, Math.min(it[0].a, 0.01)); it[0].f = Math.max(it[0].f, it[0].b + MIN_NOTE);
+  for (let i = 1; i < it.length; i++) {
+    const p = it[i - 1], x = it[i];
+    if (x.b < p.f + MIN_GAP) p.f = Math.max(p.b + MIN_NOTE, x.b - MIN_GAP); // önceki notanın sonunu kısalt
+    if (x.b < p.f + MIN_GAP) { x.b = p.f + MIN_GAP; x.f = Math.max(x.f, x.b + MIN_NOTE); } // yetmezse komşunun arkasında dur
+    if (x.f < x.b + MIN_NOTE) x.f = x.b + MIN_NOTE;
+  }
+  const A = [], B = [];
+  // legato: önceki notanın bitişi = sonrakinin başlangıcı (aynı giriş anı) → sonraki notanın başlangıcı geçerli
+  const push = (a, b) => {
+    if (A.length && a <= A[A.length - 1] + 1e-6) {
+      if (A.length > 1) B[B.length - 1] = Math.max(b, B[B.length - 2] + 1e-6);
+      return;
+    }
+    A.push(a); B.push(Math.max(b, B.length ? B[B.length - 1] + 1e-6 : -Infinity));
+  };
+  // boşluklarda notanın girişi (scoop, ünsüz: başlangıçtan önceki ~80 ms) ve bitişin hemen ardı (~30 ms)
+  // notayla birlikte kayar; yalnızca boşluğun ortası esner/sıkışır
+  it.forEach((x, i) => {
+    const p = it[i - 1];
+    if (p) {
+      const gap = x.a - p.e, og = x.b - p.f;
+      if (gap > 0.004) {
+        let pre = Math.min(0.08, 0.45 * gap), post = Math.min(0.03, 0.45 * gap);
+        const need = pre + post + 0.002;
+        if (og < need) { const k = Math.max(0, og - 0.002) / need; pre *= k; post *= k; }
+        if (post > 0.001) push(p.e + post, p.f + post);
+        if (pre > 0.001) push(x.a - pre, x.b - pre);
+      }
+    }
+    push(x.a, x.b); push(x.e, x.f);
+  });
+  const D = Math.max(duration || 0, A[A.length - 1]);
+  const lead = B[0] - A[0], tail = B[B.length - 1] - A[A.length - 1];
+  const interp = (X, Y, v, l, t) => {
+    if (v <= X[0]) return v + l;
+    if (v >= X[X.length - 1]) return v + t;
+    let lo = 0, hi = X.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (X[m] <= v) lo = m; else hi = m; }
+    return Y[lo] + ((v - X[lo]) * (Y[hi] - Y[lo])) / (X[hi] - X[lo]);
+  };
+  return {
+    identity: false, inA: A, outB: B, duration: D, outDuration: D + tail,
+    fwd: (t) => interp(A, B, t, lead, tail),
+    inv: (t) => interp(B, A, t, -lead, -tail),
+    sig: A.map((a, i) => a.toFixed(4) + ':' + B[i].toFixed(4)).join(','),
+  };
+}
+function identityMap() { return { identity: true, fwd: (t) => t, inv: (t) => t, sig: '' }; }
+
+// ---- 2) WSOLA: sesi zaman haritasına göre yeniden yerleştir (perde değişmez)
+// Haritanın eğimi 1 olan yerlerde (kaydırılmayan ya da bütün olarak kayan notalar) giriş birebir kopyalanır;
+// yalnızca esneyen/sıkışan boşluklarda en benzer dalga parçası aranır (tıkırtısız birleşim).
+function wsolaWarp(x, sr, map) {
+  if (!map || map.identity) return x;
+  // arama penceresi ±6 ms (~yarım perde periyodu): kayma birikmez, nota başları haritaya ±6 ms içinde oturur
+  const N = 1 << Math.round(Math.log2(0.023 * sr)), Hs = N >> 1, tol = Math.round(0.006 * sr);
+  const outLen = Math.max(1, Math.round(map.fwd(x.length / sr) * sr));
+  const y = new Float32Array(outLen + 2 * N);
+  const win = new Float32Array(N);
+  for (let k = 0; k < N; k++) win[k] = 0.5 - 0.5 * Math.cos((2 * Math.PI * k) / N);
+  const at = (i) => (i >= 0 && i < x.length ? x[i] : 0);
+  let prev = null;
+  for (let o = -Hs; o < outLen; o += Hs) {
+    const d = Math.round(map.inv((o + N / 2) / sr) * sr - N / 2);
+    let pos = d;
+    if (prev != null) {
+      const nat = prev + Hs;
+      if (Math.abs(d - nat) <= 2) pos = nat;
+      else {
+        // kaba arama (adım 4) + ince arama (±3): doğal devamla en benzer parça
+        // benzerlik − hedeften uzaklık cezası (eşit benzerlikte hedefe yakın olan seçilir)
+        let en = 1e-9; for (let k = 0; k < N; k += 4) en += at(nat + k) * at(nat + k);
+        const score = (p) => { let s = 0; for (let k = 0; k < N; k += 4) s += at(p + k) * at(nat + k); return s / en - 0.15 * Math.abs(p - d) / tol; };
+        let best = -Infinity, bp = d;
+        for (let dl = -tol; dl <= tol; dl += 4) { const v = score(d + dl); if (v > best) { best = v; bp = d + dl; } }
+        let fine = bp;
+        for (let dl = -3; dl <= 3; dl++) { const v = score(bp + dl); if (v > best) { best = v; fine = bp + dl; } }
+        pos = fine;
+      }
+    }
+    for (let k = 0; k < N; k++) { const oi = o + k; if (oi >= 0 && oi < y.length) y[oi] += at(pos + k) * win[k]; }
+    prev = pos;
+  }
+  return y.subarray(0, outLen);
+}
+
+// ---- 3) QUANTIZE: başlangıçları ızgaraya çek (güç %)
+// notes: türetilmiş notalar (qOrig = kayıttaki başlangıcın çeyrek konumu); gridQ: ızgara adımı (çeyrek cinsinden)
+const QUANT_GRIDS = { '1/4': 1, '1/8': 0.5, '1/16': 0.25, '1/8T': 1 / 3, '1/16T': 1 / 6 };
+function quantizeTargets(notes, g, opts = {}) {
+  const gridQ = opts.gridQ || 0.5, strength = clamp(opts.strength == null ? 1 : opts.strength, 0, 1);
+  const pick = opts.filter || (() => true);
+  const minGapQ = 0.03 / g.spq;
+  const ns = [...notes].sort((a, b) => a.qOrig - b.qOrig);
+  const out = [];
+  let prevQ = -Infinity, skipped = 0;
+  for (const n of ns) {
+    const cur = n.q0to != null ? n.q0to : n.qOrig;
+    if (!pick(n)) { prevQ = Math.max(prevQ, cur); continue; }
+    const snap = Math.round(n.qOrig / gridQ) * gridQ;
+    let q = n.qOrig + strength * (snap - n.qOrig);
+    if (q < prevQ + minGapQ) { // iki nota aynı ızgara noktasına düşüyor: bunu taşıma
+      q = n.qOrig >= prevQ + minGapQ ? n.qOrig : null;
+      skipped++;
+    }
+    if (q != null) { out.push({ note: n, q0to: Math.abs(q - n.qOrig) < 1e-4 ? null : q }); prevQ = q; }
+  }
+  return { targets: out, skipped };
+}
+
+// ---- 4) TAP: akor değişim noktalarından tempo, ölçü ve ızgara
+// taps: değişim anları (çıktı saniyesi, oynatılan sesle aynı zaman); notes: {t0, t1} (aynı zaman ekseninde)
+function estimateFromTaps(taps, notes, opts = {}) {
+  const ts = [...taps].sort((a, b) => a - b);
+  const out = { ok: false, reasons: [] };
+  if (ts.length < 3) { out.reasons.push(`En az 3 değişim noktası gerekir (${ts.length} var).`); return out; }
+  // birim u: tap'ler arası sürelerin "ortak katı" — tap'lerin hepsinin oturduğu en uzun periyot
+  const R = (L) => { let sx = 0, sy = 0; for (const t of ts) { sx += Math.cos((2 * Math.PI * t) / L); sy += Math.sin((2 * Math.PI * t) / L); } return Math.hypot(sx, sy) / ts.length; };
+  const span = ts[ts.length - 1] - ts[0];
+  let u = null;
+  for (let L = Math.min(8, span); L >= 0.6; L -= 0.002) {
+    const r = R(L);
+    if (r >= 0.9 && r >= R(L + 0.004) && r >= R(L - 0.004)) { u = L; break; }
+  }
+  if (!u) { out.reasons.push('Değişim noktaları düzenli bir periyoda oturmuyor (tempo sabit değil ya da noktalar kayık).'); return out; }
+  // ince ayar: t_i = φ + k_i·u en küçük kareler
+  const fitLine = (L) => {
+    const ks = ts.map((t) => Math.round((t - ts[0]) / L));
+    const n = ts.length, mk = ks.reduce((a, b) => a + b, 0) / n, mt = ts.reduce((a, b) => a + b, 0) / n;
+    let sxy = 0, sxx = 0;
+    ks.forEach((k, i) => { sxy += (k - mk) * (ts[i] - mt); sxx += (k - mk) ** 2; });
+    const uu = sxx > 0 ? sxy / sxx : L, phi = mt - uu * mk;
+    const res = Math.sqrt(ts.reduce((a, t, i) => a + (t - phi - ks[i] * uu) ** 2, 0) / n);
+    return { u: uu, phi, ks, res };
+  };
+  const fl = fitLine(u);
+  u = fl.u;
+  out.residualMs = fl.res * 1000;
+  // hipotezler: ölçü = u, 2u, u/2 (tap'ler ölçü başında / iki ölçüde bir / yarım ölçüde); ölçü türü melodiden
+  const nts = notes.filter((n) => n.t1 > n.t0);
+  const hyps = [];
+  for (const [mult, prior, lbl] of [[1, 0.15, 'her değişim ölçü başında'], [2, 0.06, 'değişimler ölçü başı ve ortasında'], [0.5, 0.03, 'değişimler iki ölçüde bir']]) {
+    const bar = u * mult;
+    for (const [meter, beats] of [['4/4', 4], ['3/4', 3], ['2/4', 2], ['6/8', 2]]) {
+      const bpm = (60 * beats) / bar;
+      if (bpm < 50 || bpm > 200) continue;
+      const est = nts.length >= 8 ? C.estimateMeter(nts, bpm) : null;
+      const gz = est && est.ok ? clamp(est.gridZ, 0, 8) / 8 : 0;
+      const mm = est && est.ok && est.meter === meter ? 0.15 + 0.3 * est.confidence : 0;
+      const near = opts.bpm && Math.abs(bpm - opts.bpm) / opts.bpm < 0.03 && (!opts.meter || opts.meter === meter) ? 0.1 : 0;
+      const pr = meter === '4/4' ? 0.03 : 0;
+      const rb = Math.abs(bpm - Math.round(bpm)) < 0.35 ? Math.round(bpm) : Math.round(bpm * 10) / 10; // tap sapması: tama yuvarla
+      hyps.push({ meter, bpm: rb, bar: (60 * beats) / rb, mult, why: lbl, score: 0.5 * gz + mm + prior + near + pr, gridZ: est && est.ok ? est.gridZ : null });
+    }
+  }
+  if (!hyps.length) { out.reasons.push('Değişim noktaları 50–200 BPM aralığında bir tempoya karşılık gelmiyor.'); return out; }
+  hyps.sort((a, b) => b.score - a.score);
+  const h = hyps[0];
+  // ölçü başı fazı: u ölçünün yarısıysa, tap'lerin çoğunun ölçü başına düştüğü faz
+  let phase = fl.phi;
+  if (h.mult === 2) {
+    const even = fl.ks.filter((k) => k % 2 === 0).length, odd = ts.length - even;
+    if (odd > even) phase = fl.phi + u;
+  }
+  // 1. ölçü: ilk notadan önceki (ya da çok az sonraki) ölçü çizgisi
+  const P = 60 / h.bpm;
+  const first = nts.length ? Math.min(...nts.map((n) => n.t0)) : ts[0];
+  const k = Math.floor((first + 0.15 * P - phase) / h.bar);
+  const barLine1 = phase + k * h.bar;
+  out.ok = true;
+  Object.assign(out, { bpm: h.bpm, meter: h.meter, barSec: h.bar, firstBarSec: barLine1, why: h.why, hypotheses: hyps.slice(0, 4), unitSec: u });
+  // ✂ işaretleri: her tap, en yakın ölçü başı / ölçü ortasına
+  const g = C.makeGrid({ bpm: h.bpm, meter: h.meter }), per = g.split ? 2 : 1, unit = h.bar / per;
+  const marks = [], off = [];
+  for (const t of ts) {
+    const x = (t - barLine1) / unit, kk = Math.round(x);
+    if (Math.abs(x - kk) > 0.25) { off.push(t); continue; }
+    const bar = Math.floor(kk / per) + 1, half = kk % per;
+    if (bar < 1 || (bar === 1 && half === 0)) continue;
+    if (!marks.some((m) => m.bar === bar && m.half === half)) marks.push({ bar, half, kind: 'change' });
+  }
+  out.marks = marks;
+  if (off.length) out.reasons.push(`${off.length} nokta ölçü başı/ortasına oturmadı; işaret konmadı.`);
+  if (out.residualMs > 60) out.reasons.push(`Noktalar ortalama ${Math.round(out.residualMs)} ms sapıyor; tempo kayıyor olabilir.`);
+  if (hyps[1] && hyps[1].score > h.score - 0.05) out.reasons.push(`Alternatif: ${hyps[1].meter}, ${hyps[1].bpm} BPM (${hyps[1].why}) neredeyse aynı olası.`);
+  return out;
+}
+
+Object.assign(C, { buildTimeMap, identityMap, wsolaWarp, QUANT_GRIDS, quantizeTargets, estimateFromTaps });
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="stylecore">/* =====================================================================
@@ -4329,6 +4564,8 @@ async function analyze() {
 function refresh() {
   // eski projelerde olmayan alanlar
   S.proj.drums = S.proj.drums || { on: false, loop: 'auto' };
+  S.proj.quant = S.proj.quant || { grid: '1/8', strength: 100 };
+  S.proj.taps = S.proj.taps || [];
   S.proj.mixer.drums = S.proj.mixer.drums || { vol: -8, mute: false, solo: false };
   if (S.proj.chordPins && S.proj.chordPins.length && S.proj.chordPinsSig !== pinSig()) S.proj.chordPins = []; // başka bir şey değişti: yeniden hesapla
   // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
@@ -4351,6 +4588,7 @@ function refresh() {
   renderInspector();
   renderInfo();
   renderDrums();
+  renderTaps();
   layoutTimeline();
   draw();
   scheduleRender();
@@ -4367,24 +4605,25 @@ function shiftsEqual(a, b) {
 function scheduleRender(now) {
   const corr = S.d && S.d.correction;
   if (!corr || !S.audio) return;
-  if (shiftsEqual(corr.shift, S.correctedShift)) return;
+  if (renderReady()) return;
   clearTimeout(renderTimer);
   $('#renderInfo').textContent = 'Düzeltilmiş vokal yeniden render edilecek…';
   renderTimer = setTimeout(doRender, now ? 0 : 350);
 }
 async function doRender() {
   if (S.drag) { renderTimer = setTimeout(doRender, 150); return; }
-  const shift = S.d.correction.shift.slice();
-  await busy('Düzeltilmiş vokal render ediliyor (TD-PSOLA, formant korumalı)…', async () => {
+  const shift = S.d.correction.shift.slice(), map = S.d.timeMap;
+  await busy(map && !map.identity ? 'Düzeltilmiş vokal render ediliyor (perde: TD-PSOLA · zamanlama: WSOLA)…' : 'Düzeltilmiş vokal render ediliyor (TD-PSOLA, formant korumalı)…', async () => {
     await tick();
-    S.corrected = hasShift(shift) ? C.psolaShift(S.audio.data, S.audio.sr, S.track, shift) : S.audio.data;
-    S.correctedShift = shift;
+    const pitched = hasShift(shift) ? C.psolaShift(S.audio.data, S.audio.sr, S.track, shift) : S.audio.data;
+    S.corrected = map && !map.identity ? C.wsolaWarp(pitched, S.audio.sr, map) : pitched;
+    S.correctedShift = shift; S.correctedWarp = map ? map.sig : '';
   });
   Player.buffersDirty = true;
   renderInfo();
   status('Düzeltilmiş vokal hazır (ayrı iz). A/B ile karşılaştırın.');
 }
-const renderReady = () => !!S.d && !!S.d.correction && shiftsEqual(S.d.correction.shift, S.correctedShift);
+const renderReady = () => !!S.d && !!S.d.correction && shiftsEqual(S.d.correction.shift, S.correctedShift) && (S.d.timeMap ? S.d.timeMap.sig : '') === (S.correctedWarp || '');
 
 // ---------------------------------------------------------------- piyano örnekleri (Salamander → yedek sentez)
 // Aynı Salamander örnekleri için sırayla denenen kaynaklar (biri engelliyse diğeri): GitHub Pages, jsDelivr'in GitHub aynası
@@ -4448,6 +4687,103 @@ $('#pianoInfo').addEventListener('click', async (e) => {
   }
   status(piano.kind === 'salamander' ? 'Salamander piyano yüklendi.' : 'Salamander yine indirilemedi; yedek piyano çalıyor.', piano.kind === 'salamander' ? '' : 'err');
 });
+// ---------------------------------------------------------------- ZAMANLAMA: quantize + yatay sürükleme
+const quantGridQ = () => C.QUANT_GRIDS[S.proj.quant.grid] || 0.5;
+const quantGridLabel = () => S.proj.quant.grid;
+function quantScope() {
+  const sc = $('#inQuantScope').value;
+  if (sc === 'section') { const sec = S.sel && S.sel.type === 'section' ? S.sel.id : S.sel && S.sel.type === 'note' ? (S.d.notes.find((n) => n.id === S.sel.id) || {}).section : null; return sec ? { f: (n) => n.section === sec, name: (S.d.sections.find((x) => x.id === sec) || {}).name } : null; }
+  if (sc === 'note') { const id = S.sel && S.sel.type === 'note' ? S.sel.id : null; return id ? { f: (n) => n.id === id, name: 'seçili nota' } : null; }
+  return { f: () => true, name: 'tüm şarkı' };
+}
+function applyQuantize(scope, strength = S.proj.quant.strength / 100) {
+  if (!S.d || !S.d.notes.length) { status('Önce kayıt / analiz.', 'err'); return; }
+  if (!scope) { status('Önce bir bölüm ya da nota seç (kapsam).', 'err'); return; }
+  const r = C.quantizeTargets(S.d.notes, S.d.g, { gridQ: quantGridQ(), strength, filter: scope.f });
+  let n = 0;
+  for (const x of r.targets) { const ed = editFor(x.note, true); ed.q0to = x.q0to; if (x.q0to != null) n++; }
+  cleanupEdits(); refresh(); scheduleRender(true);
+  status(`Quantize (${quantGridLabel()}, %${Math.round(strength * 100)}, ${scope.name}): ${n} nota kaydırıldı${r.skipped ? `, ${r.skipped} nota aynı ızgara noktasına düşeceği için yerinde kaldı` : ''}.`);
+}
+function clearTiming(scope) {
+  if (!scope) return;
+  let n = 0;
+  for (const nt of S.d.notes) if (scope.f(nt) && nt.edit && nt.edit.q0to != null) { nt.edit.q0to = null; n++; }
+  cleanupEdits(); refresh(); scheduleRender(true);
+  status(`Zamanlama sıfırlandı (${scope.name}): ${n} nota kaydettiğin yere döndü.`);
+}
+$('#inQuantGrid').addEventListener('change', (e) => { S.proj.quant.grid = e.target.value; });
+$('#inQuantStrength').addEventListener('input', (e) => { S.proj.quant.strength = +e.target.value; $('#outQuantStrength').textContent = '%' + e.target.value; });
+$('#btnQuantize').onclick = () => applyQuantize(quantScope());
+$('#btnQuantClear').onclick = () => clearTiming(quantScope());
+// ---------------------------------------------------------------- TAP: oynatırken akor değişim noktalarını işaretle → tempo, ölçü, ızgara
+function tapAt(x) {
+  if (!S.d || !S.proj.taps) return -1;
+  let best = -1, bd = 7;
+  S.proj.taps.forEach((t, i) => { const d = Math.abs(qToX((t - S.d.off) / S.d.g.spq) - x); if (d < bd) { bd = d; best = i; } });
+  return best;
+}
+// duyulan an: oynatma imleci Tone'un ileri planlama süresi + çıkış gecikmesi kadar öndedir
+function heardNow() {
+  const ctx = window.Tone ? Tone.getContext() : null;
+  const la = ctx ? ctx.lookAhead || 0 : 0, ol = ctx && ctx.rawContext ? ctx.rawContext.outputLatency || ctx.rawContext.baseLatency || 0 : 0;
+  return S.pos - la - ol;
+}
+function addTap() {
+  if (!S.d) return;
+  if (!Player.playing) { status('Değişim noktası için önce oynat (Boşluk), sonra akor değişiminde T\'ye bas.', 'err'); return; }
+  const t = heardNow() + S.d.off;
+  S.proj.taps.push(t); S.proj.taps.sort((a, b) => a - b);
+  S.tapFlash = performance.now();
+  renderTaps(); draw();
+}
+function tapEstimate() {
+  if (!S.d || !S.proj.taps || S.proj.taps.length < 3) return null;
+  const notes = S.d.notes.map((n) => ({ t0: n.tl0 + S.d.off, t1: n.tl1 + S.d.off }));
+  return C.estimateFromTaps(S.proj.taps, notes, { bpm: S.proj.settings.bpm, meter: S.proj.settings.meter });
+}
+function renderTaps() {
+  const box = $('#tapInfo');
+  if (!box) return;
+  const n = (S.proj.taps || []).length;
+  $('#tapCount').textContent = n ? `(${n})` : '';
+  const r = tapEstimate();
+  S.tapEst = r;
+  let h = '';
+  if (!n) h = '<p class="hint">Henüz nokta yok.</p>';
+  else if (!r) h = `<p class="hint">${n} nokta — tahmin için en az 3 gerekir.</p>`;
+  else if (!r.ok) h = `<div class="st-warn">⚠ ${esc(r.reasons.join(' '))}</div>`;
+  else {
+    const set = S.proj.settings, curOff = C.effectiveOffset(S.proj);
+    const shiftMs = Math.round((r.firstBarSec - curOff) * 1000);
+    h = `<div class="adv-opt"><b>${n} noktadan: ${esc(r.meter)}, ${r.bpm} BPM</b> · ${esc(r.why)} · noktalar ortalama ${Math.round(r.residualMs)} ms sapıyor
+      <div class="hint">1. ölçü ${r.firstBarSec.toFixed(2)} s'de başlıyor (ölçü çizgileri şu an ${Math.abs(shiftMs) < 15 ? 'doğru yerde' : `${shiftMs > 0 ? '+' : ''}${shiftMs} ms kayık`}) · ${r.marks.length} ✂ işareti${set.meter !== r.meter || Math.abs(set.bpm - r.bpm) > 0.05 ? ` · proje şu an ${esc(set.meter)}, ${set.bpm} BPM` : ''}</div>
+      ${r.reasons.map((x) => `<div class="hint">ℹ ${esc(x)}</div>`).join('')}
+      ${r.hypotheses.length > 1 ? `<div class="hint">Diğer okumalar: ${r.hypotheses.slice(1, 3).map((x) => `${esc(x.meter)} ${x.bpm} BPM`).join(', ')}</div>` : ''}
+      <div class="row"><button class="accent" id="btnTapApply">Uygula: tempo + ölçü + ızgara + ✂ işaretleri</button></div></div>`;
+  }
+  if (box.dataset.h !== h) { box.innerHTML = h; box.dataset.h = h; } // aynıysa dokunma: üstündeki düğmeye basılırken kaybolmasın
+}
+function applyTaps() {
+  const r = S.tapEst;
+  if (!r || !r.ok) return;
+  const set = S.proj.settings, a = S.proj.audio;
+  const before = `${set.meter}, ${set.bpm} BPM`;
+  set.bpm = r.bpm; set.meter = r.meter;
+  const lat = a.source === 'record' ? (set.latencyMs || 0) / 1000 : 0;
+  a.offsetSec = r.firstBarSec - lat; a.alignMode = 'none';
+  if (a.source === 'record') a.recOffsetSec = a.offsetSec;
+  S.proj.changeMarks = r.marks.slice();
+  S.proj.chordOpts.onlyMarked = true;
+  S.proj.chordPins = [];
+  S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[set.meter].split);
+  syncInputs(); refresh();
+  status(`Tap'lerden: ${before} → ${set.meter}, ${set.bpm} BPM · ölçü çizgileri hizalandı · ${r.marks.length} ✂ işareti, akorlar yalnızca bu noktalarda değişir.`);
+}
+$('#btnTap').onclick = () => addTap();
+$('#btnTapUndo').onclick = () => { if (S.proj.taps.length) { S.proj.taps.pop(); refresh(); } };
+$('#btnTapClear').onclick = () => { S.proj.taps = []; refresh(); };
+$('#tapInfo').addEventListener('click', (e) => { if (e.target.closest('#btnTapApply')) applyTaps(); });
 // ---------------------------------------------------------------- DAVUL: ölçü tahmini + loop seçimi
 function drumNotes() {
   if (!S.d || !S.track) return [];
@@ -4489,7 +4825,7 @@ function renderDrums() {
       <div class="hint">Vokal ${est.firstBeat === 1 ? 'ölçü başında (1. vuruşta)' : `${String(est.firstBeat).replace('.5', '. vuruşun ve\'sinde').replace(/^(\d)$/, '$1. vuruşta')} (öncü)`} başlıyor${shifted ? ` — ölçü çizgileri şu an ${Math.abs(est.shiftSec).toFixed(2)} s kayık görünüyor` : ''}.</div>
       ${differs || shifted ? `<div class="row"><button class="accent" id="btnMeterApply">Uygula: ${esc(est.meter)}${est.bpm !== set.bpm ? `, ${est.bpm} BPM` : ''}${shifted ? ' + ölçü çizgilerini hizala' : ''}</button> <span class="hint">proje şu an ${esc(set.meter)}, ${set.bpm} BPM</span></div>` : '<div class="hint">✓ Proje ölçüsüyle uyumlu.</div>'}</div>`;
   }
-  $('#meterEst').innerHTML = mh;
+  if ($('#meterEst').dataset.h !== mh) { $('#meterEst').innerHTML = mh; $('#meterEst').dataset.h = mh; }
   // loop listesi (proje ölçüsü)
   const pool = C.loopsFor(set.meter), sel = $('#inDrumLoop');
   const bestId = sug && sug.best ? sug.best.loop.id : null;
@@ -4510,7 +4846,7 @@ function renderDrums() {
     } else if (sug.reasons.length) ih += sug.reasons.map((x) => `<div class="hint">ℹ ${esc(x)}</div>`).join('');
     ih += `<details><summary class="hint">Tüm loop'ların puanı (${esc(set.meter)})</summary><ol class="drum-rank">${sug.ranked.map((x) => `<li>${esc(x.loop.name)} — ${x.score.toFixed(2)} <span class="hint">(vurgu ${x.accent.toFixed(2)}, tempo ${x.tempo.toFixed(2)}${x.feelOk ? '' : ', his uymuyor'})</span></li>`).join('')}</ol></details>`;
   }
-  $('#drumInfo').innerHTML = ih;
+  if ($('#drumInfo').dataset.h !== ih) { $('#drumInfo').innerHTML = ih; $('#drumInfo').dataset.h = ih; }
   $('#drumGrid').textContent = L ? C.loopGridText(L) : '';
 }
 $('#meterEst').addEventListener('click', (e) => {
@@ -5014,6 +5350,15 @@ function draw() {
     if (x < TL.KW - 1) continue;
     c.fillStyle = '#9aa2b4'; c.fillText(String(b + 1), x + 4, TL.RULER / 2);
   }
+  // akor değişim noktaları (tap): cetvelde ◆, akor satırında ince çizgi
+  if (d && S.proj.taps && S.proj.taps.length) {
+    for (const t of S.proj.taps) {
+      const x = Math.round(qToX((t - d.off) / g.spq)) + 0.5;
+      if (x < TL.KW || x > W) continue;
+      c.strokeStyle = 'rgba(255,209,102,0.8)'; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(x, TL.RULER); c.lineTo(x, TL.TOP); c.stroke(); c.setLineDash([]);
+      c.fillStyle = '#ffd166'; c.beginPath(); c.moveTo(x, 3); c.lineTo(x + 5, TL.RULER / 2); c.lineTo(x, TL.RULER - 3); c.lineTo(x - 5, TL.RULER / 2); c.fill();
+    }
+  }
   // bölüm şeridi
   const secY = TL.RULER;
   c.fillStyle = '#15181f'; c.fillRect(TL.KW, secY, W, TL.SEC);
@@ -5118,9 +5463,11 @@ function draw() {
       if (x1 < TL.KW || x0 > W) continue;
       const y = rg.yOf(n.effMidi), h = Math.max(4, rg.rowH - 2);
       // ses düzeltmesiyle yeri değişen notanın orijinal yeri (hayalet)
-      if (n.nearest !== n.effMidi || n.label != null) {
+      const timeMoved = Math.abs(n.q0 - n.qOrig) > 1e-3;
+      if (n.nearest !== n.effMidi || n.label != null || timeMoved) {
+        const gx0 = timeMoved ? qToX(n.qOrig) : x0, gx1 = gx0 + (x1 - x0);
         c.setLineDash([3, 3]); c.strokeStyle = 'rgba(255,255,255,0.35)';
-        c.strokeRect(x0 + 0.5, rg.yOf(n.nearest) - h / 2 + 0.5, x1 - x0 - 1, h - 1);
+        c.strokeRect(gx0 + 0.5, rg.yOf(n.nearest) - h / 2 + 0.5, gx1 - gx0 - 1, h - 1);
         c.setLineDash([]);
       }
       c.fillStyle = n.inScale ? '#5b9dff' : '#ff8a4c';
@@ -5168,7 +5515,8 @@ function draw() {
     // ham ve düzeltilmiş perde eğrileri
     if (S.track) {
       const tr = S.track, hop = tr.hopSec, off = d.off, spq = g.spq;
-      const f0s = Math.max(0, Math.floor(((q0v * spq) + off) / hop) - 1), f1s = Math.min(tr.f0.length, Math.ceil(((q1v * spq) + off) / hop) + 1);
+      const tm = d.timeMap || C.identityMap();
+      const f0s = Math.max(0, Math.floor(tm.inv((q0v * spq) + off) / hop) - 40), f1s = Math.min(tr.f0.length, Math.ceil(tm.inv((q1v * spq) + off) / hop) + 40);
       const sh = d.correction ? d.correction.shift : null;
       const curve = (withShift, color, width) => {
         c.strokeStyle = color; c.lineWidth = width; c.beginPath();
@@ -5177,7 +5525,7 @@ function draw() {
           const on = tr.f0[f] > 0 && (!withShift || (sh && Math.abs(sh[f]) > 0.5));
           if (!on) { pen = false; continue; }
           const m = C.hzToMidi(tr.f0[f]) + (withShift ? sh[f] / 100 : 0);
-          const x = qToX((f * hop - off) / spq), y = rg.yOf(m);
+          const x = qToX((tm.fwd(f * hop) - off) / spq), y = rg.yOf(m);
           if (!pen) { c.moveTo(x, y); pen = true; } else c.lineTo(x, y);
         }
         c.stroke(); c.lineWidth = 1;
@@ -5190,7 +5538,7 @@ function draw() {
   c.fillStyle = '#0c0e12'; c.fillRect(0, 0, TL.KW, H);
   for (let m = rg.lo; m <= rg.hi; m++) {
     const y = rg.yOf(m) - rg.rowH / 2;
-    c.fillStyle = isBlack(m) ? '#22252c' : '#d8dbe2';
+    c.fillStyle = m === S.keyDown ? '#ff9f43' : isBlack(m) ? '#22252c' : '#d8dbe2';
     c.fillRect(0, y + 0.5, isBlack(m) ? TL.KW * 0.62 : TL.KW - 2, rg.rowH - 1);
     if (C.mod12(m) === 0 && rg.rowH >= 8) { c.fillStyle = '#20242c'; c.font = '10px system-ui, sans-serif'; c.fillText('C' + (m / 12 - 1), TL.KW - 22, y + rg.rowH / 2); }
   }
@@ -5219,6 +5567,15 @@ function boundaryAt(x, y) {
   if (!sec || (bar === sec.startBar && half === 0) || bar > S.d.bars) return null; // bölüm başı her zaman değişim noktası
   return { bar, half, x: qToX(k * step) };
 }
+// klavyedeki tuşa basınca nota çalar (piyano)
+async function playKey(m) {
+  S.keyDown = m; draw();
+  clearTimeout(S.keyTimer); S.keyTimer = setTimeout(() => { S.keyDown = null; draw(); }, 350);
+  try { await Player.ensure(); } catch (e) { status(e.message, 'err'); return; }
+  Player.sampler.triggerAttackRelease(Tone.Frequency(m, 'midi').toNote(), 0.9, Tone.now() + 0.01, 0.7);
+  Player.keyHits = (Player.keyHits || 0) + 1;
+  status(`♪ ${C.noteName(m, false)}`);
+}
 function noteAt(x, y) {
   if (!S.d) return null;
   const rg = rollGeom();
@@ -5237,13 +5594,20 @@ function editFor(n, create) {
   return e;
 }
 function cleanupEdits() {
-  S.proj.noteEdits = S.proj.noteEdits.filter((e) => e.label != null || e.target != null || e.locked);
+  S.proj.noteEdits = S.proj.noteEdits.filter((e) => e.label != null || e.target != null || e.locked || e.q0to != null);
 }
 cv.addEventListener('pointerdown', (e) => {
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-  if (x < TL.KW) return;
+  if (x < TL.KW) { if (y > TL.TOP && S.d) playKey(Math.round(rollGeom().mOf(y))); return; }
   const g = grid(), q = xToQ(x);
-  if (y < TL.RULER) { seek(Math.max(0, q) * g.spq); return; }
+  if (y < TL.RULER) {
+    const ti = tapAt(x);
+    if (ti >= 0) {
+      if (e.altKey) { S.proj.taps.splice(ti, 1); refresh(); status('Değişim noktası silindi.'); return; }
+      S.drag = { type: 'tap', i: ti, x0: x, t0: S.proj.taps[ti] }; cv.setPointerCapture(e.pointerId); return;
+    }
+    seek(Math.max(0, q) * g.spq); return;
+  }
   if (y < TL.RULER + TL.SEC) {
     const bar = Math.max(1, Math.floor(q / g.barQ) + 1);
     const s = sectionAtBar(bar);
@@ -5271,14 +5635,17 @@ cv.addEventListener('pointerdown', (e) => {
   const mode = e.altKey ? 'label' : S.editMode;
   if (mode !== 'select') {
     const ed0 = editFor(n);
-    S.drag = { type: 'note', id: n.id, y0: y, mode, geo: rollGeom(), heard: Math.round(n.effMidi), baseRow: n.effMidi, baseSound: n.manualTarget ?? n.soundMidi ?? n.median, orig: C.noteName(n.effMidi, false), moved: false,
-      prev: ed0 ? { target: ed0.target ?? null, label: ed0.label ?? null, locked: !!ed0.locked } : { target: null, label: null, locked: false } };
+    S.drag = { type: 'note', id: n.id, y0: y, x0: x, axis: null, baseQ: n.q0, mode, geo: rollGeom(), heard: Math.round(n.effMidi), baseRow: n.effMidi, baseSound: n.manualTarget ?? n.soundMidi ?? n.median, orig: C.noteName(n.effMidi, false), moved: false,
+      prev: ed0 ? { target: ed0.target ?? null, label: ed0.label ?? null, locked: !!ed0.locked, q0to: ed0.q0to ?? null } : { target: null, label: null, locked: false, q0to: null } };
     cv.setPointerCapture(e.pointerId);
   }
 });
 cv.addEventListener('pointermove', (e) => {
   const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
   if (!S.drag) {
+    if (x < TL.KW && y > TL.TOP) { cv.style.cursor = 'pointer'; cv.title = 'Tuşa bas: notayı duy'; return; }
+    const ti = y < TL.RULER ? tapAt(x) : -1;
+    if (ti >= 0) { cv.style.cursor = 'ew-resize'; cv.title = 'Değişim noktası (tap): sürükle = kaydır · Alt+tık = sil'; return; }
     const hb = boundaryAt(x, y);
     if (JSON.stringify(hb) !== JSON.stringify(S.hoverMark)) { S.hoverMark = hb; draw(); }
     if (hb) {
@@ -5288,22 +5655,40 @@ cv.addEventListener('pointermove', (e) => {
       return;
     }
     const over = y > TL.TOP && noteAt(x, y);
-    cv.style.cursor = over && (S.editMode !== 'select' || e.altKey) ? 'ns-resize' : over ? 'pointer' : y < TL.TOP && y > TL.RULER ? 'pointer' : 'default';
-    cv.title = over ? 'Sürükle: notayı taşı · Shift+sürükle: cent ince ayar · Alt+sürükle: yalnızca etiket (ses aynı)' : '';
+    cv.style.cursor = over && (S.editMode !== 'select' || e.altKey) ? 'move' : over ? 'pointer' : y < TL.TOP && y > TL.RULER ? 'pointer' : 'default';
+    cv.title = over ? 'Yukarı/aşağı sürükle: notayı taşı · sağa/sola sürükle: zamanı kaydır (ızgaraya yapışır; Ctrl/⌘ serbest) · Shift: cent ince ayar · Alt: yalnızca etiket' : '';
     return;
   }
   const g = grid();
+  if (S.drag.type === 'tap') {
+    S.proj.taps[S.drag.i] = Math.max(0, S.drag.t0 + ((x - S.drag.x0) / S.view.pxPerQ) * g.spq);
+    S.drag.moved = true; draw(); return;
+  }
   if (S.drag.type === 'newSection') {
     if (Math.abs(x - S.drag.x0) >= 4) S.drag.moved = true;
     S.drag.b1 = Math.max(1, Math.floor(xToQ(x) / g.barQ) + 1);
     draw(); return;
   }
   if (S.drag.type === 'note') {
-    const dy = S.drag.y0 - y;
-    if (!S.drag.moved && Math.abs(dy) < 4) return;
+    const dy = S.drag.y0 - y, dx = x - S.drag.x0;
+    if (!S.drag.moved && Math.abs(dy) < 4 && Math.abs(dx) < 4) return;
     S.drag.moved = true;
+    // eksen ilk harekete göre kilitlenir: yatay = zaman (sağa/sola), dikey = perde
+    if (!S.drag.axis) S.drag.axis = Math.abs(dx) > Math.abs(dy) ? 'time' : 'pitch';
     const n = S.d.notes.find((k) => k.id === S.drag.id);
     if (!n) return;
+    if (S.drag.axis === 'time') {
+      const ed = editFor(n, true);
+      const gq = quantGridQ();
+      let q = S.drag.baseQ + dx / S.view.pxPerQ;
+      const free = e.ctrlKey || e.metaKey;
+      if (!free) q = Math.round(q / gq) * gq; // ızgaraya yapış (Ctrl/⌘ ile serbest)
+      ed.q0to = Math.abs(q - n.qOrig) < 1e-4 ? null : q;
+      const mp = C.metricPos(q, g), ms = Math.round((q - n.qOrig) * g.spq * 1000);
+      S.drag.tip = `Zaman: ölçü ${mp.bar + 1}, vuruş ${(mp.pos / g.pulseQ + 1).toFixed(2)} (${ms >= 0 ? '+' : ''}${ms} ms)${free ? ' · serbest' : ` · ızgara ${quantGridLabel()}`}`;
+      refresh();
+      return;
+    }
     const semis = dy / rollGeom().rowH;
     const ed = editFor(n, true);
     if (S.drag.mode === 'sound' && e.shiftKey) {
@@ -5337,12 +5722,14 @@ cv.addEventListener('pointerup', () => {
   const dr = S.drag;
   S.drag = null;
   if (!dr) return;
+  if (dr.type === 'tap') { S.proj.taps.sort((a, b) => a - b); refresh(); return; }
   if (dr.type === 'newSection') {
     // tek tık bölüm açmaz (yanlışlıkla 1 ölçülük bölüm oluşuyordu); bölüm sürükleyerek açılır
     if (!dr.moved) status('Bölüm eklemek için bölüm şeridinde ölçüler boyunca sürükleyin (ya da 4. adımdaki "Ekle").');
     else addSection(null, Math.min(dr.b0, dr.b1), Math.max(dr.b0, dr.b1));
   } else if (dr.type === 'note' && dr.moved) {
     cleanupEdits(); refresh();
+    if (dr.axis === 'time') { scheduleRender(true); if (dr.tip) status(dr.tip + ' · geri almak için notaya tıklayıp "✕ Zamanı geri al"'); draw(); return; }
     if (dr.tip) status(dr.tip.replace(' — değişiklik yok', ': değişiklik yok') + (dr.tip.includes('değişiklik yok') ? '' : ' · geri almak için notaya tıklayıp "✕ Geri al"'));
     if (dr.mode === 'sound') scheduleRender(true);
   }
@@ -5500,7 +5887,8 @@ function renderInspector() {
       <span>Ağırlıklı histogram</span><span>${hist || '—'}</span>
       <span>Son ağırlıklı nota</span><span>${ki && ki.last ? esc(ki.last.name) : '—'}</span>
       <span>Akorlar</span><span>${esc(chords)}</span></div>
-      <p class="hint">Ton/mod seçimini soldaki 4. adımdan yapın. Son karar her zaman sizde.</p>`;
+      <p class="hint">Ton/mod seçimini soldaki 4. adımdan yapın. Son karar her zaman sizde.</p>
+      ${s.implicit ? '' : `<div class="row"><button data-act="secQuant">Bu bölümü quantize et (${esc(quantGridLabel())}, %${S.proj.quant.strength})</button><button data-act="secQuantClear">Bölümün zamanlamasını sıfırla</button></div>`}`;
   }
 }
 // Tıklayarak eklenen her şey (bölüm, akor kilidi, etiket, ses düzeltmesi, nota kilidi) tekrar
@@ -5534,6 +5922,8 @@ function renderNoteInspector(box, n) {
       manual && { text: `Elle ince akort: <b>${esc(nn(Math.round(n.manualTarget)))} ${fine >= 0 ? '+' : ''}${fine} cent</b> <span class="hint">(ses ${Math.round(corr.applied || 0)} cent kaydırıldı; nota aynı)</span>`, act: 'sndReset', btn: 'Elle akordu kaldır' },
       !manual && n.locked && { text: 'Autotune bu notada kapalı (bu nota olduğu gibi kalıyor)', act: 'noteUnlock', btn: 'Autotune\'a geri ver' },
     ].filter(Boolean);
+  const tShift = n.q0to != null ? Math.round((n.q0to - n.qOrig) * g.spq * 1000) : 0;
+  if (n.q0to != null) { const tm = C.metricPos(n.q0to, g); rms.push({ text: `Zaman: ölçü ${tm.bar + 1}, vuruş ${(tm.pos / g.pulseQ + 1).toFixed(2)}'ye kaydırıldı <span class="hint">(${tShift >= 0 ? '+' : ''}${tShift} ms)</span>`, act: 'timeReset', btn: 'Zamanı geri al' }); }
   if (rms.length > 1) rms.push({ text: 'Bu notadaki bütün değişiklikler', act: 'noteResetAll', btn: 'Hepsini kaldır' });
   const atLine = manual ? 'Elle düzeltildi — autotune bu notaya dokunmaz.'
     : corr.source === 'auto' ? `Autotune bu notayı ${Math.round(corr.applied) >= 0 ? '+' : ''}${Math.round(corr.applied)} cent kaydırıyor → ${esc(nn(corr.target))}.${n.autoMoved ? ` ⚠ Scale'e çekme notayı ${esc(nn(n.sungMidi))}'den ${esc(nn(n.effMidi))}'ye taşıdı: akorlar duyduğun ${esc(nn(n.effMidi))}'ye göre bulunuyor (ton önerisi söylediğin ${esc(nn(n.sungMidi))}'yi kullanır).` : ''}`
@@ -5558,6 +5948,9 @@ function renderNoteInspector(box, n) {
         <div class="row"><button data-act="snd" data-v="-0.05">−5 cent</button><button data-act="snd" data-v="0.05">+5 cent</button><button data-act="sndSnap">Tam yarım sese çek</button></div>
         <label class="chk"><input type="checkbox" data-act="lock"${n.locked ? ' checked' : ''}${manual ? ' disabled' : ''}> Autotune bu notaya dokunmasın</label>
         <p class="hint">Nota doğru ama biraz pes/tiz ise. Nota değişmez, akorlar etkilenmez. Kısayol: <kbd>Shift</kbd>+sürükle ya da <kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd>.</p></div>
+      <div class="box b"><h4>Zamanlama <small class="hint">— sağa/sola</small></h4>
+        <div class="row"><button data-act="timeNudge" data-v="-1">◀ ${esc(quantGridLabel())}</button><button data-act="timeSnap">Izgaraya çek (${esc(quantGridLabel())})</button><button data-act="timeNudge" data-v="1">${esc(quantGridLabel())} ▶</button></div>
+        <p class="hint">Ses bütün olarak kayar, perde değişmez. Kısayol: notayı <b>sağa/sola sürükle</b> (ızgaraya yapışır; <kbd>Ctrl</kbd>/<kbd>⌘</kbd> ile serbest). Izgara 5. adımdaki quantize ayarından.</p></div>
       <div class="box a"><h4>Etiketi düzelt <small class="hint">— yalnızca analiz, ses aynı</small></h4>
         <div class="row">Analizdeki nota: <b>${esc(nn(n.effMidi))}</b> <button data-act="label" data-v="-1">−1</button><button data-act="label" data-v="1">+1</button></div>
         <p class="hint">Program notayı yanlış algıladıysa (sen doğru söyledin). Ses değişmez; ton önerisi ve akorlar bu etiketi kullanır. Kısayol: <kbd>Alt</kbd>+sürükle.</p></div>
@@ -5583,6 +5976,11 @@ $('#inspector').addEventListener('click', (e) => {
   if (!b || !S.sel) return;
   const act = b.dataset.act;
   if (act === 'secDelete' && S.sel.type === 'section') { deleteSection(S.sel.id); return; }
+  if ((act === 'secQuant' || act === 'secQuantClear') && S.sel.type === 'section') {
+    const sid = S.sel.id, sc = { f: (n) => n.section === sid, name: (S.d.sections.find((x) => x.id === sid) || {}).name };
+    if (act === 'secQuant') applyQuantize(sc); else clearTiming(sc);
+    return;
+  }
   if (act === 'secUnlockAll' && S.sel.type === 'section') {
     const s = S.proj.sections.find((x) => x.id === S.sel.id);
     if (s) { S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar < s.startBar || l.bar > s.endBar); refresh(); status(`“${s.name}” bölümündeki akor kilitleri kaldırıldı.`); }
@@ -5599,8 +5997,15 @@ $('#inspector').addEventListener('click', (e) => {
     if (act === 'sndSnap') soundEdit(n, () => n.nearest);
     if (act === 'sndReset') { const ed = editFor(n); if (ed) { ed.target = null; ed.locked = false; } cleanupEdits(); refresh(); scheduleRender(true); }
     if (act === 'noteUnlock') { const ed = editFor(n); if (ed) ed.locked = false; cleanupEdits(); refresh(); }
+    if (act === 'timeReset') { const ed = editFor(n); if (ed) ed.q0to = null; cleanupEdits(); refresh(); scheduleRender(true); }
+    if (act === 'timeSnap' || act === 'timeNudge') {
+      const gq = quantGridQ(), ed = editFor(n, true);
+      const q = act === 'timeSnap' ? Math.round(n.qOrig / gq) * gq : Math.round(n.q0 / gq) * gq + gq * +b.dataset.v;
+      ed.q0to = Math.abs(q - n.qOrig) < 1e-4 ? null : q;
+      cleanupEdits(); refresh(); scheduleRender(true);
+    }
     if (act === 'noteResetAll') {
-      const had = n.manualTarget != null;
+      const had = n.manualTarget != null || n.q0to != null;
       S.proj.noteEdits = S.proj.noteEdits.filter((e) => e !== editFor(n));
       refresh(); if (had) scheduleRender(true);
       status('Notadaki bütün değişiklikler kaldırıldı.');
@@ -5816,9 +6221,10 @@ function renderInfo() {
     fine: ns.filter((n) => n.manualTarget != null && !(n.label != null && n.label === Math.round(n.manualTarget))).length,
     label: ns.filter((n) => n.label != null && !(n.manualTarget != null && n.label === Math.round(n.manualTarget))).length,
     atOff: ns.filter((n) => n.locked && n.manualTarget == null).length,
+    time: ns.filter((n) => n.q0to != null).length,
   };
   const row = (k, txt, what) => cnt[k] ? `<div class="rm-row"><span>${txt} <b>${cnt[k]}</b></span><button class="danger" data-clear="${k}" data-what="${what}">✕ Hepsini geri al</button></div>` : '';
-  const sum = row('move', 'Taşınan nota:', 'taşımalar') + row('fine', 'Elle ince akort:', 'ince akortlar') + row('label', 'Etiket düzeltmesi:', 'etiketler') + row('atOff', 'Autotune\'un dokunmadığı (kilitli) nota:', 'autotune kilitleri');
+  const sum = row('move', 'Taşınan nota:', 'taşımalar') + row('fine', 'Elle ince akort:', 'ince akortlar') + row('label', 'Etiket düzeltmesi:', 'etiketler') + row('atOff', 'Autotune\'un dokunmadığı (kilitli) nota:', 'autotune kilitleri') + row('time', 'Zamanı kaydırılan (quantize / sürükleme) nota:', 'zaman kaydırmaları');
   $('#editSummary').innerHTML = sum ? `<div class="rm-bar"><div class="hint">Elle yapılan değişiklikler — tek tek geri almak için notaya tıkla</div>${sum}</div>` : (a ? '<p class="hint">Henüz elle değişiklik yok.</p>' : '');
   const avg = nAuto ? Math.round(ns.filter((n) => n.corr && n.corr.source === 'auto' && Math.abs(n.corr.applied) >= 1).reduce((s2, n) => s2 + Math.abs(n.corr.applied), 0) / nAuto) : 0;
   $('#renderInfo').textContent = !a ? '' : (at.enabled ? `Autotune AÇIK · ${nAuto} nota kaydırıldı (ortalama ${avg} cent)${cnt.move + cnt.fine + cnt.atOff ? ` · ${cnt.move + cnt.fine + cnt.atOff} notaya dokunmadı (elle / kilitli)` : ''}. ` : 'Autotune KAPALI. ') + (renderReady() ? 'Düzeltilmiş iz güncel.' : 'Render bekliyor…');
@@ -5875,6 +6281,8 @@ function syncInputs() {
   $('#inEngine').value = p.chordOpts.engine || 'greedy';
   $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
   $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
+  p.quant = p.quant || { grid: '1/8', strength: 100 };
+  $('#inQuantGrid').value = p.quant.grid; $('#inQuantStrength').value = p.quant.strength; $('#outQuantStrength').textContent = '%' + p.quant.strength;
   p.mixer.drums = p.mixer.drums || { vol: -8, mute: false, solo: false };
   for (const tr of ['vocal', 'piano', 'drums']) {
     const strip = document.querySelector(`.strip[data-track=${tr}]`), m = p.mixer[tr];
@@ -5989,7 +6397,8 @@ function clearEdits(kind) {
     if (kind === 'fine' && e.target != null && !isMoveEdit(e)) { e.target = null; e.locked = false; }
     if (kind === 'label' && e.label != null && !isMoveEdit(e)) e.label = null;
     if (kind === 'atOff' && e.target == null) e.locked = false;
-    if (kind === 'all') { e.target = null; e.label = null; e.locked = false; }
+    if (kind === 'time') e.q0to = null;
+    if (kind === 'all') { e.target = null; e.label = null; e.locked = false; e.q0to = null; }
   }
   cleanupEdits(); refresh(); scheduleRender(true);
 }
@@ -6040,6 +6449,7 @@ $('#fileProject').addEventListener('change', async (e) => { const f = e.target.f
 document.addEventListener('keydown', (e) => {
   if (e.target.closest('input,select,textarea')) return;
   if (e.code === 'Space') { e.preventDefault(); $('#btnPlay').click(); return; }
+  if (e.key === 't' || e.key === 'T') { e.preventDefault(); addTap(); return; }
   if (!S.sel) return;
   if (S.sel.type === 'note') {
     const n = S.d.notes.find((x) => x.id === S.sel.id);

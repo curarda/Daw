@@ -125,6 +125,16 @@
       </table>
       <div id="editSummary"></div>
       <fieldset>
+        <legend>Zamanlama (quantize)</legend>
+        <p class="hint">Notaların başlangıçlarını ızgaraya çeker; ses bütün olarak kayar (perde değişmez), aradaki boşluklar esner. Tek tek: notayı <b>sağa/sola sürükle</b>.</p>
+        <div class="grid2">
+          <label>Izgara<select id="inQuantGrid"><option value="1/4">1/4 (vuruş)</option><option value="1/8" selected>1/8</option><option value="1/16">1/16</option><option value="1/8T">1/8 üçleme</option><option value="1/16T">1/16 üçleme</option></select></label>
+          <label>Kapsam<select id="inQuantScope"><option value="all">Tüm şarkı</option><option value="section">Seçili bölüm</option><option value="note">Seçili nota</option></select></label>
+        </div>
+        <label title="%100 = tam ızgaraya; daha az = yalnızca yaklaştırır (doğal his kalır)">Güç <output id="outQuantStrength">%100</output><input type="range" id="inQuantStrength" min="0" max="100" step="5" value="100"></label>
+        <div class="row"><button id="btnQuantize" class="accent">Quantize uygula</button><button id="btnQuantClear">Zamanlamayı sıfırla</button></div>
+      </fieldset>
+      <fieldset>
         <legend>Otomatik (autotune)</legend>
         <div class="modes" role="radiogroup" aria-label="Autotune hedefi">
           <label><input type="radio" name="atTarget" value="semitone" checked> En yakın yarım sese çek <small class="hint">(önerilen — notanın kimliği değişmez)</small></label>
@@ -148,6 +158,7 @@
 
     <details class="step" open>
       <summary><b>6–7</b> Akor bulma ve düzenleme</summary>
+      <p class="hint">Akorlar <b>4. adımdaki ton</b> ve <b>5. adımdaki düzeltmelerden sonra duyduğun notalara</b> göre bulunur: notayı başka sese çektiysen (sürükle / ↑↓ / autotune'un scale'e çekmesi) yeni nota, zamanını kaydırdıysan (quantize / sağa-sola) yeni yeri kullanılır.</p>
       <label title="Süreli Viterbi bütün bölümü birlikte arar ve en iyi 3 alternatifi verir; ölçü ölçü motor her ölçüde yerel karar verir">Motor
         <select id="inEngine"><option value="viterbi">süreli Viterbi (bölüm boyunca, 3 alternatif)</option><option value="greedy">ölçü ölçü (eski)</option></select></label>
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
@@ -160,6 +171,12 @@
         <div class="row"><label class="chk"><input type="checkbox" id="inOnlyMarked"> Akor <b>yalnızca</b> ✂ işaretli noktalarda değişsin <small class="hint">(işaret konan bölümlerde)</small></label>
           <button id="btnClearMarks" class="danger">✕ İşaretleri temizle <span id="markCount"></span></button></div>
         <div id="markInfo"></div>
+        <div class="tapbox">
+          <b>🎯 Dinlerken işaretle (tap)</b>
+          <p class="hint">Şarkıyı oynat; akorun değişmesini istediğin her anda <kbd>T</kbd>'ye bas (ya da düğmeye). Cetvelde ◆ olarak görünür; sürükleyerek kaydır, <kbd>Alt</kbd>+tık ile sil. 3+ noktadan tempo, ölçü ve ölçü çizgilerinin yeri hesaplanır; "Uygula" ile ızgara hizalanır ve noktalar ✂ işaretine dönüşür.</p>
+          <div class="row"><button id="btnTap" class="accent">◆ Değişim noktası (T) <span id="tapCount"></span></button><button id="btnTapUndo">Son noktayı sil</button><button id="btnTapClear" class="danger">✕ Hepsini temizle</button></div>
+          <div id="tapInfo"></div>
+        </div>
       </div>
       <details id="chartBox" class="sub">
         <summary>📄 Kendi akorlarım — şablon yükle</summary>

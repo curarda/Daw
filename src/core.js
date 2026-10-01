@@ -1703,6 +1703,7 @@ function newProject() {
     chordLocks: [], chordPins: [], changeMarks: [],
     mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
     drums: { on: false, loop: 'auto' },
+    quant: { grid: '1/8', strength: 100 }, taps: [],
   };
 }
 const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
@@ -1736,14 +1737,19 @@ function derive(proj, st) {
   const tuning = proj.pitch.tuning === 'a440' || !(st.rawNotes || []).length
     ? { global: 0, perNote: (st.rawNotes || []).map(() => 0), driftMin: 0, driftMax: 0, a4: 440, off: true }
     : tuningReference(st.rawNotes, { windowSec: proj.pitch.tuningWindowSec });
+  // zaman haritası: quantize / yatay sürükleme ile notaların yeni başlangıçları (q0to, çeyrek) → ses bütün olarak kayar
+  const timeMap = root.Core && root.Core.buildTimeMap
+    ? root.Core.buildTimeMap((st.rawNotes || []).map((r) => { const ed = findEdit(proj.noteEdits, r); return { a: r.t0, e: r.t1, b: ed && ed.q0to != null ? ed.q0to * g.spq + off : null }; }), st.duration)
+    : { identity: true, fwd: (t) => t, inv: (t) => t, sig: '' };
   const notes = (st.rawNotes || []).map((r0, i) => {
     const ref = tuning.perNote[i] || 0;
     const nearest = Math.round(r0.median - ref / 100);
     const r = Object.assign({}, r0, { nearest, cents: Math.round((r0.median - ref / 100 - nearest) * 100), refCents: ref, absNearest: r0.nearest, absCents: r0.cents });
-    const t0 = r.t0 - off, t1 = r.t1 - off;
-    const n = Object.assign({}, r, { idx: i, id: 'n' + Math.round(r.t0 * 1000), tl0: t0, tl1: t1, q0: t0 / g.spq, q1: t1 / g.spq, detMidi: r.nearest });
+    const t0 = timeMap.fwd(r.t0) - off, t1 = timeMap.fwd(r.t1) - off;
+    const n = Object.assign({}, r, { idx: i, id: 'n' + Math.round(r.t0 * 1000), tl0: t0, tl1: t1, q0: t0 / g.spq, q1: t1 / g.spq, detMidi: r.nearest, qOrig: (r.t0 - off) / g.spq });
     const ed = findEdit(proj.noteEdits, r);
     n.edit = ed;
+    n.q0to = ed && ed.q0to != null ? ed.q0to : null;
     n.label = ed && ed.label != null ? ed.label : null;
     n.manualTarget = ed && ed.target != null ? ed.target : null;
     n.locked = !!(ed && (ed.locked || ed.target != null));
@@ -1786,7 +1792,9 @@ function derive(proj, st) {
     n.sungMidi = n.label != null ? n.label : n.nearest;
     const at = n.corr;
     n.autoMoved = n.label == null && !!at && at.source === 'auto' && at.identityChange && proj.autotune.amount >= 50 && at.target !== n.nearest;
-    n.effMidi = n.autoMoved ? at.target : n.sungMidi;
+    // duyulan nota: etiket (senin düzeltmen) > elle ses düzeltmesinin hedefi > autotune'un taşıdığı nota > söylenen
+    const manualHeard = n.label == null && at && at.source === 'manual' && at.target != null ? Math.round(at.target) : null;
+    n.effMidi = manualHeard != null ? manualHeard : n.autoMoved ? at.target : n.sungMidi;
     n.inScale = n.scalePcs ? n.scalePcs.includes(mod12(n.effMidi)) : true;
     // tam tonunda söylenmiş ama scale dışı → büyük ihtimalle kasıtlı: "mod yanlış olabilir" (söylenen notaya göre)
     n.modeSuspect = !!n.scalePcs && !n.scalePcs.includes(mod12(n.sungMidi)) && n.label == null && Math.abs(n.cents) <= IN_TUNE_CENTS;
@@ -1827,7 +1835,7 @@ function derive(proj, st) {
   }
   // kilitli akor için uyarı/öneriler: sürtünme (önemli), renk ve çevrim (isteğe bağlı)
   chords.forEach((sl) => { if (sl.locked) { sl.lockAdvice = lockAdvice(sl, slotNotes(notes, sl.q0, sl.q1, g), chordOpts.colorPenalty || 0); sl.suggest = null; } });
-  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning };
+  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning, timeMap };
 }
 
 // Nota olayları (oynatma + MIDI)

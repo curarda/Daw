@@ -76,7 +76,8 @@ await step('3b) Etiket düzeltme ton önerisinden önce: histogram etiketleri ku
   proj.autotune = Object.assign({}, proj.autotune, { enabled: true });
   const dS = Core.derive(proj, st);
   assert.equal(dS.notes[0].corr.target, 63, 'manuel ses düzeltmesi uygulanmadı');
-  assert.equal(dS.notes[0].effMidi, 61, 'ses düzeltmesi kastedilen notayı değiştirmemeli');
+  assert.equal(dS.notes[0].effMidi, 63, 'akor motoru duyulan sesi (elle D#4) kullanır');
+  assert.equal(dS.notes[0].sungMidi, 61, 'söylenen nota C#4 olarak kalır');
   assert.deepEqual(Array.from(dS.keyInfo.s0.hist), h0, 'ses düzeltmesi histogramı değiştirdi');
   proj.noteEdits = [];
   proj.autotune = Object.assign({}, proj.autotune, { enabled: false });
@@ -140,16 +141,17 @@ await step('5b) Autotune: pes notayı düzeltir (TD-PSOLA render + yeniden anali
   return `pes D4 ${d.notes[3].cents}c → render sonrası ${f2.cents}c · en kötü nota ${worst}c · RMS oranı ${ratio.toFixed(3)}`;
 });
 
-await step('5b) Manuel ses düzeltme kilitler; autotune dokunmaz; akor bulucu kastedilen notayı kullanır', () => {
+await step('5b) Manuel ses düzeltme kilitler; autotune dokunmaz; akor motoru duyulan sesi kullanır', () => {
   const n = d.notes[0];
   proj.noteEdits.push({ t0: n.t0, t1: n.t1, target: 63, locked: true });
   const d2 = Core.derive(proj, st);
   assert.equal(d2.notes[0].corr.source, 'manual');
   assert.equal(d2.notes[0].corr.target, 63);
   assert.ok(d2.notes[0].locked);
-  assert.equal(d2.notes[0].effMidi, 61, 'ses kaydırma kastedilen notayı değiştirmemeli');
+  assert.equal(d2.notes[0].effMidi, 63, 'akor motoru duyulan sesi kullanır (sen sesi çektiysen o nota)');
+  assert.equal(d2.notes[0].sungMidi, 61);
   proj.noteEdits = [];
-  return 'nota 1: ses D#4\'e kaydırıldı (kilitli) · akor bulucu hâlâ C#4 görür';
+  return 'nota 1: ses D#4\'e çekildi (kilitli) · akor motoru D#4 görür, ton histogramı söylenen C#4\'ü kullanır';
 });
 
 await step('5b) Autotune yarım ses modunda notanın kimliğini değiştirmez; scale\'e çekme yalnızca açık seçenek ve motor duyulan notayı kullanır; tam tonunda scale dışı nota işaretlenir', () => {
@@ -656,6 +658,71 @@ await step('Davul 3: vuruşlar, ses ve MIDI davul kanalı', () => {
   const dr = mid.tracks.find((t) => /Davul/.test(t.name));
   assert.ok(dr && dr.notes.length > 0 && dr.notes.every((n) => n.ch === 9 || n.channel === 9 || n.ch === undefined));
   return `2 ölçü rock: ${ev.length} vuruş · render: kick ${peakAt(0).toFixed(2)}, trampet ${peakAt(0.5).toFixed(2)} · MIDI "${dr.name}" ${dr.notes.length} nota`;
+});
+
+await step('Zamanlama 1: zaman haritası + WSOLA — kaydırılan nota yerine oturur, perde ve nota sayısı değişmez', async () => {
+  const sr = test.sr, raw = st.rawNotes;
+  assert.equal(Core.wsolaWarp(test.signal, sr, Core.buildTimeMap(raw.map((n) => ({ a: n.t0, e: n.t1 })), 5)), test.signal, 'kaydırma yoksa ses aynen');
+  let r = 3; const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const map = Core.buildTimeMap(raw.map((n) => ({ a: n.t0, e: n.t1, b: n.t0 + (rnd() * 2 - 1) * 0.04 })), test.signal.length / sr);
+  // tık testi: nota başlarına tık koy, warp et, tıkların yeni yeri haritanın söylediği yer mi
+  const x = new Float32Array(test.signal.length);
+  for (const n of raw) { const i = Math.round(n.t0 * sr); for (let k = 0; k < 20; k++) x[i + k] = 1 - k / 20; }
+  const wx = Core.wsolaWarp(x, sr, map);
+  const found = []; for (let i = 1; i < wx.length; i++) if (wx[i] > 0.5 && wx[i - 1] <= 0.5) found.push(i / sr);
+  const errs = raw.map((n) => { const e = map.fwd(n.t0); return Math.min(...found.map((f) => Math.abs(f - e))) * 1000; });
+  const ok = errs.filter((e) => e < 8).length;
+  assert.ok(ok >= raw.length - 4, `tıkların çoğu ±8 ms içinde: ${errs.map((e) => e.toFixed(0)).join(' ')}`);
+  // gerçek vokal: perde ve nota sayısı korunur
+  const w = Core.wsolaWarp(test.signal, sr, map);
+  const tr2 = await Core.detectPitch(w, sr, proj.pitch), raw2 = Core.segmentNotes(tr2, proj.pitch);
+  assert.equal(raw2.length, raw.length);
+  const dc = raw.map((n, i) => Math.abs(raw2[i].median - n.median) * 100);
+  assert.ok(Math.max(...dc) < 5, 'perde değişmemeli: ' + Math.max(...dc).toFixed(1) + 'c');
+  return `${raw.length} nota ±40 ms rastgele kaydırıldı: tıkların ${ok}/${raw.length}'i ±8 ms içinde (medyan ${errs.sort((a, b) => a - b)[raw.length >> 1].toFixed(1)} ms) · perde en fazla ${Math.max(...dc).toFixed(1)} cent değişti · nota sayısı aynı`;
+});
+
+await step('Zamanlama 2: quantize — başlangıçlar ızgaraya, güç %50 yarı yol, çakışan notalar yerinde; akorlar quantize edilmiş konumlarla', () => {
+  const p10 = JSON.parse(JSON.stringify(proj));
+  p10.noteEdits = []; p10.chordLocks = []; p10.chordPins = []; p10.changeMarks = [];
+  // özensiz kayıt taklidi: her notayı ±60 ms kaydır (q0to), sonra bu konumları "kayıt" kabul edip quantize et
+  let r = 7; const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  let dd = Core.derive(p10, st);
+  for (const n of dd.notes) p10.noteEdits.push({ t0: n.t0, t1: n.t1, q0to: n.qOrig + ((rnd() * 2 - 1) * 0.06) / g.spq });
+  dd = Core.derive(p10, st);
+  const devOf = (ns) => Math.max(...ns.map((n) => Math.abs(n.q0 * 2 - Math.round(n.q0 * 2)) / 2 * g.spq * 1000));
+  const before = devOf(dd.notes);
+  // quantize gerçek kayıt üzerinde (qOrig) çalışır; burada test için kaydırılmış konumları kayıt sayıyoruz
+  const asRec = dd.notes.map((n) => Object.assign({}, n, { qOrig: n.q0 }));
+  const q = Core.quantizeTargets(asRec, dd.g, { gridQ: 0.5, strength: 1 });
+  assert.ok(q.targets.every((t) => t.q0to == null || Math.abs(t.q0to * 2 - Math.round(t.q0to * 2)) < 1e-9));
+  const half = Core.quantizeTargets(asRec, dd.g, { gridQ: 0.5, strength: 0.5 });
+  half.targets.forEach((t) => { if (t.q0to == null) return; const snap = Math.round(t.note.qOrig * 2) / 2; assert.ok(Math.abs(t.q0to - (t.note.qOrig + snap) / 2) < 1e-9); });
+  // derive: q0to doğrudan ızgaraya
+  p10.noteEdits = dd.notes.map((n) => ({ t0: n.t0, t1: n.t1, q0to: Math.round(n.qOrig * 2) / 2 }));
+  const dq = Core.derive(p10, st);
+  assert.ok(devOf(dq.notes) < 0.5, 'derive konumları ızgarada');
+  // çakışma: iki nota aynı noktaya → biri yerinde
+  const fake = [{ id: 'a', qOrig: 1.0 }, { id: 'b', qOrig: 1.1 }, { id: 'c', qOrig: 2.24 }];
+  const fq = Core.quantizeTargets(fake, dq.g, { gridQ: 0.5, strength: 1 });
+  assert.equal(fq.skipped, 1);
+  const names = (x) => x.chords.map((c) => Core.chordName(c.chord)).join(' ');
+  return `±60 ms özensiz: en büyük sapma ${before.toFixed(0)} ms → quantize sonrası ${devOf(dq.notes).toFixed(1)} ms · %50 güç yarı yol · çakışmada 1 nota yerinde kaldı · akorlar: ${names(dq)}`;
+});
+
+await step('Tap: akor değişim noktalarından tempo, ölçü ve 1. ölçünün yeri (proje yanlış BPM ile)', () => {
+  const notes = st.rawNotes.map((n) => ({ t0: n.t0, t1: n.t1 }));
+  let r = 9; const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const off = test.offsetSec;
+  const est = (bars) => Core.estimateFromTaps(bars.map((b) => off + b * 2 + (rnd() * 2 - 1) * 0.025), notes, { bpm: 100, meter: '4/4' });
+  const a = est([1, 2, 3, 3.5, 4, 5, 6, 7]);
+  assert.deepEqual([a.ok, a.meter, a.bpm], [true, '4/4', 120]);
+  assert.ok(Math.abs(a.firstBarSec - off) < 0.03, '1. ölçü ' + a.firstBarSec);
+  assert.ok(a.marks.some((m) => m.bar === 4 && m.half === 1) && a.marks.some((m) => m.bar === 2 && m.half === 0));
+  const b = est([2, 4, 6]);
+  assert.deepEqual([b.meter, b.bpm], ['4/4', 120], 'iki ölçüde bir değişim: melodi 120 BPM\'i seçtirir');
+  assert.equal(est([1, 2]).ok, false);
+  return `100 BPM projede 8 tap → ${a.meter}, ${a.bpm} BPM, 1. ölçü ${a.firstBarSec.toFixed(3)} s (gerçek ${off.toFixed(3)}), ${a.marks.length} ✂ · iki ölçüde bir 3 tap → ${b.bpm} BPM`;
 });
 
 await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {
