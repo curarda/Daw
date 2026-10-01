@@ -149,6 +149,13 @@
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
         <button id="btnApplySug" title="Kilitlerin dışındaki akorları motorun şimdiki önerisine göre yeniden hesaplar">Motorun önerilerini uygula <span id="sugCount"></span></button></div>
       <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Bir akoru kilitlediğinde <b>diğer akorlar değişmez</b>; motor başka bir şey önerirse akorun altında turuncu <b>→</b> ile gösterilir, nedeni sağdaki panelde yazar. Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
+      <div class="sub marks">
+        <b>✂ Akor değişim noktaları</b>
+        <p class="hint">Akor satırının <b>üst kenarındaki küçük noktalara</b> tıkla (dolu = ölçü başı, içi boş = ölçü ortası; kesikli çizgi yarım ölçüyü gösterir): <b>✂</b> burada akor değişsin → <b>=</b> burada değişmesin → işaret yok. Hangi akorun geleceğini motor seçer; işaret koyunca diğer akorlar değişmez. Akora tıklayınca sağdaki panelde de "✂ Tam burada değiştir / Ölçünün ortasında değiştir" var.</p>
+        <div class="row"><label class="chk"><input type="checkbox" id="inOnlyMarked"> Akor <b>yalnızca</b> ✂ işaretli noktalarda değişsin <small class="hint">(işaret konan bölümlerde)</small></label>
+          <button id="btnClearMarks" class="danger">✕ İşaretleri temizle <span id="markCount"></span></button></div>
+        <div id="markInfo"></div>
+      </div>
       <details id="chartBox" class="sub">
         <summary>📄 Kendi akorlarım — şablon yükle</summary>
         <p class="hint">Kendi şarkının akorlarını yaz ya da .txt yükle; melodinin üzerinde kilitli akor olarak çalar. Her <b>| hücre |</b> 1 ölçü; hücrede 2 akor = yarım ölçü; <b>%</b> = önceki ölçü; <b>/</b> = önceki akor sürer; <b>boş hücre</b> = otomatik (motor seçer). Çizgisiz de yazabilirsin: <code>C#m:2 D E:0.5</code> (ölçü). <code>[Nakarat] B Dorian — ölçü 5–8</code> bölüm başlığıdır (ton ve aralık isteğe bağlı).</p>

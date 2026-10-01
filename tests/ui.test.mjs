@@ -559,6 +559,50 @@ try {
     return `hata satırıyla, uygulanmadı · metin → ${n1.slice(0, 5).join(' ')} (3. ölçü otomatik, nakarat aynı) · indir → değiştir (5: Bm→G) → .txt yükle → ${n2.length} akor 📄 · kaldır → başlangıç`;
   });
 
+  await step('Değişim noktaları: üst şeritteki noktaya tıkla → ✂ değiş → = değişme → yok; diğer akorlar aynı; panelden "ölçünün ortasında değiştir"; yalnızca işaretli', async () => {
+    page.once('dialog', (d) => d.accept());
+    await page.click('#btnTest');
+    await waitStatus(/Test melodisi hazır/);
+    const tl = await page.locator('#tl').boundingBox();
+    const bandY = tl.y + 22 + 26 + 5;
+    const bx = (bar, half) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); return 46 + ((${bar} - 1) * d.g.barQ + ${half} * d.g.split) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
+    const chords = () => S(() => window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`));
+    const marks = () => S(() => JSON.stringify(window.__daw.proj.changeMarks));
+    const n0 = await chords();
+    // ölçü 6 ortası (Eadd9 tam ölçü) → ✂
+    await page.mouse.click(tl.x + (await bx(6, 1)), bandY);
+    assert.equal(await marks(), '[{"bar":6,"half":1,"kind":"change"}]');
+    const n1 = await chords();
+    assert.ok(n1.some((x) => x.startsWith('6.1:')) && n1.some((x) => x.startsWith('6.0:')), 'ölçü 6 ikiye bölünmeli: ' + n1.join(' '));
+    n0.filter((x) => !x.startsWith('6')).forEach((x) => assert.ok(n1.includes(x), 'değişmemeli: ' + x));
+    if (shotDir) await page.screenshot({ path: path.join(shotDir, 'marks.png'), clip: { x: tl.x, y: tl.y, width: 1150, height: 90 } });
+    // tekrar → = ; tekrar → yok
+    await page.mouse.click(tl.x + (await bx(6, 1)), bandY);
+    assert.equal(await marks(), '[{"bar":6,"half":1,"kind":"hold"}]');
+    await page.mouse.click(tl.x + (await bx(6, 1)), bandY);
+    assert.equal(await marks(), '[]');
+    // akor gövdesine tıklamak işaret koymaz, akoru seçer
+    await page.mouse.click(tl.x + (await bx(2, 1)), tl.y + 22 + 26 + 18);
+    assert.equal(await marks(), '[]');
+    // panelden: ölçünün ortasında değiştir
+    await page.click('#inspector button[data-act=markSet][data-half="1"][data-kind=change]');
+    assert.equal(await marks(), '[{"bar":2,"half":1,"kind":"change"}]');
+    const n2 = await chords();
+    assert.ok(n2.some((x) => x.startsWith('2.0:')) && n2.some((x) => x.startsWith('2.1:')));
+    const root = (x) => x.split(':')[1].match(/^[A-G][#b]?/)[0];
+    assert.notEqual(root(n2.find((x) => x.startsWith('2.0:'))), root(n2.find((x) => x.startsWith('2.1:'))), '✂ noktasında kök değişmeli');
+    // yalnızca işaretli: verse yalnızca ölçü 2 ortasında değişir
+    await page.check('#inOnlyMarked');
+    const n3 = await chords();
+    const verse = n3.filter((x) => +x.split(/[.:]/)[0] <= 4).map((x) => x.split(':')[1]);
+    const runs = verse.filter((c, i) => i === 0 || c !== verse[i - 1]);
+    assert.equal(runs.length, 2, 'verse 2 akor (tek değişim): ' + verse.join(' '));
+    await page.uncheck('#inOnlyMarked');
+    await page.click('#btnClearMarks');
+    assert.equal(await marks(), '[]');
+    return `✂ 6½ → ${n1.filter((x) => x.startsWith('6')).join(' ')}, diğerleri aynı · tekrar tık → = → yok · akor gövdesi seçer · panel "✂ Ölçünün ortasında değiştir" → ${n2.filter((x) => x.startsWith('2')).join(' ')} · yalnızca işaretli → verse ${runs.join(' → ')}`;
+  });
+
   await step('Piyano örnekleri: birinci kaynak (github.io) engelliyse jsDelivr aynasından yüklenir; ikisi de yoksa yedek + "Tekrar dene"', async () => {
     const wav = Buffer.from(Core.encodeWav([Core.synthPianoSample(69, 44100, 0.5)], 44100));
     const p2 = await context.newPage();

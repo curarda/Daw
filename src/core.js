@@ -1117,7 +1117,21 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
     const lastBarW = slotNotes(notes, qAt(U - per), qAt(U), g).reduce((a, x) => a + x.w, 0);
     const homeMiss = 0.5 * Wbar; // ev akoru M ölçüyü aşınca her yarım ölçü için (greedy'deki (d) kuralının karşılığı)
     const maxU = Math.max(per, (o.maxBars || 4) * per);
-    const Dmax = Math.min(U, maxU * 2);
+    // kullanıcının değişim işaretleri (birim başı): 'change' = burada akor değişmeli, 'hold' = burada değişmemeli.
+    // onlyMarked: işaret konan bölümde akor YALNIZCA işaretli noktalarda değişir.
+    const mChange = new Uint8Array(U + 1), mHold = new Uint8Array(U + 1);
+    let nMarks = 0;
+    for (const m of o.marks || []) {
+      if (m.bar < sec.startBar || m.bar > sec.endBar) continue;
+      const u = (m.bar - sec.startBar) * per + (per === 2 ? m.half || 0 : 0);
+      if (u <= 0 || u >= U) continue;
+      if (m.kind === 'change') { mChange[u] = 1; nMarks++; } else if (m.kind === 'hold') { mHold[u] = 1; nMarks++; }
+    }
+    const preChange = [0];
+    for (let u = 0; u < U; u++) preChange.push(preChange[u] + mChange[u]);
+    const changeInside = (a, b) => preChange[b] - preChange[a + 1] > 0; // a < k < b
+    const onlyMarked = !!o.onlyMarked && mChange.some((x) => x);
+    const Dmax = nMarks ? U : Math.min(U, maxU * 2);
     const Mu = o.homeEvery > 0 ? o.homeEvery * per : 0;
     // "evden beri geçen" sayaç M'de doyar: ceza yalnızca M'yi aşan kısma bağlı olduğundan sonuç değişmez, durum sayısı küçülür
     const Hcap = Mu;
@@ -1144,7 +1158,7 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
           if (s + d === U && sameChord(c, home)) val += 0.5 * lastBarW; // bölüm sonu: ev akoru (son ölçünün ağırlığıyla)
           const dt = sty && sty.durTerm ? sty.durTerm(sec, d / per) : null;
           if (dt != null) val += dt;
-          if (d > maxU) val -= (kappa * (d - maxU)) / per; // N ölçü sınırı (yumuşak)
+          if (d > maxU && !onlyMarked) val -= (kappa * (d - maxU)) / per; // N ölçü sınırı (yumuşak; "yalnızca işaretli" modda yok)
           v = { val, dt };
         }
       }
@@ -1179,6 +1193,8 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
     for (let e = 1; e <= U; e++) {
       for (let d = 1; d <= Math.min(Dmax, e); d++) {
         const s = e - d;
+        if (changeInside(s, e)) continue; // işaretli değişim noktasının üstünden geçen akor olmaz
+        if (s > 0 && (mHold[s] || (onlyMarked && !mChange[s]))) continue; // burada değişmesin / yalnızca işaretlerde
         for (let ci = 0; ci < nC; ci++) {
           const sg = seg(s, d, ci);
           if (!sg) continue;
@@ -1187,7 +1203,7 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
             push(e, ci * H + hp.h, { score: first[ci] + sg.val - hp.pen, s, e, ci, prev: null });
             continue;
           }
-          const mid = s % per !== 0 ? 0.5 * kappa : 0;
+          const mid = mChange[s] ? -kappa : s % per !== 0 ? 0.5 * kappa : 0; // kullanıcının istediği değişime maliyet yok
           for (const [key, arr] of table[s]) {
             const pci = Math.floor(key / H), ph = key % H;
             // aynı core art arda: tek akor sayılır (C → Cmaj7 ayrı değişim değil). Ama kullanıcı ikisinden
@@ -1195,6 +1211,8 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
             const sameCore = coreK[pci] === coreK[ci];
             if (sameCore && pci === ci) continue;
             const segLocked = sameCore && hasLock(s, e);
+            // ✂ noktasında gerçek değişim: kök değişmeli (D → Dmaj7, C#m → C#sus2 değişim sayılmaz) — kullanıcı kilitlediyse hariç
+            if (mChange[s] && cands[pci].root === cands[ci].root && !hasLock(s, e)) continue;
             const hp = hStep(ph, d, ci);
             const base = sg.val + trans[pci][ci] - kappa - mid - hp.pen;
             for (const nd of arr) {
@@ -1218,8 +1236,9 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       if (alts.length >= (o.nBest ?? 3)) break;
     }
     if (!alts.length) {
-      // Kısıtlar (kilitler, sürtünme) hiçbir yola izin vermediyse bölüm asla akorsuz kalmasın:
+      // Kısıtlar (kilitler, sürtünme, değişim işaretleri) hiçbir yola izin vermediyse bölüm asla akorsuz kalmasın:
       // bu bölüm ölçü ölçü (greedy) motorla doldurulur.
+      if (nMarks) (slots.markConflict = slots.markConflict || {})[sec.id] = true;
       const fb = buildChords(notes, [sec], g, Object.assign({}, o, { engine: 'greedy' }), locks);
       for (const x of fb) { x.reason = `${x.reason || ''} · süreli Viterbi bu kilitlerle yol bulamadı, ölçü ölçü motor kullanıldı`; slots.push(x); }
       if (fb.length) prevChord = fb[fb.length - 1].chord;
@@ -1679,7 +1698,7 @@ function newProject() {
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
-    chordLocks: [], chordPins: [],
+    chordLocks: [], chordPins: [], changeMarks: [],
     mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
   };
 }
@@ -1772,7 +1791,7 @@ function derive(proj, st) {
   for (const n of notes) n.cw = chordWeight(n, g);
   // 6) akorlar
   // engineOverride: etkileşim sırasında (nota sürükleme) hızlı motor; bırakınca seçili motorla yeniden hesaplanır
-  const chordOpts = Object.assign({}, proj.chordOpts, st.style ? { style: st.style } : {}, st.engineOverride ? { engine: st.engineOverride } : {});
+  const chordOpts = Object.assign({}, proj.chordOpts, { marks: proj.changeMarks || [] }, st.style ? { style: st.style } : {}, st.engineOverride ? { engine: st.engineOverride } : {});
   // Kullanıcı kilitleri + "kilit sonrası sabit tutulan" akorlar (pins). Bir akor kilitlenince diğer akorlar
   // olduğu gibi kalır; motorun aksi yöndeki tercihi yalnızca öneri (pinSuggest) olarak, gerekçesiyle gösterilir.
   const userLocks = proj.chordLocks || [];

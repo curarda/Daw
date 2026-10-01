@@ -507,6 +507,44 @@ A:1.5 E:0.5 N.C. F#m7/A:2`, '4/4');
   return `${ok.cells.length} hücre · uyarılar: ${ok.warnings.length} (atlanan akor, N.C.) · hata satır numarasıyla · dışa aktarılan şema geri yüklenince ${back.cells.length} akor aynen · uygulanınca ölçü 6 (boş) otomatik: ${Core.chordName(d7.chords.find((c) => c.bar === 6).chord)}`;
 });
 
+await step('Değişim işaretleri: ✂ noktada akor değişir, = noktada değişmez, "yalnızca işaretli" modda başka yerde değişmez (rastgele işaretlerle)', () => {
+  const p8 = JSON.parse(JSON.stringify(proj));
+  p8.chordLocks = []; p8.chordPins = []; p8.noteEdits = [];
+  p8.sections.forEach((x) => { x.tonic = null; x.mode = null; });
+  const qOf = (m) => (m.bar - 1) * g.barQ + (m.half || 0) * g.split;
+  // akorun DEĞİŞTİĞİ noktalar (aynı akor yarım ölçüye bölünmüş olsa bile değişim sayılmaz)
+  const changes = (dd) => { const out = new Set(); dd.chords.forEach((c, i) => { const p = dd.chords[i - 1]; if (p && p.section === c.section && !Core.sameChord(p.chord, c.chord)) out.add(c.q0); }); return out; };
+  p8.changeMarks = [{ bar: 6, half: 1, kind: 'change' }];
+  let dd = Core.derive(p8, st);
+  assert.ok(changes(dd).has(22), 'ölçü 6 ortasında değişmeli');
+  const ex1 = dd.chords.filter((c) => c.bar === 6).map((c) => Core.chordName(c.chord)).join(' ');
+  p8.changeMarks = [{ bar: 2, half: 0, kind: 'hold' }, { bar: 4, half: 1, kind: 'hold' }];
+  dd = Core.derive(p8, st);
+  assert.ok(!changes(dd).has(4) && !changes(dd).has(14), 'işaretli noktalarda değişmemeli');
+  p8.changeMarks = [{ bar: 3, half: 0, kind: 'change' }]; p8.chordOpts = Object.assign({}, p8.chordOpts, { onlyMarked: true });
+  dd = Core.derive(p8, st);
+  const verseCh = [...changes(dd)].filter((q) => q < 16);
+  assert.deepEqual(verseCh, [8], 'verse yalnızca ölçü 3 başında değişir: ' + verseCh);
+  // rastgele işaretler: hepsi uygulanır
+  let r = 11; const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  for (let t = 0; t < 25; t++) {
+    const marks = [];
+    for (let b = 1; b <= 8; b++) for (let h = 0; h < 2; h++) { if ((b === 1 || b === 5) && h === 0) continue; const x = rnd(); if (x < 0.15) marks.push({ bar: b, half: h, kind: 'change' }); else if (x < 0.3) marks.push({ bar: b, half: h, kind: 'hold' }); }
+    p8.changeMarks = marks; p8.chordOpts.onlyMarked = rnd() < 0.4;
+    dd = Core.derive(p8, st);
+    assert.ok(!dd.chords.markConflict, 'deneme ' + t + ': çelişki olmamalı (kilit yok)');
+    const ch = changes(dd);
+    for (const m of marks) assert.equal(ch.has(qOf(m)), m.kind === 'change', `deneme ${t}: ${m.bar}.${m.half} ${m.kind}`);
+    for (const m of marks.filter((x) => x.kind === 'change')) { const i = dd.chords.findIndex((c) => c.q0 === qOf(m)); assert.notEqual(dd.chords[i].chord.root, dd.chords[i - 1].chord.root, `deneme ${t}: ✂ kök değişmeli`); }
+    if (p8.chordOpts.onlyMarked) for (const sec of dd.sections) {
+      const q0 = (sec.startBar - 1) * g.barQ, q1 = sec.endBar * g.barQ;
+      if (!marks.some((m) => m.kind === 'change' && qOf(m) > q0 && qOf(m) < q1)) continue;
+      for (const q of ch) if (q > q0 && q < q1) assert.ok(marks.some((m) => m.kind === 'change' && qOf(m) === q), `deneme ${t}: işaretsiz değişim q=${q}`);
+    }
+  }
+  return `✂ 6½ → ölçü 6: ${ex1} · = 2 ve 4½ değişmedi · yalnızca ✂3 → verse yalnızca ölçü 3'te değişti · 25 rastgele işaret setinde hepsi uygulandı`;
+});
+
 await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {
   const pat = (meter, feel) => { const g = Core.makeGrid({ bpm: 120, meter }); const out = []; for (let q = 0; q < g.barQ - 1e-9; q += g.clickQ) out.push(Core.clickKind(g, q, feel)); return out.join(' '); };
   assert.equal(pat('4/4', 'halftime'), 'weak weak snare weak');
