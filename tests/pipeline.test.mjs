@@ -545,6 +545,26 @@ await step('Değişim işaretleri: ✂ noktada akor değişir, = noktada değiş
   return `✂ 6½ → ölçü 6: ${ex1} · = 2 ve 4½ değişmedi · yalnızca ✂3 → verse yalnızca ölçü 3'te değişti · 25 rastgele işaret setinde hepsi uygulandı`;
 });
 
+await step('"Akorlar yalnızca 1. vuruşta değişsin": ölçü ortası değişimi yok (iki motorda); ✂ ile işaretlenen ölçü ortası hariç', () => {
+  const p9 = JSON.parse(JSON.stringify(proj));
+  p9.chordLocks = []; p9.chordPins = []; p9.noteEdits = []; p9.changeMarks = [];
+  p9.sections.forEach((x) => { x.tonic = null; x.mode = null; });
+  const midChanges = (dd) => dd.chords.filter((c, i) => c.half === 1 && i > 0 && !Core.sameChord(dd.chords[i - 1].chord, c.chord)).map((c) => c.bar);
+  const before = midChanges(Core.derive(p9, st));
+  assert.ok(before.length > 0, 'test melodisinde normalde ölçü ortası değişimi var (ölçü 4)');
+  const out = [];
+  for (const engine of ['viterbi', 'greedy']) {
+    p9.chordOpts = Object.assign({}, p9.chordOpts, { engine, downbeatOnly: true });
+    const dd = Core.derive(p9, st);
+    assert.deepEqual(midChanges(dd), [], engine + ': ölçü ortası değişimi kalmamalı');
+    out.push(`${engine}: ${dd.chords.filter((c) => c.bar <= 4).map((c) => Core.chordName(c.chord)).join(' ')}`);
+  }
+  p9.chordOpts.engine = 'viterbi';
+  p9.changeMarks = [{ bar: 6, half: 1, kind: 'change' }];
+  assert.deepEqual(midChanges(Core.derive(p9, st)), [6], '✂ ölçü ortası işareti yine uygulanır');
+  return `normalde ölçü ortası değişimi: ölçü ${before.join(', ')} · seçenekle → ${out.join(' · ')} · ✂ 6½ yine değişir`;
+});
+
 await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {
   const pat = (meter, feel) => { const g = Core.makeGrid({ bpm: 120, meter }); const out = []; for (let q = 0; q < g.barQ - 1e-9; q += g.clickQ) out.push(Core.clickKind(g, q, feel)); return out.join(' '); };
   assert.equal(pat('4/4', 'halftime'), 'weak weak snare weak');

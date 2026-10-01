@@ -1008,7 +1008,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       }
       // yarım ölçü kontrolü
       const halves = [];
-      if (g.split && !lockFull) {
+      if (g.split && !lockFull && (!o.downbeatOnly || lockAt(bar, 0) || lockAt(bar, 1))) {
         let hc = barChord;
         for (let h = 0; h < 2; h++) {
           const hq0 = q0 + h * g.split, hq1 = h ? q1 : q0 + g.split;
@@ -1127,6 +1127,8 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       if (u <= 0 || u >= U) continue;
       if (m.kind === 'change') { mChange[u] = 1; nMarks++; } else if (m.kind === 'hold') { mHold[u] = 1; nMarks++; }
     }
+    // "yalnızca 1. vuruşta": ölçü ortası birimleri, kullanıcı orada ✂ koymadıysa "değişme" sayılır
+    if (o.downbeatOnly && per === 2) for (let u = 1; u < U; u += 2) if (!mChange[u]) mHold[u] = 1;
     const preChange = [0];
     for (let u = 0; u < U; u++) preChange.push(preChange[u] + mChange[u]);
     const changeInside = (a, b) => preChange[b] - preChange[a + 1] > 0; // a < k < b

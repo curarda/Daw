@@ -63,10 +63,14 @@
           <select id="inAlign">
             <option value="beat">İlk ses → en yakın vuruş</option>
             <option value="bar1">İlk ses → 1. ölçü başı</option>
+            <option value="pickup">İlk ses → 1. ölçünün şu vuruşu (öncü / anacrusis)…</option>
             <option value="none">Yok (dosya başı = 0)</option>
           </select>
         </label>
+        <label id="pickupWrap" hidden title="Vokal ölçünün ortasında başlıyorsa (ör. 3. vuruşta): ilk ses o vuruşa, ölçü çizgileri (1. vuruşlar) doğru yere oturur">Vokal kaçıncı vuruşta başlıyor
+          <select id="inPickupBeat"></select></label>
       </div>
+      <p class="hint">Vokalin ölçünün başında değil de ortasında başlıyorsa (ör. "ve-<b>3</b>-4-<b>1</b>"), hizalamayı "1. ölçünün şu vuruşu"na al ve vuruşu seç: ölçü çizgileri ve akor değişimleri 1. vuruşa oturur. Uygulama içinde click ile kaydettiysen zaten doğru yerdedir.</p>
       <div class="grid2">
         <label>Kayıt ofseti (ms)<input type="number" id="inOffset" step="1" value="0"></label>
         <div id="audioInfo" class="hint"></div>
@@ -152,6 +156,7 @@
       <div class="sub marks">
         <b>✂ Akor değişim noktaları</b>
         <p class="hint">Akor satırının <b>üst kenarındaki küçük noktalara</b> tıkla (dolu = ölçü başı, içi boş = ölçü ortası; kesikli çizgi yarım ölçüyü gösterir): <b>✂</b> burada akor değişsin → <b>=</b> burada değişmesin → işaret yok. Hangi akorun geleceğini motor seçer; işaret koyunca diğer akorlar değişmez. Akora tıklayınca sağdaki panelde de "✂ Tam burada değiştir / Ölçünün ortasında değiştir" var.</p>
+        <div class="row"><label class="chk"><input type="checkbox" id="inDownbeatOnly"> Akorlar yalnızca <b>ölçü başında (1. vuruşta)</b> değişsin <small class="hint">(ölçü ortası değişimi yok; ✂ ile işaretlediğin ölçü ortaları hariç)</small></label></div>
         <div class="row"><label class="chk"><input type="checkbox" id="inOnlyMarked"> Akor <b>yalnızca</b> ✂ işaretli noktalarda değişsin <small class="hint">(işaret konan bölümlerde)</small></label>
           <button id="btnClearMarks" class="danger">✕ İşaretleri temizle <span id="markCount"></span></button></div>
         <div id="markInfo"></div>

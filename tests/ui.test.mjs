@@ -335,10 +335,20 @@ try {
     const a = await S(() => ({ off: window.__daw.proj.audio.offsetSec, q0: window.__daw.d.notes[0].q0, n: window.__daw.d.notes.length }));
     assert.ok(Math.abs(a.off - 0.37) < 0.04, 'ofset ' + a.off);
     assert.ok(Math.abs(a.q0) < 0.1, 'ilk nota ' + a.q0);
+    // öncü: vokal 3. vuruşta başlıyor → ilk nota q = 2 (1. ölçünün 3. vuruşu), ölçü çizgisi (1. vuruş) 2 vuruş sonra
+    await page.selectOption('#inAlign', 'pickup');
+    assert.ok(await page.isVisible('#inPickupBeat'));
+    await page.selectOption('#inPickupBeat', '3');
+    const pk = await S(() => ({ off: window.__daw.proj.audio.offsetSec, q0: window.__daw.d.notes[0].q0 }));
+    assert.ok(Math.abs(pk.q0 - 2) < 0.1, 'öncü 3. vuruş: ilk nota ' + pk.q0);
+    await page.check('#inDownbeatOnly');
+    const mids = await S(() => window.__daw.d.chords.filter((c, i, a) => c.half === 1 && i > 0 && !window.__dawAPI.C.sameChord(a[i - 1].chord, c.chord)).length);
+    assert.equal(mids, 0, 'yalnızca 1. vuruşta değişim');
+    await page.uncheck('#inDownbeatOnly');
     await page.selectOption('#inAlign', 'beat');
     const b = await S(() => ({ off: window.__daw.proj.audio.offsetSec, q0: window.__daw.d.notes[0].q0 }));
     assert.ok(Math.abs(b.q0 - 1) < 0.1, 'en yakın vuruş ' + b.q0);
-    return `${a.n} nota · 1. ölçüye: ofset ${a.off.toFixed(3)} s → ilk nota q=${a.q0.toFixed(2)} · en yakın vuruşa: ofset ${b.off.toFixed(3)} s → q=${b.q0.toFixed(2)}`;
+    return `${a.n} nota · 1. ölçüye: ofset ${a.off.toFixed(3)} s → ilk nota q=${a.q0.toFixed(2)} · öncü 3. vuruş: ofset ${pk.off.toFixed(3)} s → q=${pk.q0.toFixed(2)}, yalnızca 1. vuruşta değişim ✓ · en yakın vuruşa: ofset ${b.off.toFixed(3)} s → q=${b.q0.toFixed(2)}`;
   });
 
   await step('2) kayıt: count-in + click, sahte mikrofonla', async () => {
@@ -353,7 +363,14 @@ try {
     assert.equal(r.src, 'record');
     assert.ok(r.off > 2.0 && r.off < 2.6, 'ofset ' + r.off); // 0.3 s + 1 ölçü (2 s) count-in
     assert.ok(Math.abs(r.eff - r.off - 0.02) < 1e-9);
-    return `kayıt ${r.dur.toFixed(1)} s, 1. ölçü ofseti ${r.off.toFixed(3)} s (+20 ms gecikme telafisi)`;
+    // kayıtta da öncü: ilk ses 1. ölçünün 3. vuruşuna; gecikme telafisi iki kez sayılmaz
+    await page.selectOption('#inAlign', 'pickup');
+    await page.selectOption('#inPickupBeat', '3');
+    const pk = await S(() => ({ onset: window.__daw.onset, eff: window.Core.effectiveOffset(window.__daw.proj) }));
+    assert.ok(Math.abs(pk.onset - pk.eff - 1.0) < 1e-6, `ilk ses t=${(pk.onset - pk.eff).toFixed(3)} s (3. vuruş = 1.000 s)`);
+    await page.selectOption('#inAlign', 'none');
+    assert.equal(await S(() => window.__daw.proj.audio.offsetSec), r.off, '"Yok" → kaydın click hizasına dönülür');
+    return `kayıt ${r.dur.toFixed(1)} s, 1. ölçü ofseti ${r.off.toFixed(3)} s (+20 ms gecikme telafisi) · öncü 3. vuruş: ilk ses t=${(pk.onset - pk.eff).toFixed(3)} s`;
   });
 
   await step('1) gecikme kalibrasyonu: 8 click, alkış ofsetlerinin medyanı kaydedilir', async () => {

@@ -544,6 +544,7 @@ const Rec = {
     setAudio(data, sr, 'Kayıt ' + new Date().toLocaleTimeString(), 'record');
     // 1. ölçünün başı kayıttaki hangi saniyeye denk geliyor (gecikme ayrıca eklenir)
     S.proj.audio.offsetSec = st.barStart - st.firstFrame / sr;
+    S.proj.audio.recOffsetSec = S.proj.audio.offsetSec; // "Yok" seçilince click'e göre hizaya dönülür
     S.proj.audio.alignMode = 'none';
     syncInputs();
     await analyze();
@@ -607,11 +608,20 @@ async function loadAudioFile(file) {
   await analyze();
 }
 function applyAlign() {
-  if (!S.audio || S.proj.audio.source !== 'file') return;
   const mode = S.proj.audio.alignMode;
+  // öncü (pickup) hizalaması kayıt için de geçerli; diğerleri yalnızca yüklenen dosyada
+  if (!S.audio || (S.proj.audio.source !== 'file' && mode !== 'pickup')) return;
   if (mode === 'none') return;
   if (S.onset == null) S.onset = C.firstOnset(S.audio.data, S.audio.sr);
   const g = C.makeGrid(S.proj.settings);
+  if (mode === 'pickup') {
+    // ilk ses 1. ölçünün N. vuruşuna: zaman çizelgesinde t = (N−1)·vuruş; ofset negatif olabilir (önüne sessizlik)
+    const beats = Math.round(g.barQ / g.pulseQ), nb = C.clamp(S.proj.audio.pickupBeat || 1, 1, beats);
+    // kayıtta gecikme telafisi ofsete ayrıca eklenir (effectiveOffset); burada çıkar ki iki kez sayılmasın
+    const lat = S.proj.audio.source === 'record' ? (S.proj.settings.latencyMs || 0) / 1000 : 0;
+    S.proj.audio.offsetSec = S.onset - (nb - 1) * g.pulseSec - lat;
+    return;
+  }
   S.proj.audio.offsetSec = mode === 'bar1' ? S.onset : S.onset - Math.round(S.onset / g.pulseSec) * g.pulseSec;
 }
 
@@ -1537,10 +1547,17 @@ function syncInputs() {
   const gq = C.makeGrid(p.settings);
   $('#inClickFeel').value = p.settings.clickFeel || 'normal';
   $('#inOnlyMarked').checked = !!p.chordOpts.onlyMarked;
+  $('#inDownbeatOnly').checked = !!p.chordOpts.downbeatOnly;
   $('#inClickFeel').disabled = p.settings.meter !== '4/4';
   $('#bpmUnit').textContent = p.settings.meter === '6/8' ? `(♩. = noktalı çeyrek; ♩ = ${Math.round(gq.quarterBpm)})` : '(♩ = çeyrek nota)';
   $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
   if (p.audio.alignMode) $('#inAlign').value = p.audio.alignMode;
+  { // öncü vuruş seçenekleri ölçüye göre (4/4: 1–4, 3/4: 1–3, 6/8: 1–2 noktalı çeyrek)
+    const gq = C.makeGrid(p.settings), beats = Math.round(gq.barQ / gq.pulseQ), sel = $('#inPickupBeat');
+    if (sel.options.length !== beats) sel.innerHTML = Array.from({ length: beats }, (_, i) => `<option value="${i + 1}">${i + 1}. vuruş</option>`).join('');
+    sel.value = String(C.clamp(p.audio.pickupBeat || 3, 1, beats));
+    $('#pickupWrap').hidden = p.audio.alignMode !== 'pickup';
+  }
   $('#inFmin').value = p.pitch.fmin; $('#inFmax').value = p.pitch.fmax; $('#inSilence').value = p.pitch.silenceDb;
   $('#inMinNote').value = p.pitch.minNoteMs; $('#inChange').value = p.pitch.changeSemis;
   $('#inTuning').value = p.pitch.tuning || 'auto'; $('#inTuneWin').value = p.pitch.tuningWindowSec ?? 8;
@@ -1565,7 +1582,9 @@ onNum('#inBpm', (v) => { S.proj.settings.bpm = C.clamp(v, 30, 300); applyAlign()
 $('#inMeter').addEventListener('change', (e) => { /* BPM birimi syncInputs'ta güncellenir */ S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
 onNum('#inLatency', (v) => { S.proj.settings.latencyMs = v; refresh(); });
 onNum('#inOffset', (v) => { S.proj.audio.offsetSec = v / 1000; S.proj.audio.alignMode = 'none'; $('#inAlign').value = 'none'; refresh(); });
-$('#inAlign').addEventListener('change', (e) => { S.proj.audio.alignMode = e.target.value; if (e.target.value === 'none' && S.proj.audio.source === 'file') S.proj.audio.offsetSec = 0; applyAlign(); syncInputs(); refresh(); });
+$('#inPickupBeat').addEventListener('change', (e) => { S.proj.audio.pickupBeat = +e.target.value; S.proj.audio.alignMode = 'pickup'; applyAlign(); syncInputs(); refresh(); });
+$('#inAlign').addEventListener('change', (e) => { if (e.target.value === 'pickup' && !S.proj.audio.pickupBeat) S.proj.audio.pickupBeat = +$('#inPickupBeat').value || 3; S.proj.audio.alignMode = e.target.value; if (e.target.value === 'none' && S.proj.audio.source === 'file') S.proj.audio.offsetSec = 0;
+  if (e.target.value === 'none' && S.proj.audio.source === 'record' && S.proj.audio.recOffsetSec != null) S.proj.audio.offsetSec = S.proj.audio.recOffsetSec; applyAlign(); syncInputs(); refresh(); });
 $('#btnLatencyGuess').onclick = () => {
   const ctx = getCtx();
   const ms = Math.round(((ctx.baseLatency || 0) + (ctx.outputLatency || 0)) * 1000) + 10;
@@ -1645,6 +1664,7 @@ $('#btnChartRemove').onclick = () => {
   $('#chartMsg').innerHTML = `<div class="adv-opt">Şablondan gelen ${n} akor kaldırıldı; o ölçüler otomatiğe döndü.</div>`;
 };
 $('#inOnlyMarked').addEventListener('change', (e) => { S.proj.chordOpts.onlyMarked = e.target.checked; refresh(); });
+$('#inDownbeatOnly').addEventListener('change', (e) => { S.proj.chordOpts.downbeatOnly = e.target.checked; refresh(); });
 $('#btnClearMarks').onclick = () => { const n = (S.proj.changeMarks || []).length; S.proj.changeMarks = []; refresh(); status(`${n} değişim işareti kaldırıldı (akorlar yerinde kaldı).`); };
 $('#btnApplySug').onclick = () => {
   const n = S.d.chords.filter((c) => c.pinSuggest).length;
