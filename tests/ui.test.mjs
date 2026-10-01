@@ -620,6 +620,51 @@ try {
     return `✂ 6½ → ${n1.filter((x) => x.startsWith('6')).join(' ')}, diğerleri aynı · tekrar tık → = → yok · akor gövdesi seçer · panel "✂ Ölçünün ortasında değiştir" → ${n2.filter((x) => x.startsWith('2')).join(' ')} · yalnızca işaretli → verse ${runs.join(' → ')}`;
   });
 
+  await step('Davul: ölçü tahmini paneli + Uygula; vurgulara göre loop; oynatmada davul; uymayınca "bulamadım" + tarif', async () => {
+    page.once('dialog', (d) => d.accept());
+    await page.click('#btnTest');
+    await waitStatus(/Test melodisi hazır/);
+    assert.match(await page.textContent('#meterEst'), /Ölçü tahmini: 4\/4/);
+    assert.match(await page.textContent('#meterEst'), /Proje ölçüsüyle uyumlu/);
+    // proje ölçüsünü yanlış seç (3/4) → tahmin uyarır, Uygula ile 4/4'e döner
+    await page.selectOption('#inMeter', '3/4');
+    assert.match(await page.textContent('#meterEst'), /Uygula: 4\/4/);
+    const loops34 = await page.locator('#inDrumLoop option').allTextContents();
+    assert.ok(loops34.some((x) => /Vals/.test(x)) && !loops34.some((x) => /Rock/.test(x)), 'loop listesi proje ölçüsüne göre');
+    await page.click('#btnMeterApply');
+    assert.equal(await page.inputValue('#inMeter'), '4/4');
+    const auto = await page.textContent('#inDrumLoop option[value=auto]');
+    assert.match(auto, /Otomatik \(öneri: .+\)/);
+    assert.match(await page.textContent('#drumGrid'), /Kick\s+\|/);
+    // oynatmada davul vuruşları zamanlanır
+    await page.check('#inDrumsOn');
+    const h0 = await S(() => window.__dawAPI.player().drumHits || 0);
+    await page.click('#btnPlay');
+    await page.waitForFunction((h) => (window.__dawAPI.player().drumHits || 0) > h + 4, h0, { timeout: 15000 });
+    await page.click('#btnPlay');
+    // tek loop'u elle seç; ▶ Loop
+    await page.selectOption('#inDrumLoop', 'half');
+    assert.match(await page.textContent('#drumInfo'), /Yarım zaman/);
+    await page.click('#btnDrumPreview');
+    await waitStatus(/▶ Yarım zaman/);
+    await page.click('#btnDrumStop');
+    // uygun loop yok: 200 BPM
+    await page.selectOption('#inDrumLoop', 'auto');
+    await page.fill('#inBpm', '200'); await page.dispatchEvent('#inBpm', 'change');
+    const info = await page.textContent('#drumInfo');
+    assert.match(info, /Bu melodiye uygun bir loop bulamadım/);
+    assert.match(await page.inputValue('#drumRequest'), /Tempo: 200 BPM/);
+    if (shotDir) await page.locator('details.step:has(#drumInfo)').screenshot({ path: path.join(shotDir, 'drums-notfound.png') });
+    await page.fill('#inBpm', '120'); await page.dispatchEvent('#inBpm', 'change');
+    if (shotDir) await page.locator('details.step:has(#drumInfo)').screenshot({ path: path.join(shotDir, 'drums.png') });
+    // mikserde davul kanalı
+    await page.locator('.strip[data-track=drums] .mute').click();
+    assert.equal(await S(() => window.__daw.proj.mixer.drums.mute), true);
+    await page.locator('.strip[data-track=drums] .mute').click();
+    await page.uncheck('#inDrumsOn');
+    return `tahmin 4/4 · 3/4 seçilince "Uygula" → 4/4 · ${auto.trim()} · oynatmada davul çaldı · 200 BPM → bulamadım + tarif`;
+  });
+
   await step('Piyano örnekleri: birinci kaynak (github.io) engelliyse jsDelivr aynasından yüklenir; ikisi de yoksa yedek + "Tekrar dene"', async () => {
     const wav = Buffer.from(Core.encodeWav([Core.synthPianoSample(69, 44100, 0.5)], 44100));
     const p2 = await context.newPage();

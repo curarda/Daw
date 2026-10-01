@@ -210,10 +210,27 @@
           <output>-6 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
         </div>
+        <div class="strip" data-track="drums">
+          <b>Davul</b>
+          <input type="range" min="-40" max="6" step="1" value="-8" class="vol" aria-label="Davul ses seviyesi">
+          <output>-8 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
       </div>
       <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
       <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
       <div id="pianoInfo" class="hint"></div>
+    </details>
+
+    <details class="step" open>
+      <summary><b>8b</b> Davul (basit loop)</summary>
+      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü her zaman 1. adımdan kendin de seçebilirsin; loop proje ölçüsüne göre seçilir.</p>
+      <div id="meterEst"></div>
+      <label class="chk"><input type="checkbox" id="inDrumsOn"> Oynatırken davul çalsın</label>
+      <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>
+        <button id="btnDrumPreview" title="Seçili loop'u 2 ölçü dinle">▶ Loop</button><button id="btnDrumStop">■</button></div>
+      <div id="drumInfo"></div>
+      <pre id="drumGrid" class="drum-grid"></pre>
     </details>
 
     <details class="step" open>
@@ -222,7 +239,7 @@
         <button id="btnExpMidi">MIDI (akor + melodi)</button>
         <button id="btnExpChart">Akor şeması (.txt)</button>
         <button id="btnExpVocal">Düzeltilmiş vokal WAV</button>
-        <button id="btnExpMix">Vokal + piyano WAV</button>
+        <button id="btnExpMix">Vokal + piyano (+ davul) WAV</button>
       </div>
     </details>
   </aside>

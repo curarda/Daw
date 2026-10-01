@@ -214,3 +214,8 @@ details.sub > summary { cursor: pointer; font-weight: 600; }
 #chartMsg ul { margin: 4px 0 0 18px; padding: 0; }
 div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
 .mark-row { margin: 6px 0; gap: 4px; flex-wrap: wrap; }
+/* davul */
+.drum-grid { font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; background: #111318; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; overflow-x: auto; white-space: pre; }
+.drum-grid:empty { display: none; }
+#drumRequest { width: 100%; box-sizing: border-box; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; background: #111318; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.drum-rank { margin: 4px 0 0 16px; padding: 0; font-size: 12px; }

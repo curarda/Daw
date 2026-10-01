@@ -565,6 +565,79 @@ await step('"Akorlar yalnızca 1. vuruşta değişsin": ölçü ortası değişi
   return `normalde ölçü ortası değişimi: ölçü ${before.join(', ')} · seçenekle → ${out.join(' · ')} · ✂ 6½ yine değişir`;
 });
 
+await step('Davul 1: ölçü tahmini (4/4, 3/4, 6/8, 8\'likle sayılmış 6/8, öncü) melodinin vurgularından', () => {
+  // sentetik melodiler: ölçü kalıbı [vuruş konumu, süre (vuruş), perde]
+  const mel = (bpm, bars, bar, bpb, shift = 0) => { const P = 60 / bpm, o = []; for (let b = 0; b < bars; b++) for (const [pos, d, p] of bar) { const t = (b * bpb + pos) * P + shift; o.push({ t0: t, t1: t + d * P * 0.95, pitch: p + (b % 2) }); } return o; };
+  const m44 = [[0, 1.5, 64], [1.5, 0.5, 62], [2, 1, 64], [3, 0.5, 60], [3.5, 0.5, 62]];
+  const m34 = [[0, 1.5, 67], [1.5, 0.5, 65], [2, 1, 64]];
+  const m68 = [[0, 1, 67], [1, 1 / 3, 65], [4 / 3, 1 / 3, 64], [5 / 3, 1 / 3, 62]];
+  const e44 = Core.estimateMeter(mel(100, 8, m44, 4), 100);
+  const e34 = Core.estimateMeter(mel(120, 8, m34, 3), 120);
+  const e68 = Core.estimateMeter(mel(60, 8, m68, 2), 60);
+  assert.deepEqual([e44.meter, e44.feel], ['4/4', 'straight']);
+  assert.deepEqual([e34.meter, e34.feel], ['3/4', 'straight']);
+  assert.deepEqual([e68.meter, e68.feel], ['6/8', 'triple']);
+  // 6/8, 8'likler vuruş sayılmış (BPM 180): 1. ve 4. 8'lik farklı vurgulu → 6/8, BPM 60
+  const m68e = [[0, 2, 67], [2, 1, 65], [3, 1.5, 64], [4.5, 0.5, 62], [5, 1, 60]];
+  const e68e = Core.estimateMeter(mel(180, 8, m68e, 6), 180);
+  assert.deepEqual([e68e.meter, e68e.bpm], ['6/8', 60], JSON.stringify(e68e.candidates));
+  // öncü: 4/4, vokal 3. vuruşta başlıyor; zaman çizelgesi ilk notayı 1. vuruş sanıyor
+  const pk = [[2, 0.5, 60], [2.5, 0.5, 62], [3, 1, 64]].map(([p, d, q]) => ({ t0: (p - 2) * 0.5, t1: (p - 2 + d * 0.95) * 0.5, pitch: q }));
+  const ep = Core.estimateMeter([...pk, ...mel(120, 8, m44, 4, 1.0)], 120);
+  assert.equal(ep.meter, '4/4'); assert.equal(ep.firstBeat, 3); assert.ok(Math.abs(ep.shiftSec + 1) < 0.02, 'ölçü çizgileri 1 s (2 vuruş) geri: ' + ep.shiftSec);
+  // test melodisi (gerçek ses analizi): 4/4, ölçü başında
+  const dt = Core.derive(proj, st);
+  const ns = dt.notes.map((n) => ({ t0: n.tl0, t1: n.tl1, pitch: n.effMidi }));
+  const et = Core.estimateMeter(ns, 120, { fixedPhase: true });
+  assert.deepEqual([et.meter, et.firstBeat], ['4/4', 1]);
+  assert.ok(Core.estimateMeter(ns.slice(0, 5), 120).ok === false, 'az nota → tahmin yok');
+  return `4/4 (güven %${Math.round(e44.confidence * 100)}) · 3/4 (%${Math.round(e34.confidence * 100)}) · 6/8 üçleme (%${Math.round(e68.confidence * 100)}) · 8'likle 180 BPM → 6/8, 60 BPM · öncü → 3. vuruş, kayma ${ep.shiftSec.toFixed(2)} s · test melodisi ${et.meter}`;
+});
+
+await step('Davul 2: loop kütüphanesi ve seçimi (ölçü + BPM + vurgu); uygun değilse nedenleriyle "bulamadım" + tarif', () => {
+  for (const L of Core.DRUM_LOOPS) {
+    const gL = Core.makeGrid({ bpm: 100, meter: L.meter }), n = Math.round(gL.barQ / gL.pulseQ) * L.spb;
+    assert.ok([L.K, L.S, L.H].every((x) => x.length === n && /^[Xxgo.]+$/.test(x)), L.id + ' adım sayısı');
+  }
+  const meters = [...new Set(Core.DRUM_LOOPS.map((l) => l.meter))];
+  assert.deepEqual(meters.sort(), ['2/4', '3/4', '4/4', '6/8']);
+  assert.ok(Core.DRUM_LOOPS.length >= 12);
+  const mel = (bpm, bars, bar, bpb) => { const P = 60 / bpm, o = []; for (let b = 0; b < bars; b++) for (const [pos, d, p] of bar) { const t = (b * bpb + pos) * P; o.push({ t0: t, t1: t + d * P * 0.95, pitch: p }); } return o; };
+  const m44 = [[0, 1.5, 64], [1.5, 0.5, 62], [2, 1, 64], [3, 0.5, 60], [3.5, 0.5, 62]];
+  const pick = (notes, meter, bpm, extra = {}) => Core.suggestDrumLoop(notes, Object.assign({ meter, bpm }, extra), Core.estimateMeter(notes, bpm));
+  const r1 = pick(mel(100, 8, m44, 4), '4/4', 100);
+  assert.ok(r1.ok); assert.equal(r1.best.loop.id, 'rock8');
+  const r2 = pick(mel(120, 8, [[0, 1.5, 67], [1.5, 0.5, 65], [2, 1, 64]], 3), '3/4', 120);
+  assert.ok(r2.ok); assert.equal(r2.best.loop.id, 'waltz');
+  const r3 = pick(mel(60, 8, [[0, 1, 67], [1, 1 / 3, 65], [4 / 3, 1 / 3, 64], [5 / 3, 1 / 3, 62]], 2), '6/8', 60);
+  assert.ok(r3.ok); assert.equal(r3.best.loop.meter, '6/8');
+  const r4 = pick(mel(100, 8, m44, 4), '4/4', 100, { clickFeel: 'halftime' });
+  assert.equal(r4.best.loop.id, 'half', 'yarım zaman click deseni → yarım zaman loop');
+  // bulamadı: 4/4 için 200 BPM; 6/8 melodi ama proje 4/4 60 BPM
+  const n1 = pick(mel(200, 8, m44, 4), '4/4', 200);
+  assert.equal(n1.ok, false); assert.ok(n1.reasons.some((x) => /tempo aralığına uymuyor/.test(x)));
+  assert.match(n1.request, /Ölçü: 4\/4 · Tempo: 200 BPM/); assert.match(n1.request, /vurgu profili \(16 adım, 0–9\): [0-9.]{16}/);
+  const n2 = pick(mel(60, 8, [[0, 1, 67], [1, 1 / 3, 65], [4 / 3, 1 / 3, 64], [5 / 3, 1 / 3, 62]], 2), '4/4', 60);
+  assert.equal(n2.ok, false); assert.ok(n2.reasons.some((x) => /6\/8 ölçüsüne daha çok benziyor/.test(x)));
+  return `100 BPM 4/4 → ${r1.best.loop.name} · 3/4 → ${r2.best.loop.name} · 6/8 → ${r3.best.loop.name} · yarım zaman click → ${r4.best.loop.name} · 200 BPM → bulamadı: "${n1.reasons[0]}" · 6/8 melodi / 4/4 proje → bulamadı (${n2.reasons.length} neden)`;
+});
+
+await step('Davul 3: vuruşlar, ses ve MIDI davul kanalı', () => {
+  const L = Core.DRUM_LOOPS.find((l) => l.id === 'rock8');
+  const ev = Core.drumEvents(L, g, 2);
+  assert.equal(ev.filter((e) => e.kind === 'K').length, 6); assert.equal(ev.filter((e) => e.kind === 'S').length, 4); assert.equal(ev.filter((e) => e.kind === 'H').length, 16);
+  assert.ok(ev.filter((e) => e.kind === 'S').every((e) => [1, 3].includes(Math.round(((e.q % 4) + 4) % 4))), "trampet 2 ve 4'te");
+  const x = Core.renderDrums(ev, 44100, 44100 * 5, 1);
+  const peakAt = (t) => { let m = 0; for (let i = Math.round(t * 44100); i < Math.round((t + 0.03) * 44100); i++) m = Math.max(m, Math.abs(x[i])); return m; };
+  assert.ok(peakAt(0) > 0.5 && peakAt(0.5) > 0.2, 'kick 0 s, trampet 0.5 s');
+  assert.ok(peakAt(1.9) < 0.05 * peakAt(0) + peakAt(1.75), 'son 16\'lıkta yeni vuruş yok');
+  const p2 = JSON.parse(JSON.stringify(proj));
+  const mid = Core.parseMidi(Core.exportMidi(p2, Core.derive(p2, st), L));
+  const dr = mid.tracks.find((t) => /Davul/.test(t.name));
+  assert.ok(dr && dr.notes.length > 0 && dr.notes.every((n) => n.ch === 9 || n.channel === 9 || n.ch === undefined));
+  return `2 ölçü rock: ${ev.length} vuruş · render: kick ${peakAt(0).toFixed(2)}, trampet ${peakAt(0.5).toFixed(2)} · MIDI "${dr.name}" ${dr.notes.length} nota`;
+});
+
 await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {
   const pat = (meter, feel) => { const g = Core.makeGrid({ bpm: 120, meter }); const out = []; for (let q = 0; q < g.barQ - 1e-9; q += g.clickQ) out.push(Core.clickKind(g, q, feel)); return out.join(' '); };
   assert.equal(pat('4/4', 'halftime'), 'weak weak snare weak');

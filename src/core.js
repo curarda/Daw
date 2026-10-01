@@ -1701,7 +1701,8 @@ function newProject() {
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
     chordLocks: [], chordPins: [], changeMarks: [],
-    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
+    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
+    drums: { on: false, loop: 'auto' },
   };
 }
 const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
@@ -1985,7 +1986,7 @@ function blankChart(proj, d) {
   }
   return lines.join('\n');
 }
-function exportMidi(proj, d) {
+function exportMidi(proj, d, drumLoop = null) {
   const g = d.g;
   const vocal = d.notes.filter((n) => n.effMidi != null).map((n) => ({ q0: n.q0, q1: n.q1, midi: n.effMidi, vel: 96 }));
   const piano = pianoEvents(d.chords, g).map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
@@ -1996,6 +1997,8 @@ function exportMidi(proj, d) {
     tracks: [
       { name: 'Vokal (düzeltilmiş melodi)', channel: 0, program: 53, notes: vocal },
       { name: 'Piyano akorları', channel: 1, program: 0, notes: piano, texts },
+      ...(drumLoop && root.Core && root.Core.drumEvents ? [{ name: 'Davul — ' + drumLoop.name, channel: 9, program: 0,
+        notes: root.Core.drumEvents(drumLoop, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + 0.1, midi: root.Core.GM_DRUM[e.kind], vel: Math.round(30 + 90 * e.vel) })) }] : []),
     ],
   });
 }
