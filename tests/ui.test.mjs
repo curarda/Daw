@@ -38,7 +38,7 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|salamander|net::ERR/i.test(m.text())) errors.push(m.text()); });
 if (toneLocal) await page.route(/tone@15\.1\.22\/build\/Tone\.js|libs\/tone\/15\.1\.22\/Tone\.js/, (r) => r.fulfill({ body: readFileSync(toneLocal), contentType: 'application/javascript' }));
-await page.route(/tonejs\.github\.io\/audio\/salamander/, (r) => r.abort());
+await page.route(/\/salamander\//, (r) => r.abort()); // iki kaynak da (github.io, jsDelivr)
 
 const log = [];
 async function step(name, fn) {
@@ -557,6 +557,23 @@ try {
     assert.ok(n2.every((x) => x.endsWith('📄')), 'şablondaki her ölçü kilitli');
     await page.click('#btnChartRemove');
     return `hata satırıyla, uygulanmadı · metin → ${n1.slice(0, 5).join(' ')} (3. ölçü otomatik, nakarat aynı) · indir → değiştir (5: Bm→G) → .txt yükle → ${n2.length} akor 📄 · kaldır → başlangıç`;
+  });
+
+  await step('Piyano örnekleri: birinci kaynak (github.io) engelliyse jsDelivr aynasından yüklenir; ikisi de yoksa yedek + "Tekrar dene"', async () => {
+    const wav = Buffer.from(Core.encodeWav([Core.synthPianoSample(69, 44100, 0.5)], 44100));
+    const p2 = await context.newPage();
+    if (toneLocal) await p2.route(/tone@15\.1\.22\/build\/Tone\.js|libs\/tone\/15\.1\.22\/Tone\.js/, (r) => r.fulfill({ body: readFileSync(toneLocal), contentType: 'application/javascript' }));
+    await p2.route(/tonejs\.github\.io\/audio\/salamander\//, (r) => r.abort());
+    await p2.route(/cdn\.jsdelivr\.net\/gh\/Tonejs\/audio@master\/salamander\//, (r) => r.fulfill({ body: wav, contentType: 'audio/wav' }));
+    await p2.goto(indexUrl);
+    await p2.waitForFunction(() => /Salamander/.test(document.querySelector('#pianoBadge').textContent) && !/yükleniyor/.test(document.querySelector('#pianoBadge').textContent), null, { timeout: 30000 });
+    const info = await p2.textContent('#pianoInfo');
+    assert.match(info, /cdn\.jsdelivr\.net/);
+    await p2.close();
+    // ikisi de yok (bu sayfa): yedek piyano + açıklama + Tekrar dene
+    assert.match(await page.textContent('#pianoInfo'), /Akorlar ve analiz etkilenmez/);
+    assert.equal(await page.locator('#btnPianoRetry').count(), 1);
+    return `github.io engelli → ${info.trim()} · ikisi de engelliyken: "${(await page.textContent('#pianoBadge')).trim()}" + Tekrar dene`;
   });
 
   assert.deepEqual(errors, [], 'tarayıcı hataları');

@@ -197,7 +197,8 @@ async function doRender() {
 const renderReady = () => !!S.d && !!S.d.correction && shiftsEqual(S.d.correction.shift, S.correctedShift);
 
 // ---------------------------------------------------------------- piyano örnekleri (Salamander → yedek sentez)
-const SAL_BASE = 'https://tonejs.github.io/audio/salamander/';
+// Aynı Salamander örnekleri için sırayla denenen kaynaklar (biri engelliyse diğeri): GitHub Pages, jsDelivr'in GitHub aynası
+const SAL_SOURCES = ['https://tonejs.github.io/audio/salamander/', 'https://cdn.jsdelivr.net/gh/Tonejs/audio@master/salamander/'];
 const SAL_NOTES = ['A0', 'C1', 'D#1', 'F#1', 'A1', 'C2', 'D#2', 'F#2', 'A2', 'C3', 'D#3', 'F#3', 'A3', 'C4', 'D#4', 'F#4', 'A4', 'C5', 'D#5', 'F#5', 'A5', 'C6', 'D#6', 'F#6', 'A6', 'C7', 'D#7', 'F#7', 'A7', 'C8'];
 const noteToMidi = (n) => { const p = C.parsePc(n); return p.pc + 12 * (parseInt(n.slice(p.len), 10) + 1); };
 let pianoPromise = null;
@@ -210,31 +211,53 @@ function loadPianoSamples() {
   pianoPromise = (async () => {
     const ctx = getCtx();
     const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('zaman aşımı')), ms))]);
-    try {
-      const bufs = await Promise.all(SAL_NOTES.map(async (n) => {
-        const r = await withTimeout(fetch(SAL_BASE + n.replace('#', 's') + '.mp3'), 10000);
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const ab = await ctx.decodeAudioData(await r.arrayBuffer());
-        return { name: n, midi: noteToMidi(n), buffer: ab, data: ab.getChannelData(0), sr: ab.sampleRate };
-      }));
-      $('#pianoInfo').textContent = 'Piyano: Salamander Grand (gerçek örnekler) yüklendi.';
-      setPianoBadge('Piyano: Salamander', 'ok', 'Salamander Grand Piano örnekleri çalıyor');
-      return { kind: 'salamander', samples: bufs };
-    } catch (e) {
-      console.warn('Salamander yüklenemedi, sentetik piyano kullanılıyor:', e);
+    const fails = [];
+    for (const base of SAL_SOURCES) {
+      const host = new URL(base).host;
+      try {
+        setPianoBadge('Piyano: yükleniyor…', '', `Salamander örnekleri indiriliyor (${host})`);
+        const bufs = await Promise.all(SAL_NOTES.map(async (n) => {
+          const r = await withTimeout(fetch(base + n.replace('#', 's') + '.mp3'), 10000);
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          const ab = await ctx.decodeAudioData(await r.arrayBuffer());
+          return { name: n, midi: noteToMidi(n), buffer: ab, data: ab.getChannelData(0), sr: ab.sampleRate };
+        }));
+        $('#pianoInfo').textContent = `Piyano: Salamander Grand (gerçek örnekler, ${host}) yüklendi.`;
+        setPianoBadge('Piyano: Salamander', 'ok', `Salamander Grand Piano örnekleri çalıyor (${host})`);
+        return { kind: 'salamander', samples: bufs };
+      } catch (e) { fails.push(`${host}: ${e.message}`); }
+    }
+    {
+      const e = new Error(fails.join(' · '));
+      console.info('Salamander piyano örnekleri indirilemedi, yedek sentetik piyano çalıyor (akor/analiz etkilenmez). Denenen kaynaklar:', fails.join(' · '));
       const sr = 44100;
       const samples = SAL_NOTES.filter((n) => { const m = noteToMidi(n); return m >= 24 && m <= 96; }).map((n) => {
         const m = noteToMidi(n), data = C.synthPianoSample(m, sr, 2.5);
         return { name: n, midi: m, data, sr, buffer: toAudioBuffer(data, sr) };
       });
-      $('#pianoInfo').textContent = 'Salamander örneklerine ulaşılamadı (ağ) — yedek sentetik piyano kullanılıyor.';
-      setPianoBadge('Piyano: yedek sentez', 'warn', 'Salamander yüklenemedi (' + e.message + '); sentetik yedek piyano çalıyor');
+      $('#pianoInfo').innerHTML = `Salamander örneklerine ulaşılamadı — yedek sentetik piyano çalıyor. Akorlar ve analiz etkilenmez, yalnızca piyano sesi. Olası nedenler: internet yok, reklam/içerik engelleyici, ya da dosyayı açtığın uygulama dış bağlantıları engelliyor (tarayıcıda doğrudan açmayı dene). <button id="btnPianoRetry" class="small">Tekrar dene</button> <span class="hint">(${esc(e.message)})</span>`;
+      setPianoBadge('Piyano: yedek sentez', 'warn', 'Salamander indirilemedi (' + e.message + '); sentetik yedek piyano çalıyor');
       return { kind: 'synth', samples };
     }
   })();
   return pianoPromise;
 }
 
+// "Tekrar dene": örnekleri yeniden indir; oynatıcı hazırsa piyanoyu yerinde değiştir
+$('#pianoInfo').addEventListener('click', async (e) => {
+  if (!e.target.closest('#btnPianoRetry')) return;
+  pianoPromise = null;
+  const piano = await loadPianoSamples();
+  if (Player.ready && piano.kind === 'salamander') {
+    const urls = {};
+    for (const x of piano.samples) urls[x.name] = new Tone.ToneAudioBuffer(x.buffer);
+    const old = Player.sampler;
+    Player.sampler = new Tone.Sampler({ urls, release: 1.2 }).connect(Player.pianoCh);
+    await Tone.loaded();
+    old.dispose();
+  }
+  status(piano.kind === 'salamander' ? 'Salamander piyano yüklendi.' : 'Salamander yine indirilemedi; yedek piyano çalıyor.', piano.kind === 'salamander' ? '' : 'err');
+});
 // ---------------------------------------------------------------- Tone.js oynatma
 const TONE_URLS = [
   'https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js',

@@ -36,7 +36,7 @@ const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|salamander|net::ERR/i.test(m.text())) errors.push(m.text()); });
 if (toneLocal) await page.route(/tone@15\.1\.22\/build\/Tone\.js|libs\/tone\/15\.1\.22\/Tone\.js/, (r) => r.fulfill({ body: readFileSync(toneLocal), contentType: 'application/javascript' }));
-await page.route(/tonejs\.github\.io\/audio\/salamander/, (r) => r.abort());
+await page.route(/\/salamander\//, (r) => r.abort()); // iki kaynak da (github.io, jsDelivr)
 
 const log = [];
 async function step(name, fn) { const t = Date.now(); const info = await fn(); log.push(`✔ ${name} (${Date.now() - t} ms)${info ? ' — ' + info : ''}`); }
