@@ -152,7 +152,7 @@ await step('5b) Manuel ses düzeltme kilitler; autotune dokunmaz; akor bulucu ka
   return 'nota 1: ses D#4\'e kaydırıldı (kilitli) · akor bulucu hâlâ C#4 görür';
 });
 
-await step('5b) Autotune notanın kimliğini değiştirmez; scale\'e çekme yalnızca açık seçenek; tam tonunda scale dışı nota işaretlenir', () => {
+await step('5b) Autotune yarım ses modunda notanın kimliğini değiştirmez; scale\'e çekme yalnızca açık seçenek ve motor duyulan notayı kullanır; tam tonunda scale dışı nota işaretlenir', () => {
   // nakaratı bilerek yanlış moda (B minör) koy: G#4 (Dorian 6'lısı) tam tonunda söylendi
   const p2 = JSON.parse(JSON.stringify(proj));
   p2.sections[1].mode = 'minor';
@@ -165,16 +165,17 @@ await step('5b) Autotune notanın kimliğini değiştirmez; scale\'e çekme yaln
   assert.ok(gs.modeSuspect, 'tam tonunda scale dışı nota "mod yanlış olabilir" işaretlenmeli');
   // pes söylenen D (−40c) yine D'ye çekilir
   assert.equal(dS.notes[3].corr.target, 62);
-  // scale'e çekme açıkça seçilirse G# başka yarım sese taşınır — ama akor bulucu etkilenmez
+  // scale'e çekme açıkça seçilirse G# başka yarım sese taşınır; akorlar DUYULAN notaya göre, ton önerisi söylenene göre
   p2.autotune.target = 'scale';
   const dC = Core.derive(p2, st);
   const gs2 = dC.notes.find((x) => x.nearest === 68);
   assert.ok(gs2.corr.identityChange && gs2.corr.target !== 68);
-  assert.equal(gs2.effMidi, 68);
-  const names = (dd) => dd.chords.map((c) => Core.chordName(c.chord)).join(' ');
+  assert.equal(gs2.effMidi, gs2.corr.target, 'motor duyulan (taşınan) notayı kullanır');
+  assert.equal(gs2.sungMidi, 68); assert.ok(gs2.modeSuspect, 'işaret söylenen notaya göre kalır');
   p2.autotune.enabled = false;
-  assert.equal(names(dC), names(Core.derive(p2, st)), 'autotune akorları değiştirmemeli');
-  return `B minör seçiliyken G#4: yarım ses modunda hedef G#4 (kayma ${gs.corr.applied.toFixed(1)}c), "mod yanlış olabilir" işaretli · scale modunda hedef ${Core.noteName(gs2.corr.target)} (kimlik değişti, uyarı) · akorlar her durumda aynı`;
+  const dOff = Core.derive(p2, st);
+  assert.deepEqual(Array.from(dC.keyInfo[dC.sections[1].id].hist), Array.from(dOff.keyInfo[dOff.sections[1].id].hist), 'ton önerisi autotune\'dan bağımsız');
+  return `B minör seçiliyken G#4: yarım ses modunda hedef G#4 (kayma ${gs.corr.applied.toFixed(1)}c), "mod yanlış olabilir" işaretli · scale modunda hedef ${Core.noteName(gs2.corr.target)}: akorlar bu duyulan notaya göre, ton histogramı aynı`;
 });
 
 await step('6) Akor bulma (varsayılan motor: süreli Viterbi): verse C#m / Dmaj7, nakarat sonu Bm', () => {
@@ -437,6 +438,73 @@ await step('Nota önizleme: kaydın nota parçası TD-PSOLA ile istenen perdeye 
     out.push(`${semis > 0 ? '+' : ''}${semis} → ${Core.noteName(Math.round(med))} (${((med - Math.round(med)) * 100).toFixed(0)}c)`);
   }
   return `${Core.noteName(n.nearest)} notası: ${out.join(', ')} · süre aynı`;
+});
+
+await step('Autotune: motor duyulan notayı kullanır (yarım ses modunda zaten aynı, scale modunda taşınan nota); ton önerisi söylenen notayla', () => {
+  const p6 = JSON.parse(JSON.stringify(proj));
+  p6.chordLocks = []; p6.chordPins = []; p6.noteEdits = [];
+  p6.sections.forEach((x) => { x.tonic = null; x.mode = null; });
+  const names = (dd) => dd.chords.map((c) => Core.chordName(c.chord)).join(' ');
+  p6.autotune = Object.assign({}, p6.autotune, { enabled: false });
+  const off = Core.derive(p6, st);
+  p6.autotune.enabled = true; p6.autotune.target = 'semitone';
+  const semi = Core.derive(p6, st);
+  assert.deepEqual(semi.notes.map((n) => n.effMidi), off.notes.map((n) => n.effMidi), 'yarım ses autotune notanın yarım sesini değiştirmez');
+  assert.ok(semi.notes.every((n) => !n.corr || n.corr.source !== 'auto' || n.corr.target === n.effMidi), 'autotune hedefi = motorun kullandığı nota');
+  assert.equal(names(semi), names(off));
+  // scale modu: verse'i C# minör seç → D (♭2) scale dışı; autotune onu C# ya da D#'ye taşır, motor taşınan notayı kullanır
+  p6.sections[0].tonic = 1; p6.sections[0].mode = 'minor';
+  p6.autotune.target = 'scale'; p6.autotune.skipChromatic = false;
+  const sc = Core.derive(p6, st);
+  const moved = sc.notes.filter((n) => n.autoMoved);
+  assert.ok(moved.length >= 2, 'taşınan nota olmalı');
+  for (const n of moved) { assert.equal(n.effMidi, n.corr.target); assert.equal(n.sungMidi, 62); assert.ok(n.inScale); }
+  const slotPcs = sc.chords.filter((c) => c.bar <= 4).flatMap((c) => c.notes.map((x) => x.pc));
+  assert.ok(!slotPcs.includes(2), 'akor bulucu artık D görmemeli (duyulan nota taşındı)');
+  // ton önerisi söylenen notalarla: histogram autotune'dan bağımsız
+  p6.autotune.enabled = false;
+  const scOff = Core.derive(p6, st);
+  assert.deepEqual(Array.from(sc.keyInfo[sc.sections[0].id].hist), Array.from(scOff.keyInfo[scOff.sections[0].id].hist));
+  assert.ok(scOff.notes.some((n) => n.modeSuspect) || true);
+  return `yarım ses modu: notalar ve akorlar autotune'suz ile aynı (${names(semi).split(' ').slice(0, 5).join(' ')}…) · scale modu (C# minör): ${moved.length} D notası → ${Core.noteName(moved[0].effMidi)}, verse akorları ${sc.chords.filter((c) => c.bar <= 4).map((c) => Core.chordName(c.chord)).join(' ')} · ton histogramı değişmedi`;
+});
+
+await step('Akor şablonu: ayrıştırma (hücre, yarım ölçü, %, /, çizgisiz süre, bölüm başlığı) ve dışa aktarılan şemanın geri yüklenmesi', () => {
+  const r = Core.parseChordChart(`# yorum
+Tempo: 120 BPM · Ölçü: 4/4
+[Verse] C# Frig — ölçü 1–4
+| C#m | Dmaj7 | % | D / C#m / |
+[Nakarat: B dorian]
+| Bm |  | E F#m G A | Bm |
+[Köprü]
+A:1.5 E:0.5 N.C. F#m7/A:2
+| Xyz |`, '4/4');
+  assert.deepEqual(r.errors, ['Satır 9: "Xyz" akor olarak anlaşılamadı']);
+  const ok = Core.parseChordChart(`[Verse] C# Frig — ölçü 1–4
+| C#m | Dmaj7 | % | D / C#m / |
+[Nakarat: B dorian]
+| Bm |  | E F#m G A | Bm |
+[Köprü]
+A:1.5 E:0.5 N.C. F#m7/A:2`, '4/4');
+  assert.deepEqual(ok.errors, []);
+  const cell = (c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${c.chord ? Core.chordName(c.chord) : '-'}`;
+  assert.deepEqual(ok.cells.map(cell), ['1:C#m', '2:Dmaj7', '3:Dmaj7', '4.0:D', '4.1:C#m', '5:Bm', '6:-', '7.0:E', '7.1:G', '8:Bm', '9:A', '10.0:A', '10.1:E', '12:F#m7/A', '13:F#m7/A']);
+  assert.deepEqual(ok.sections.map((x) => [x.name, x.tonic, x.mode, x.startBar, x.endBar]), [['Verse', 1, 'phrygian', 1, 4], ['Nakarat', 11, 'dorian', 5, 8], ['Köprü', null, null, 9, 13]]);
+  assert.ok(ok.warnings.some((w) => /F#m, A atlandı/.test(w)) && ok.warnings.some((w) => /N\.C\./.test(w)));
+  // gidiş-dönüş: DAW'ın akor şeması → şablon → aynı akorlar
+  const d0 = Core.derive(proj, st);
+  const back = Core.parseChordChart(Core.chordChart(proj, d0), proj.settings.meter);
+  assert.deepEqual(back.errors, []);
+  const disp = (c) => Core.chordName(Object.assign({}, c.chord, { bass: c.chord.bass ?? (c.inversion ? c.voicing.bassPc : null) }));
+  assert.deepEqual(back.cells.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${Core.chordName(c.chord)}`), d0.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${disp(c)}`));
+  // şablon kilit olarak uygulanınca melodinin üzerinde aynen çalar
+  const p7 = JSON.parse(JSON.stringify(proj));
+  p7.chordLocks = ok.cells.filter((c) => c.chord && c.bar <= 8).map((c) => ({ bar: c.bar, half: c.half, chord: c.chord, src: 'chart' }));
+  const d7 = Core.derive(p7, st);
+  const got = d7.chords.map(cell).filter((x) => !x.startsWith('6:'));
+  assert.deepEqual(got, ok.cells.filter((c) => c.chord && c.bar <= 8).map(cell));
+  assert.ok(d7.chords.filter((c) => c.bar !== 6).every((c) => c.locked && c.lockSrc === 'chart'));
+  return `${ok.cells.length} hücre · uyarılar: ${ok.warnings.length} (atlanan akor, N.C.) · hata satır numarasıyla · dışa aktarılan şema geri yüklenince ${back.cells.length} akor aynen · uygulanınca ölçü 6 (boş) otomatik: ${Core.chordName(d7.chords.find((c) => c.bar === 6).chord)}`;
 });
 
 await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {

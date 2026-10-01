@@ -207,3 +207,8 @@ td.durbar i { display: block; height: 8px; border-radius: 0 4px 4px 0; backgroun
 .ops-legend td { padding: 3px 6px; border-top: 1px solid #2a2f3b; vertical-align: top; }
 .ops-legend td:first-child { white-space: nowrap; }
 #inspector .cols.ops .box { flex: 1 1 220px; }
+/* kendi akor şablonun */
+details.sub { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
+details.sub > summary { cursor: pointer; font-weight: 600; }
+#chartText { width: 100%; box-sizing: border-box; background: #111318; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; margin: 6px 0; }
+#chartMsg ul { margin: 4px 0 0 18px; padding: 0; }

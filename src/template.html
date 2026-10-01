@@ -126,7 +126,7 @@
           <label><input type="radio" name="atTarget" value="semitone" checked> En yakın yarım sese çek <small class="hint">(önerilen — notanın kimliği değişmez)</small></label>
           <label><input type="radio" name="atTarget" value="scale"> Bölüm scale'ine çek <small class="hint">(notanın kimliğini değiştirebilir)</small></label>
         </div>
-        <div id="scaleWarn" class="st-warn" hidden>⚠ Scale'e çekme açık: scale dışında kalan notalar — tam tonunda söylenmiş olsalar bile — başka bir yarım sese taşınır. Mod yanlış seçildiyse doğru notaları bozar. Akor bulucu bundan etkilenmez (kastedilen notayı kullanır).</div>
+        <div id="scaleWarn" class="st-warn" hidden>⚠ Scale'e çekme açık: scale dışında kalan notalar — tam tonunda söylenmiş olsalar bile — başka bir yarım sese taşınır. Mod yanlış seçildiyse doğru notaları bozar. Akorlar duyduğun (taşınmış) notaya göre bulunur; ton önerisi söylediğin notaya göre kalır.</div>
         <label>Miktar <output id="outAmount">100%</output><input type="range" id="inAmount" min="0" max="100" value="100"></label>
         <label>Retune hızı <output id="outRetune">30 ms</output><input type="range" id="inRetune" min="0" max="400" step="5" value="30"></label>
         <label class="chk"><input type="checkbox" id="inKeepVib" checked> Vibratoyu koru</label>
@@ -149,6 +149,21 @@
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
         <button id="btnApplySug" title="Kilitlerin dışındaki akorları motorun şimdiki önerisine göre yeniden hesaplar">Motorun önerilerini uygula <span id="sugCount"></span></button></div>
       <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Bir akoru kilitlediğinde <b>diğer akorlar değişmez</b>; motor başka bir şey önerirse akorun altında turuncu <b>→</b> ile gösterilir, nedeni sağdaki panelde yazar. Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
+      <details id="chartBox" class="sub">
+        <summary>📄 Kendi akorlarım — şablon yükle</summary>
+        <p class="hint">Kendi şarkının akorlarını yaz ya da .txt yükle; melodinin üzerinde kilitli akor olarak çalar. Her <b>| hücre |</b> 1 ölçü; hücrede 2 akor = yarım ölçü; <b>%</b> = önceki ölçü; <b>/</b> = önceki akor sürer; <b>boş hücre</b> = otomatik (motor seçer). Çizgisiz de yazabilirsin: <code>C#m:2 D E:0.5</code> (ölçü). <code>[Nakarat] B Dorian — ölçü 5–8</code> bölüm başlığıdır (ton ve aralık isteğe bağlı).</p>
+        <div class="row">
+          <button id="btnChartBlank" title="Projenin bölümleri ve ölçüleriyle boş şablon">Boş şablon indir</button>
+          <button id="btnChartCurrent" title="Şu anki akorlar — düzenleyip geri yükleyebilirsin">Şu anki akorları şablon olarak indir</button>
+          <label class="file-btn">.txt yükle<input type="file" id="fileChart" accept=".txt,text/plain" hidden></label>
+        </div>
+        <textarea id="chartText" rows="8" spellcheck="false" placeholder="[Verse] C# Frig — ölçü 1–4&#10;| C#m | Dmaj7 | C#m | Dmaj7 C#m |&#10;&#10;[Nakarat] B Dorian&#10;| Bm | E | F#m7 | Bm |"></textarea>
+        <div class="row">
+          <button id="btnChartApply" class="accent">Zaman çizelgesine uygula</button>
+          <button id="btnChartRemove" class="danger">✕ Şablondan gelen akorları kaldır <span id="chartCount"></span></button>
+        </div>
+        <div id="chartMsg"></div>
+      </details>
       <div id="altBox"></div>
       <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
       <div class="grid2">

@@ -614,7 +614,7 @@ function computeCorrection(track, notes, at, g) {
     } else if (at.enabled && !n.locked) {
       if (at.target === 'scale') {
         if (at.skipChromatic && isChromaticPassing(i, notes, n.scalePcs, g)) { info[i].chromatic = true; return; }
-        target = nearestScaleNote(n.median, n.scalePcs);
+        target = nearestScaleNote(n.median - (n.refCents || 0) / 100, n.scalePcs); // kişisel akort referansına göre
         info[i].identityChange = target !== n.nearest; // scale'e çekme notayı başka yarım sese taşıdı
       } else target = n.nearest; // en yakın yarım ses: tonlama düzeltmesi, kimlik aynı
       tau = at.retuneMs / 1000; amount = at.amount / 100; keepVib = at.keepVibrato; info[i].source = 'auto';
@@ -1755,13 +1755,19 @@ function derive(proj, st) {
       n.soundMidi = n.median + inf.applied / 100;
     });
   }
-  // Akor bulucu SESİ değil kastedilen notayı kullanır: etiket düzeltmesi varsa o, yoksa algılanan nota.
-  // Ses düzeltmeleri (autotune, manuel kaydırma) buna dokunmaz.
+  // Akor bulucu DUYULAN notayı kullanır:
+  //  - etiket (kullanıcı düzeltmesi; "notayı taşı" da etiket koyar) varsa o,
+  //  - yoksa autotune notayı başka bir yarım sese taşıdıysa (yalnızca "scale'e çek", miktar ≥ %50) autotune'un hedefi,
+  //  - yoksa söylenen nota. "En yakın yarım ses" autotune'u notanın yarım sesini zaten değiştirmez.
+  // Ton önerisi (4. adım) bundan önce, söylenen notalarla hesaplanır: autotune seçili scale'i kendi kendine doğrulamaz.
   for (const n of notes) {
-    n.effMidi = n.label != null ? n.label : n.nearest;
+    n.sungMidi = n.label != null ? n.label : n.nearest;
+    const at = n.corr;
+    n.autoMoved = n.label == null && !!at && at.source === 'auto' && at.identityChange && proj.autotune.amount >= 50 && at.target !== n.nearest;
+    n.effMidi = n.autoMoved ? at.target : n.sungMidi;
     n.inScale = n.scalePcs ? n.scalePcs.includes(mod12(n.effMidi)) : true;
-    // tam tonunda söylenmiş ama scale dışı → büyük ihtimalle kasıtlı: "mod yanlış olabilir"
-    n.modeSuspect = !n.inScale && n.label == null && Math.abs(n.cents) <= IN_TUNE_CENTS;
+    // tam tonunda söylenmiş ama scale dışı → büyük ihtimalle kasıtlı: "mod yanlış olabilir" (söylenen notaya göre)
+    n.modeSuspect = !!n.scalePcs && !n.scalePcs.includes(mod12(n.sungMidi)) && n.label == null && Math.abs(n.cents) <= IN_TUNE_CENTS;
   }
   for (const n of notes) n.cw = chordWeight(n, g);
   // 6) akorlar
@@ -1774,7 +1780,9 @@ function derive(proj, st) {
   const pins = (proj.chordPins || []).filter((p) => !userLocks.some((l) => covers(l, p.bar, p.half)));
   const chords = buildChords(notes, sections, g, chordOpts, [...userLocks, ...pins]);
   for (const sl of chords) {
-    sl.locked = userLocks.some((l) => covers(l, sl.bar, sl.half));
+    const ul = userLocks.find((l) => covers(l, sl.bar, sl.half));
+    sl.locked = !!ul;
+    sl.lockSrc = ul ? ul.src || 'user' : null;
     sl.pinned = !sl.locked && pins.some((p) => covers(p, sl.bar, sl.half));
     if (sl.pinned) sl.reason = 'sabit: bir akoru kilitlediğinde diğerleri değişmez';
   }
@@ -1822,6 +1830,136 @@ function chordChart(proj, d) {
       bars.push(' ' + (cs.join(' ') || '%') + ' ');
     }
     for (let i = 0; i < bars.length; i += 4) lines.push('|' + bars.slice(i, i + 4).join('|') + '|');
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+// ---------------------------------------------------------------- AKOR ŞABLONU (kendi progresyonun)
+// Biçim (chordChart çıktısıyla aynı; geri yüklenebilir):
+//   # yorum                          Tempo: 120 BPM · Ölçü: 4/4   (isteğe bağlı, yalnızca denetim)
+//   [Verse] C# Frig — ölçü 1–4        (bölüm başlığı; ton ve ölçü aralığı isteğe bağlı)
+//   | C#m | Dmaj7 | C#m | D C#m |     (her hücre 1 ölçü; hücrede 2 akor = yarım ölçü; "/" "-" "." önceki akor sürer)
+//   |  %  |       |                   (% = önceki ölçü tekrar; boş hücre = otomatik, motor seçer)
+//   C#m:2 D:1 C#m                     (çizgisiz: her akor 1 ölçü, ":n" ile n ölçü, 0.5 = yarım ölçü)
+const MODE_WORDS = (() => {
+  const m = new Map();
+  const add = (k, v) => m.set(k.toLocaleLowerCase('tr'), v);
+  for (const k of MODE_ORDER) { add(k, k); add(MODES[k].name, k); add(MODES[k].short, k); }
+  [['major', 'major'], ['majör', 'major'], ['ionian', 'major'], ['iyonyen', 'major'], ['maj', 'major'], ['minor', 'minor'], ['minör', 'minor'], ['min', 'minor'], ['aeolian', 'minor'], ['eolyen', 'minor'], ['m', 'minor'],
+    ['harmonic minor', 'harmonicMinor'], ['harmonik minör', 'harmonicMinor'], ['phrygian', 'phrygian'], ['frig', 'phrygian'], ['frigyen', 'phrygian'], ['dorian', 'dorian'], ['dor', 'dorian'],
+    ['lydian', 'lydian'], ['lidya', 'lydian'], ['lidyen', 'lydian'], ['mixolydian', 'mixolydian'], ['miksolidya', 'mixolydian'], ['miksolidyen', 'mixolydian'], ['locrian', 'locrian'], ['lokriyen', 'locrian'],
+    ['major pentatonic', 'majorPent'], ['majör pentatonik', 'majorPent'], ['minor pentatonic', 'minorPent'], ['minör pentatonik', 'minorPent']].forEach(([k, v]) => add(k, v));
+  return m;
+})();
+function parseKeyText(t) {
+  const s = String(t || '').replace(/\(öneri\)/g, '').trim();
+  const r = parsePc(s);
+  if (!r) return null;
+  const rest = s.slice(r.len).trim().toLocaleLowerCase('tr').replace(/[.]+$/, '');
+  const mode = rest === '' ? 'major' : MODE_WORDS.get(rest);
+  return mode ? { tonic: r.pc, mode } : null;
+}
+function parseChordChart(text, meter = '4/4') {
+  const g = makeGrid({ bpm: 120, meter });
+  const per = g.split ? 2 : 1;
+  const errors = [], warnings = [], sections = [], cells = []; // cells: {bar, half(0|1|null), chord|null, line}
+  const meta = {};
+  let bar = 1, prev = null, curSec = null;
+  const NC = /^(n\.?c\.?|nc|x)$/i, CONT = /^(\/|-|\.|–)$/;
+  const lines = String(text || '').split(/\r?\n/);
+  lines.forEach((raw, li) => {
+    const ln = li + 1, line = raw.replace(/\s+#.*$/, '').trim();
+    if (!line || /^(#|\/\/)/.test(line)) return;
+    const tm = /tempo\s*[:=]\s*(\d+(?:[.,]\d+)?)/i.exec(line), mm = /ölçü\s*[:=]\s*(\d+\/\d+)|meter\s*[:=]\s*(\d+\/\d+)|time\s*[:=]\s*(\d+\/\d+)/i.exec(line);
+    if ((tm || mm) && !line.includes('|') && !line.startsWith('[')) { if (tm) meta.bpm = +tm[1].replace(',', '.'); if (mm) meta.meter = mm[1] || mm[2] || mm[3]; return; }
+    const hm = /^\[([^\]:]+)(?::\s*([^\]]+))?\]\s*(.*)$/.exec(line);
+    if (hm) {
+      let rest = hm[3] || '';
+      const rg = /(?:ölçü|bars?|ölçüler)\s*(\d+)\s*(?:[–\-]\s*(\d+))?/i.exec(rest);
+      if (rg) { bar = +rg[1]; rest = rest.slice(0, rg.index); }
+      const keyTxt = (hm[2] || rest.replace(/[—–-]\s*$/, '')).trim();
+      const key = keyTxt && keyTxt !== '—' ? parseKeyText(keyTxt) : null;
+      if (keyTxt && keyTxt !== '—' && !key) warnings.push(`Satır ${ln}: "${keyTxt}" ton olarak anlaşılamadı; bölüm tonu öneriden gelecek.`);
+      curSec = { name: hm[1].trim(), tonic: key ? key.tonic : null, mode: key ? key.mode : null, startBar: bar, endBar: bar - 1 + (rg && rg[2] ? +rg[2] - +rg[1] + 1 : 0), line: ln, explicitEnd: !!(rg && rg[2]) };
+      sections.push(curSec);
+      prev = null;
+      return;
+    }
+    const chordOf = (tok) => {
+      if (NC.test(tok)) return 'NC';
+      const c = parseChord(tok);
+      if (!c) { errors.push(`Satır ${ln}: "${tok}" akor olarak anlaşılamadı`); return undefined; }
+      return c;
+    };
+    const putBar = (toks) => {
+      // hücredeki her işaret ölçünün eşit bir parçası; devam işaretleri önceki akoru sürdürür
+      if (!toks.length) { cells.push({ bar, half: null, chord: null, line: ln }); bar++; return; }
+      if (toks.length === 1 && toks[0] === '%') { if (!prev) errors.push(`Satır ${ln}: "%" için önceki akor yok`); else cells.push({ bar, half: null, chord: prev, line: ln }); bar++; return; }
+      const seq = [];
+      for (const t of toks) {
+        if (CONT.test(t) || t === '%') { if (!prev && !seq.length) { errors.push(`Satır ${ln}: "${t}" için önceki akor yok`); return; } seq.push(seq.length ? seq[seq.length - 1] : prev); continue; }
+        const c = chordOf(t);
+        if (c === undefined) return;
+        seq.push(c);
+      }
+      const at = (pos) => seq[Math.min(seq.length - 1, Math.floor(pos * seq.length + 1e-9))];
+      const h0 = at(0), h1 = per === 2 ? at(0.5) : h0;
+      const distinct = seq.filter((c, i) => i === 0 || c !== seq[i - 1]);
+      const kept = per === 2 ? [h0, h1] : [h0];
+      const lost = distinct.filter((c) => !kept.includes(c));
+      if (lost.length) warnings.push(`Satır ${ln}, ölçü ${bar}: ${per === 2 ? 'ölçüde en fazla 2 akor (yarım ölçü)' : `${meter} ölçüde ölçü başına 1 akor`} yerleşebilir; ${lost.map((c) => (c === 'NC' ? 'N.C.' : chordName(c))).join(', ')} atlandı.`);
+      if (per === 2 && h0 !== h1) { cells.push({ bar, half: 0, chord: h0, line: ln }); cells.push({ bar, half: 1, chord: h1, line: ln }); }
+      else cells.push({ bar, half: null, chord: h0, line: ln });
+      prev = seq[seq.length - 1];
+      bar++;
+    };
+    if (line.includes('|')) {
+      const parts = line.split('|');
+      if (parts[0].trim() === '') parts.shift();
+      if (parts.length && parts[parts.length - 1].trim() === '') parts.pop();
+      for (const p of parts) putBar(p.trim().split(/\s+/).filter(Boolean));
+    } else {
+      // çizgisiz: "C#m:2 D C#m:0.5" — süre ölçü cinsinden, yarım ölçü adımlı
+      let halfAcc = 0; // bu ölçüde dolu yarım sayısı (0/1)
+      for (const tok of line.split(/[\s,]+/).filter(Boolean)) {
+        const m = /^(.+?)(?::(\d+(?:[.,]\d+)?))?$/.exec(tok);
+        const dur = m[2] ? +m[2].replace(',', '.') : 1;
+        let c = m[1] === '%' || CONT.test(m[1]) ? prev : chordOf(m[1]);
+        if (c === undefined) continue;
+        if (c == null) { errors.push(`Satır ${ln}: "${m[1]}" için önceki akor yok`); continue; }
+        let halves = Math.round(dur * 2);
+        if (halves < 1 || Math.abs(dur * 2 - halves) > 1e-6) { errors.push(`Satır ${ln}: "${tok}" süresi yarım ölçünün katı olmalı (0.5, 1, 1.5, 2…)`); continue; }
+        if (per === 1 && halves % 2) { warnings.push(`Satır ${ln}: ${meter} ölçüde yarım ölçü yok; "${tok}" tam ölçüye yuvarlandı.`); halves += 1; }
+        while (halves > 0) {
+          if (halfAcc === 0 && halves >= 2) { cells.push({ bar, half: null, chord: c, line: ln }); bar++; halves -= 2; }
+          else { cells.push({ bar, half: halfAcc, chord: c, line: ln }); halfAcc = 1 - halfAcc; if (halfAcc === 0) bar++; halves -= 1; }
+        }
+        prev = c;
+      }
+      if (halfAcc === 1) { warnings.push(`Satır ${ln}: son akor yarım ölçüde bitiyor; ölçünün ikinci yarısı otomatik kaldı.`); bar++; }
+    }
+    if (curSec && !curSec.explicitEnd) curSec.endBar = bar - 1;
+  });
+  for (const sct of sections) if (sct.endBar < sct.startBar) sct.endBar = sct.startBar;
+  if (meta.meter && meta.meter !== meter) warnings.push(`Şablon ${meta.meter} ölçüye göre yazılmış, proje ${meter}: ölçüler kayabilir.`);
+  // N.C. → kilit yok (o yer otomatik kalır)
+  const place = [];
+  for (const c of cells) {
+    if (c.chord === 'NC') { warnings.push(`Satır ${c.line}, ölçü ${c.bar}: N.C. (akorsuz) desteklenmiyor; orası otomatik bırakıldı.`); continue; }
+    place.push(c);
+  }
+  return { meta, sections, cells: place, errors, warnings, bars: bar - 1 };
+}
+// Boş şablon: projenin bölümleri ve ölçüleri, hücreler boş (boş = otomatik)
+function blankChart(proj, d) {
+  const lines = [`# Kendi akorların: her hücre 1 ölçü. Hücrede 2 akor = yarım ölçü. Boş hücre = otomatik (motor seçer). % = önceki ölçü tekrar.`,
+    `Tempo: ${proj.settings.bpm} BPM · Ölçü: ${proj.settings.meter}`, ''];
+  const secs = d.sections.filter((s) => !s.implicit);
+  const list = secs.length ? secs : [{ name: 'Şarkı', startBar: 1, endBar: d.bars, tonic: null }];
+  for (const s of list) {
+    lines.push(`[${s.name}] ${s.tonic != null ? keyName(s.tonic, s.mode) : ''} — ölçü ${s.startBar}–${s.endBar}`.replace('  —', ' —'));
+    const n = s.endBar - s.startBar + 1;
+    for (let i = 0; i < n; i += 4) lines.push('|' + Array.from({ length: Math.min(4, n - i) }, () => '       ').join('|') + '|');
     lines.push('');
   }
   return lines.join('\n');
@@ -1906,7 +2044,7 @@ const Core = {
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
-  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind,
+  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,

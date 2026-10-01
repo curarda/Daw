@@ -516,6 +516,49 @@ try {
     return `kilit sonrası değişen yok · ölçü 1 önerisi: "${insp.match(/Motor burada[^.]*/)[0].slice(0, 80)}" · uygula → yalnızca ölçü 1 değişti · tüm kilitleri kaldır → başlangıç`;
   });
 
+  await step('Kendi akor şablonun: yaz / .txt yükle → melodinin üzerinde kilitli çalar; hata satırıyla; diğer akorlar değişmez; kaldır', async () => {
+    page.once('dialog', (d) => d.accept());
+    await page.click('#btnTest');
+    await waitStatus(/Test melodisi hazır/);
+    const names = () => S(() => window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}${c.lockSrc === 'chart' ? '📄' : ''}`));
+    const n0 = await names();
+    assert.ok(n0.some((x) => x.startsWith('5:')), 'nakarat var');
+    await page.click('#chartBox summary');
+    // hata: hiçbir şey uygulanmaz
+    await page.fill('#chartText', '[Verse]\n| A | Xyz |');
+    await page.click('#btnChartApply');
+    assert.match(await page.textContent('#chartMsg'), /Satır 2: "Xyz" akor olarak anlaşılamadı/);
+    assert.deepEqual(await names(), n0);
+    // metinle: verse'te 1–2 ve 4 (yarım ölçü), 3 boş (otomatik)
+    await page.fill('#chartText', '[Verse] — ölçü 1–4\n| A | E / / / |   | F#m Bm |');
+    await page.click('#btnChartApply');
+    const n1 = await names();
+    assert.deepEqual(n1.slice(0, 2), ['1:A📄', '2:E📄']);
+    assert.ok(n1.includes('4.0:F#m📄') && n1.includes('4.1:Bm📄'));
+    assert.ok(!n1.some((x) => x.startsWith('3') && x.includes('📄')), 'boş hücre otomatik');
+    n0.filter((x) => +x.split(/[.:]/)[0] >= 5).forEach((x) => assert.ok(n1.includes(x), 'nakarat değişmemeli: ' + x));
+    assert.match(await page.textContent('#chartMsg'), /4 akor 3 ölçüye kilitli olarak yerleşti/);
+    assert.match(await page.textContent('#btnChartRemove'), /\(4\)/);
+    // panelde kaynak
+    const tl = await page.locator('#tl').boundingBox();
+    const mid = await S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === 1); return 46 + ((s.q0 + s.q1) / 2) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
+    await page.mouse.click(tl.x + mid, tl.y + 22 + 26 + 18);
+    assert.match(await page.textContent('#inspector .rm-bar'), /Bu akor senin şablonundan: A/);
+    // kaldır → başlangıç
+    await page.click('#btnChartRemove');
+    assert.deepEqual(await names(), n0);
+    // .txt dosyası: DAW'ın "şu anki akorlar" şablonu → değiştir → yükle (gidiş-dönüş)
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#btnChartCurrent')]);
+    const txt = readFileSync(await dl.path(), 'utf8').replace('| Bm |', '| G |');
+    await page.setInputFiles('#fileChart', { name: 'sarkim.txt', mimeType: 'text/plain', buffer: Buffer.from(txt) });
+    await page.waitForFunction(() => /yerleşti/.test(document.querySelector('#chartMsg').textContent));
+    const n2 = await names();
+    assert.equal(n2.find((x) => x.startsWith('5:')), '5:G📄');
+    assert.ok(n2.every((x) => x.endsWith('📄')), 'şablondaki her ölçü kilitli');
+    await page.click('#btnChartRemove');
+    return `hata satırıyla, uygulanmadı · metin → ${n1.slice(0, 5).join(' ')} (3. ölçü otomatik, nakarat aynı) · indir → değiştir (5: Bm→G) → .txt yükle → ${n2.length} akor 📄 · kaldır → başlangıç`;
+  });
+
   assert.deepEqual(errors, [], 'tarayıcı hataları');
   console.log(log.join('\n'));
   console.log('\nArayüz testi geçti.');
