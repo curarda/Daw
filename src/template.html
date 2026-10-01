@@ -141,8 +141,9 @@
       <summary><b>6–7</b> Akor bulma ve düzenleme</summary>
       <label title="Süreli Viterbi bütün bölümü birlikte arar ve en iyi 3 alternatifi verir; ölçü ölçü motor her ölçüde yerel karar verir">Motor
         <select id="inEngine"><option value="viterbi">süreli Viterbi (bölüm boyunca, 3 alternatif)</option><option value="greedy">ölçü ölçü (eski)</option></select></label>
-      <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button></div>
-      <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
+      <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
+        <button id="btnApplySug" title="Kilitlerin dışındaki akorları motorun şimdiki önerisine göre yeniden hesaplar">Motorun önerilerini uygula <span id="sugCount"></span></button></div>
+      <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Bir akoru kilitlediğinde <b>diğer akorlar değişmez</b>; motor başka bir şey önerirse akorun altında turuncu <b>→</b> ile gösterilir, nedeni sağdaki panelde yazar. Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
       <div id="altBox"></div>
       <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
       <div class="grid2">

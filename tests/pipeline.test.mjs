@@ -385,6 +385,42 @@ await step('Kilitler hiçbir ölçüyü akorsuz bırakmaz (aynı köklü art ard
   return `D | Dmaj7 | D C#m kilitli → ${names.join(' · ')} · 60 rastgele kilit kombinasyonunda hiçbir ölçü boş kalmadı`;
 });
 
+await step('Bir akor kilitlenince diğer akorlar (çevrimleri dahil) değişmez; motorun tercihi öneri + neden olarak gelir', () => {
+  const p5 = JSON.parse(JSON.stringify(proj));
+  p5.sections.forEach((x) => { x.tonic = null; x.mode = null; });
+  p5.chordLocks = []; p5.chordPins = [];
+  const disp = (c) => Core.chordName(Object.assign({}, c.chord, { bass: c.chord.bass ?? (c.inversion ? c.voicing.bassPc : null) }));
+  const pinFrom = (d, skip) => d.chords.filter((c) => !c.locked && !skip(c)).map((c) => ({ bar: c.bar, half: c.half, chord: Object.assign({}, c.chord, { bass: c.chord.bass ?? (c.inversion ? c.voicing.bassPc : null) }) }));
+  let d = Core.derive(p5, st);
+  const before = d.chords.map((c) => `${c.bar}.${c.half}:${disp(c)}`);
+  // bar 2'ye A kilitle: serbest motor bar 1'i de A yapardı (birleşme) — sabitle bu olmaz
+  p5.chordPins = pinFrom(d, (c) => c.bar === 2);
+  p5.chordLocks = [{ bar: 2, half: null, chord: { root: 9, q: '', bass: null } }];
+  d = Core.derive(p5, st);
+  const after = d.chords.map((c) => `${c.bar}.${c.half}:${disp(c)}`);
+  before.forEach((b, i) => { if (!b.startsWith('2.')) assert.ok(after.includes(b), 'değişti: ' + b + ' → ' + after.join(' ')); });
+  const s1 = d.chords.find((c) => c.bar === 1);
+  assert.ok(s1.pinned && s1.pinSuggest && Core.chordName(s1.pinSuggest.chord) === 'A', 'bar 1 önerisi A');
+  assert.match(s1.pinSuggest.reasons.join(' '), /birleşip tek akor/);
+  // kilitli akorun kendisi: kök konumda, sürtünme önemli uyarı olarak
+  const s2 = d.chords.find((c) => c.bar === 2);
+  assert.equal(s2.locked, true); assert.equal(s2.inversion, false);
+  assert.ok(s2.lockAdvice.some((a) => a.important && /sürtünme/.test(a.text)));
+  // art arda 15 rastgele kilit: her adımda kilitlenmeyen hiçbir akor değişmez
+  let r = 3; const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const pool = [[1, 'm'], [2, ''], [9, ''], [11, 'm'], [4, ''], [6, 'm'], [4, 'sus4']];
+  for (let t = 0; t < 15; t++) {
+    const prev = d.chords.map((c) => ({ k: `${c.bar}.${c.half}`, bar: c.bar, n: disp(c) }));
+    const bar = 1 + Math.floor(rnd() * 8), [root, q] = pool[Math.floor(rnd() * pool.length)];
+    p5.chordPins = [...p5.chordPins.filter((p) => p.bar !== bar), ...pinFrom(d, (c) => c.bar === bar)].filter((p, i, a) => a.findIndex((x) => x.bar === p.bar && x.half === p.half) === i);
+    p5.chordLocks = [...p5.chordLocks.filter((l) => l.bar !== bar), { bar, half: null, chord: { root, q, bass: null } }];
+    d = Core.derive(p5, st);
+    const now = new Map(d.chords.map((c) => [`${c.bar}.${c.half}`, disp(c)]));
+    for (const x of prev) if (x.bar !== bar) assert.equal(now.get(x.k), x.n, `adım ${t}: ölçü ${x.k} değişti`);
+  }
+  return `bar 2 = A kilitli: bar 1 C#m kaldı, öneri → A (${s1.pinSuggest.reasons[0]}) · kilitli A kök konumda, ⚠ ${s2.lockAdvice[0].text.slice(0, 45)}… · 15 ardışık rastgele kilitte başka akor değişmedi`;
+});
+
 await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {
   const pat = (meter, feel) => { const g = Core.makeGrid({ bpm: 120, meter }); const out = []; for (let q = 0; q < g.barQ - 1e-9; q += g.clickQ) out.push(Core.clickKind(g, q, feel)); return out.join(' '); };
   assert.equal(pat('4/4', 'halftime'), 'weak weak snare weak');

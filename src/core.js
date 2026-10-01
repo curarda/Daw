@@ -1281,6 +1281,57 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
 const CHORD_ENGINES = ['greedy', 'viterbi'];
 
 // ---------------------------------------------------------------- SESLENDİRME (voicing)
+// ---------------------------------------------------------------- KİLİT SONRASI ÖNERİLER
+const coreKeyOf = (c) => { const iv = CHORD_Q[c.q]; return `${c.root}:${iv.includes(4) ? 'M' : iv.includes(3) ? 'm' : c.q}`; };
+// Melodideki sürtünen notalar: "D (melodi) ↔ C# (akor)"
+function clashText(chord, sn, flats = false) {
+  const pcs = chordPcs(chord), out = [];
+  for (const x of sn) {
+    if (x.w < 2) continue;
+    const c = pcs.find((p) => mod12(x.pc - p) === 1 || mod12(p - x.pc) === 1);
+    if (c != null) { const t = `${pcName(x.pc, flats)} (melodi) ↔ ${pcName(c, flats)} (akor)`; if (!out.includes(t)) out.push(t); }
+  }
+  return out.join(', ');
+}
+// cur yerine alt neden daha iyi? {important, reasons[]}
+function adviseSwap(cur, alt, sn, prevC, nextC, sec, sty, colorPenalty = 0) {
+  const a = scoreChord(cur, sn, colorPenalty), b = scoreChord(alt, sn, colorPenalty);
+  const fl = !!sec && sec.tonic != null && keyUsesFlats(sec.tonic, sec.mode);
+  const nm = (c) => chordName(c, fl);
+  const reasons = [];
+  let important = false;
+  if (a.friction && !b.friction) { important = true; reasons.push(`melodiyle yarım ses sürtünmesi: ${clashText(cur, sn, fl)}`); }
+  if (prevC && coreKeyOf(prevC) === coreKeyOf(cur) && coreKeyOf(prevC) !== coreKeyOf(alt)) { important = true; reasons.push(`önceki akorla (${nm(prevC)}) aynı kök — akor değişimi duyulmuyor`); }
+  if (nextC && coreKeyOf(nextC) === coreKeyOf(cur) && coreKeyOf(nextC) !== coreKeyOf(alt)) { important = true; reasons.push(`sonraki akorla (${nm(nextC)}) aynı kök — akor değişimi duyulmuyor`); }
+  if (nextC && coreKeyOf(nextC) === coreKeyOf(alt)) reasons.push(`sonraki akorla (${nm(nextC)}) birleşip tek akor olur — bir akor değişimi azalır`);
+  if (prevC && coreKeyOf(prevC) === coreKeyOf(alt)) reasons.push(`önceki akorla (${nm(prevC)}) birleşip tek akor olur — bir akor değişimi azalır`);
+  if (sec && sec.tonic != null && sameChord(alt, homeChord(sec.tonic, sec.mode)) && !sameChord(cur, alt)) reasons.push(`ev akoru (${nm(alt)}): bölümün merkezini duyurur`);
+  const dm = b.score - a.score;
+  if (dm > 0.1 * Math.max(1, a.W)) reasons.push(`melodiye daha uygun (puan ${a.score.toFixed(1)} → ${b.score.toFixed(1)})`);
+  if (sty && prevC && !sameChord(prevC, cur)) {
+    const ta = sty.score(prevC, null, cur, sec).trans, tb = sty.score(prevC, null, alt, sec).trans;
+    if (tb - ta > 0.3) reasons.push(`stil verine göre ${nm(prevC)} → ${nm(alt)} geçişi daha olası`);
+  }
+  if (!reasons.length) reasons.push('bölümün bütününde (akor süreleri, ev akoruna dönüş, değişim sayısı) daha yüksek puan; tek başına zorunlu değil');
+  return { important, reasons };
+}
+// Kilitli akor: önemli sorun (sürtünme) ya da isteğe bağlı renk önerisi
+function lockAdvice(slot, sn, colorPenalty = 0) {
+  const out = [];
+  const c = slot.chord, r = scoreChord(c, sn, colorPenalty);
+  if (r.friction) {
+    const variants = ['', 'm', 'maj7', '7', 'm7', 'add9', 'sus2', 'sus4'].map((q) => ({ root: c.root, q })).filter((v) => CHORD_Q[v.q] && !sameChord(v, c));
+    const alts = [...variants.map((v) => ({ chord: v, r: scoreChord(v, sn, colorPenalty) })), ...(slot.candidates || []).map((x) => ({ chord: { root: x.chord.root, q: x.chord.q }, r: scoreChord(x.chord, sn, colorPenalty) }))]
+      .filter((x) => !x.r.friction).sort((p, q) => q.r.score - p.r.score);
+    const uniq = [];
+    for (const x of alts) if (!uniq.some((u) => sameChord(u, x.chord))) uniq.push(x.chord);
+    out.push({ important: true, text: `Melodiyle yarım ses sürtünmesi: ${clashText(c, sn, slot.flats)}. Bilerek istiyorsan sorun yok; değilse sürtünmeyen seçenekler:`, chords: uniq.slice(0, 3) });
+  }
+  const heavy = sn.filter((x) => x.w >= 2).map((x) => mod12(x.pc - c.root));
+  if (!r.friction && c.q === '' && heavy.includes(11)) out.push({ important: false, text: 'Renk: melodi güçlü vuruşta majör 7\'liye basıyor — maj7 rengi bunu akora katar (isteğe bağlı).', chords: [{ root: c.root, q: 'maj7' }] });
+  if (!r.friction && c.q === 'm' && heavy.includes(2)) out.push({ important: false, text: 'Renk: melodi güçlü vuruşta 2\'liye (9) basıyor — sus2 ya da add9 rengi bunu yumuşatır (isteğe bağlı; minör 3\'lü sus2\'de düşer).', chords: [{ root: c.root, q: 'sus2' }] });
+  return out;
+}
 function voiceChords(slots, notes, sections, opts = {}) {
   let prevV = null, prevBass = null, prevSec = null;
   const secById = new Map(sections.map((s) => [s.id, s]));
@@ -1329,9 +1380,8 @@ function voiceChords(slots, notes, sections, opts = {}) {
     };
     let bassPc, bass;
     const forcedBass = slot.chord.bass;
-    if (forcedBass != null) { bassPc = forcedBass; bass = place(bassPc, prevBass ?? 40); }
-    else if (opts.pedal && sec) { bassPc = sec.tonic; bass = place(bassPc, 40); }
-    else {
+    // otomatik bas seçimi: kök, ya da bas hattı adım adım gitsin diye çevrim (3'lü / 5'li basta)
+    const autoBass = () => {
       const iv = CHORD_Q[slot.chord.q];
       const opt = [{ pc: slot.chord.root, c: 0 }];
       if (prevBass != null && !firstInSec && !lastInSec) {
@@ -1339,13 +1389,29 @@ function voiceChords(slots, notes, sections, opts = {}) {
         if (th != null) opt.push({ pc: mod12(slot.chord.root + th), c: 2.0 });
         if (iv.includes(7)) opt.push({ pc: mod12(slot.chord.root + 7), c: 3.0 });
       }
-      let bc = Infinity;
+      let bc = Infinity, r = null;
       for (const op of opt) {
         const m = place(op.pc, prevBass ?? 40);
         const d = prevBass == null ? 0 : Math.abs(m - prevBass);
         const mc = d <= 2 ? 0 : d <= 4 ? 1.5 : 3;
-        if (op.c + mc < bc) { bc = op.c + mc; bassPc = op.pc; bass = m; }
+        if (op.c + mc < bc) { bc = op.c + mc; r = { pc: op.pc, m, leap: d }; }
       }
+      const rootM = place(slot.chord.root, prevBass ?? 40);
+      return Object.assign(r, { rootLeap: prevBass == null ? 0 : Math.abs(rootM - prevBass), prevBassPc: prevBass == null ? null : mod12(prevBass) });
+    };
+    slot.invWhy = null; slot.invAdvice = null;
+    if (forcedBass != null) { bassPc = forcedBass; bass = place(bassPc, prevBass ?? 40); }
+    else if (opts.pedal && sec) { bassPc = sec.tonic; bass = place(bassPc, 40); }
+    else if (slot.locked || slot.pinned) {
+      // kullanıcının kilitlediği (ya da kilit sonrası sabit tutulan) akorda çevrim zorlanmaz: kök basta.
+      // Çevrim daha iyi bir bas hattı verecekse yalnızca öneri olarak yazılır.
+      bassPc = slot.chord.root; bass = place(bassPc, prevBass ?? 40);
+      const a = autoBass();
+      if (slot.locked && a.pc !== slot.chord.root) slot.invAdvice = { bassPc: a.pc, prevBassPc: a.prevBassPc, leap: a.leap, rootLeap: a.rootLeap };
+    } else {
+      const a = autoBass();
+      bassPc = a.pc; bass = a.m;
+      if (a.pc !== slot.chord.root) slot.invWhy = { bassPc: a.pc, prevBassPc: a.prevBassPc, leap: a.leap, rootLeap: a.rootLeap };
     }
     slot.voicing = { bass, notes: best, bassPc };
     slot.inversion = bassPc !== slot.chord.root;
@@ -1613,7 +1679,7 @@ function newProject() {
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
-    chordLocks: [],
+    chordLocks: [], chordPins: [],
     mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
   };
 }
@@ -1701,9 +1767,36 @@ function derive(proj, st) {
   // 6) akorlar
   // engineOverride: etkileşim sırasında (nota sürükleme) hızlı motor; bırakınca seçili motorla yeniden hesaplanır
   const chordOpts = Object.assign({}, proj.chordOpts, st.style ? { style: st.style } : {}, st.engineOverride ? { engine: st.engineOverride } : {});
-  const chords = buildChords(notes, sections, g, chordOpts, proj.chordLocks);
+  // Kullanıcı kilitleri + "kilit sonrası sabit tutulan" akorlar (pins). Bir akor kilitlenince diğer akorlar
+  // olduğu gibi kalır; motorun aksi yöndeki tercihi yalnızca öneri (pinSuggest) olarak, gerekçesiyle gösterilir.
+  const userLocks = proj.chordLocks || [];
+  const covers = (l, bar, half) => l.bar === bar && (l.half == null || half == null || l.half === half);
+  const pins = (proj.chordPins || []).filter((p) => !userLocks.some((l) => covers(l, p.bar, p.half)));
+  const chords = buildChords(notes, sections, g, chordOpts, [...userLocks, ...pins]);
+  for (const sl of chords) {
+    sl.locked = userLocks.some((l) => covers(l, sl.bar, sl.half));
+    sl.pinned = !sl.locked && pins.some((p) => covers(p, sl.bar, sl.half));
+    if (sl.pinned) sl.reason = 'sabit: bir akoru kilitlediğinde diğerleri değişmez';
+  }
   // 8) voicing
   voiceChords(chords, notes, sections, { pedal: proj.mixer.pedal });
+  // motorun kilitler varken (pin olmadan) ne seçeceği → sabit akorlar için öneri + neden
+  if (pins.length) {
+    const free = buildChords(notes, sections, g, chordOpts, userLocks);
+    chords.forEach((sl, i) => {
+      if (!sl.pinned) return;
+      const mid = (sl.q0 + sl.q1) / 2;
+      const f = free.find((x) => mid >= x.q0 && mid < x.q1);
+      if (!f || sameChord(f.chord, sl.chord)) return;
+      const sec = sections.find((x) => x.id === sl.section);
+      const sn = slotNotes(notes, sl.q0, sl.q1, g);
+      const prevC = i > 0 && chords[i - 1].section === sl.section ? chords[i - 1].chord : null;
+      const nextC = chords[i + 1] && chords[i + 1].section === sl.section ? chords[i + 1].chord : null;
+      sl.pinSuggest = Object.assign({ chord: { root: f.chord.root, q: f.chord.q } }, adviseSwap(sl.chord, f.chord, sn, prevC, nextC, sec, st.style, chordOpts.colorPenalty || 0));
+    });
+  }
+  // kilitli akor için uyarı/öneriler: sürtünme (önemli), renk ve çevrim (isteğe bağlı)
+  chords.forEach((sl) => { if (sl.locked) { sl.lockAdvice = lockAdvice(sl, slotNotes(notes, sl.q0, sl.q1, g), chordOpts.colorPenalty || 0); sl.suggest = null; } });
   return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning };
 }
 

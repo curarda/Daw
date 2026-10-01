@@ -200,3 +200,6 @@ td.durbar i { display: block; height: 8px; border-radius: 0 4px 4px 0; backgroun
 .rm-bar { border: 1px solid #ff8a8f55; background: rgba(255, 138, 143, 0.07); border-radius: 6px; padding: 4px 8px; margin: 4px 0 8px; }
 .rm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0; flex-wrap: wrap; }
 .rm-row + .rm-row { border-top: 1px dashed #ff8a8f33; }
+/* akor denetçisindeki öneriler: ⚠ önemli (sürtünme, aynı kök), ℹ isteğe bağlı (renk, çevrim) — hiçbiri kendiliğinden uygulanmaz */
+.adv-opt { border: 1px solid #3a4152; background: rgba(106, 167, 255, 0.06); border-radius: 6px; padding: 6px 10px; margin: 6px 0; }
+.adv-imp .row, .adv-opt .row { margin: 4px 0 0; gap: 4px; }

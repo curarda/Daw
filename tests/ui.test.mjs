@@ -391,7 +391,7 @@ try {
     // akor: seç + kilitle → üstte "Kilidi kaldır"
     const sx = await S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === 2); return 46 + ((s.q0 + s.q1) / 2) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
     await page.mouse.click(tl.x + sx, tl.y + 22 + 26 + 18);
-    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    await page.locator('#inspector tbody button[data-act=pickChord]').nth(1).click();
     await page.mouse.click(tl.x + sx, tl.y + 22 + 26 + 18);
     assert.deepEqual(await rm(), ['✕ Kilidi kaldır (otomatiğe dön)']);
     // bölüm: kilitli akor varsa "Bölümdeki kilitleri kaldır"
@@ -416,12 +416,12 @@ try {
     const heard = await page.textContent('#status');
     assert.equal(await locks(), 0);
     // aday ▶: çalar, kilitlemez
-    await page.locator('#inspector button[data-act=hearChord][data-r]').nth(1).click();
+    await page.locator('#inspector tbody button[data-act=hearChord]').nth(1).click();
     await page.waitForFunction((h) => document.querySelector('#status').textContent !== h, heard);
     assert.match(await page.textContent('#status'), /^▶ /);
     assert.equal(await locks(), 0);
     // kilitle → ✕ ile kaldır
-    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    await page.locator('#inspector tbody button[data-act=pickChord]').nth(1).click();
     assert.equal(await locks(), 1);
     g2 = await geo(2);
     if (shotDir) await page.screenshot({ path: path.join(shotDir, 'chord-lock-x.png'), clip: { x: tl.x, y: tl.y, width: 700, height: 90 } });
@@ -430,20 +430,52 @@ try {
     assert.match(await page.textContent('#status'), /kilit kaldırıldı/);
     // kilitle → seçiliyken Delete
     await page.mouse.click(tl.x + g2.mid, cy);
-    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    await page.locator('#inspector tbody button[data-act=pickChord]').nth(1).click();
     assert.equal(await locks(), 1);
     await page.keyboard.press('Delete');
     assert.equal(await locks(), 0);
     // iki kilit → "Tüm akor kilitlerini kaldır (2)"
-    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    await page.locator('#inspector tbody button[data-act=pickChord]').nth(1).click();
     const g3 = await geo(3);
     await page.mouse.click(tl.x + g3.mid, cy);
-    await page.locator('#inspector button[data-act=pickChord]').nth(1).click();
+    await page.locator('#inspector tbody button[data-act=pickChord]').nth(1).click();
     assert.match(await page.textContent('#btnUnlockAll'), /\(2\)/);
     await page.click('#btnUnlockAll');
     assert.equal(await locks(), 0);
     assert.ok(await page.isDisabled('#btnUnlockAll'));
     return `tıkla → "${heard}" · aday ▶ kilitlemedi · ✕, Delete ve "Tüm akor kilitlerini kaldır (2)" çalıştı`;
+  });
+
+  await step('Akor kilitlenince diğerleri değişmez; motorun önerisi "→" ve nedeniyle gelir, istenirse uygulanır', async () => {
+    const tl = await page.locator('#tl').boundingBox();
+    const cy = tl.y + 22 + 26 + 18;
+    const mid = (bar) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === ${bar}); return 46 + ((s.q0 + s.q1) / 2) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
+    const names = () => S(() => window.__daw.d.chords.map((c) => window.__dawAPI.C.chordName(Object.assign({}, c.chord, { bass: c.chord.bass ?? (c.inversion ? c.voicing.bassPc : null) }))));
+    const n0 = await names();
+    await page.mouse.click(tl.x + (await mid(2)), cy);
+    await page.fill('#chInput', 'A'); await page.click('#inspector button[data-act=manualChord]');
+    const n1 = await names();
+    n0.forEach((x, i) => { if (i !== 1) assert.equal(n1[i], x, 'akor ' + i + ' değişti'); });
+    assert.equal(n1[1], 'A');
+    assert.match(await page.textContent('#btnApplySug'), /\(1\)/);
+    // bar 1: sabit + öneri ve neden
+    await page.mouse.click(tl.x + (await mid(1)), cy);
+    const insp = await page.textContent('#inspector');
+    assert.match(insp, /Sabit: başka bir akoru kilitlediğin için/);
+    assert.match(insp, /Motor burada A önerir — sonraki akorla \(A\) birleşip tek akor olur/);
+    if (shotDir) await page.locator('#inspector').screenshot({ path: path.join(shotDir, 'pin-suggest.png') });
+    // kilitli akor: sürtünme uyarısı
+    await page.mouse.click(tl.x + (await mid(2)), cy);
+    assert.match(await page.textContent('#inspector'), /⚠ Melodiyle yarım ses sürtünmesi/);
+    // öneriyi uygula (yalnızca o akor)
+    await page.mouse.click(tl.x + (await mid(1)), cy);
+    await page.click('#inspector button[data-act=applyPinSug]');
+    const n2 = await names();
+    assert.equal(n2[0], 'A');
+    n1.forEach((x, i) => { if (i > 1) assert.equal(n2[i], x); });
+    await page.click('#btnUnlockAll');
+    assert.deepEqual(await names(), n0);
+    return `kilit sonrası değişen yok · ölçü 1 önerisi: "${insp.match(/Motor burada[^.]*/)[0].slice(0, 80)}" · uygula → yalnızca ölçü 1 değişti · tüm kilitleri kaldır → başlangıç`;
   });
 
   assert.deepEqual(errors, [], 'tarayıcı hataları');
