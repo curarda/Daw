@@ -3646,7 +3646,7 @@ window.__daw = S; // hata ayıklama / testler için
 window.__dawCal = () => Cal.last;
 // stil modülünün (styleui.js) kullandığı arayüz
 window.__dawAPI = {
-  S, C, status, esc, getCtx,
+  S, C, status, esc, getCtx, notePreview: () => NotePreview,
   refresh: () => refresh(),
   preview: (chords, tonic, mode, durs) => Player.previewChords(chords, tonic, mode, durs),
   // doğrulama öğesi için mevcut analiz: kastedilen notalar + tonu belli bölümler
@@ -3707,6 +3707,37 @@ function getCtx() {
   if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'interactive' });
   return actx;
 }
+// ---------------------------------------------------------------- nota önizleme
+// Tıklanan / sürüklenen notayı duyurur: kaydın o notaya ait parçası, istenen perdeye TD-PSOLA ile
+// kaydırılarak (hız değişmeden) çalınır — piyano değil, kendi sesin. Etiket sürüklemede ses aynıdır;
+// karşılaştırma için etiket perdesinde kısık bir piyano notası eklenir.
+const NotePreview = {
+  src: null, gain: null, lastAt: 0, count: 0,
+  play(n, cents = 0, refMidi = null) {
+    if (!S.audio || !S.track || !n) return;
+    const ctx = getCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+    const sr = S.audio.sr, hop = S.track.hopSec, nF = S.track.f0.length;
+    const fa = Math.max(0, Math.floor(n.t0 / hop) - 1), fb = Math.min(nF, Math.ceil(Math.min(n.t1, n.t0 + 1.2) / hop) + 1);
+    const a = Math.round(fa * hop * sr), b = Math.min(S.audio.data.length, Math.round(fb * hop * sr));
+    if (b - a < 64) return;
+    const x = S.audio.data.slice(a, b);
+    let y = x;
+    if (Math.abs(cents) >= 1) y = C.psolaShift(x, sr, { hopSec: hop, f0: S.track.f0.slice(fa, fb) }, new Float32Array(fb - fa).fill(cents));
+    const fl = Math.min(Math.round(0.012 * sr), y.length >> 2);
+    for (let i = 0; i < fl; i++) { const g = i / fl; y[i] *= g; y[y.length - 1 - i] *= g; }
+    this.stop();
+    const src = ctx.createBufferSource(), g = ctx.createGain();
+    src.buffer = toAudioBuffer(y, sr); g.gain.value = 0.9;
+    src.connect(g).connect(ctx.destination);
+    src.start();
+    this.src = src; this.gain = g; this.lastAt = performance.now(); this.count++;
+    if (refMidi != null) Player.ensure().then(() => Player.sampler.triggerAttackRelease(Tone.Frequency(refMidi, 'midi').toNote(), Math.min(1.2, n.t1 - n.t0), Tone.now() + 0.02, 0.3)).catch(() => {});
+  },
+  stop() { if (this.src) { try { this.src.stop(); } catch (e) { /* zaten bitti */ } this.src = null; } },
+  // notanın şu anki sesi (autotune / elle düzeltme dahil) için kaydırma
+  current(n) { return n.corr ? n.corr.applied || 0 : 0; },
+};
 function toAudioBuffer(data, sr) {
   const b = new AudioBuffer({ length: Math.max(1, data.length), numberOfChannels: 1, sampleRate: sr });
   b.copyToChannel(data, 0);
@@ -4454,11 +4485,12 @@ cv.addEventListener('pointerdown', (e) => {
   const n = noteAt(x, y);
   if (!n) { select(null); return; }
   select({ type: 'note', id: n.id });
+  NotePreview.play(n, NotePreview.current(n)); // tıklayınca duyulur
   // Alt + sürükle: her modda yalnızca etiket (ses aynı kalır)
   const mode = e.altKey ? 'label' : S.editMode;
   if (mode !== 'select') {
     const ed0 = editFor(n);
-    S.drag = { type: 'note', id: n.id, y0: y, mode, geo: rollGeom(), baseRow: n.effMidi, baseSound: n.manualTarget ?? n.soundMidi ?? n.median, orig: C.noteName(n.effMidi, false), moved: false,
+    S.drag = { type: 'note', id: n.id, y0: y, mode, geo: rollGeom(), heard: Math.round(n.effMidi), baseRow: n.effMidi, baseSound: n.manualTarget ?? n.soundMidi ?? n.median, orig: C.noteName(n.effMidi, false), moved: false,
       prev: ed0 ? { target: ed0.target ?? null, label: ed0.label ?? null, locked: !!ed0.locked } : { target: null, label: null, locked: false } };
     cv.setPointerCapture(e.pointerId);
   }
@@ -4491,10 +4523,12 @@ cv.addEventListener('pointermove', (e) => {
       ed.target = Math.round(C.clamp(S.drag.baseSound + semis * 0.25, lim - 0.49, lim + 0.49) * 100) / 100;
       ed.locked = true;
       const c = Math.round((ed.target - Math.round(ed.target)) * 100);
+      if (S.drag.heard == null || (Math.abs(ed.target - S.drag.heard) >= 0.05 && performance.now() - NotePreview.lastAt > 140)) { S.drag.heard = ed.target; NotePreview.play(n, (ed.target - n.median) * 100); }
       S.drag.tip = `İnce akort: ${C.noteName(Math.round(ed.target), false)} ${c >= 0 ? '+' : ''}${c} cent · nota aynı`;
     } else if (S.drag.mode === 'sound') {
       // notayı taşı: ses yeni yarım sese kayar VE kastedilen nota o olur (akorlar onu kullanır)
       const R = Math.round(S.drag.baseRow + semis);
+      if (S.drag.heard !== R) { S.drag.heard = R; NotePreview.play(n, R === Math.round(S.drag.baseRow) ? NotePreview.current(n) : (R - n.median) * 100); } // sürüklediğin yerde duyulur
       if (R === Math.round(S.drag.baseRow)) { Object.assign(ed, S.drag.prev); S.drag.tip = `${S.drag.orig} — değişiklik yok`; }
       else {
         ed.target = R; ed.locked = true;
@@ -4503,6 +4537,7 @@ cv.addEventListener('pointermove', (e) => {
       }
     } else {
       const R = Math.round(S.drag.baseRow + semis);
+      if (S.drag.heard !== R) { S.drag.heard = R; NotePreview.play(n, NotePreview.current(n), R); } // ses aynı + etiket perdesinde kısık piyano
       ed.label = R !== n.nearest ? R : null;
       S.drag.tip = R === Math.round(S.drag.baseRow) ? `${S.drag.orig} — değişiklik yok` : `Etiket: ${S.drag.orig} → ${C.noteName(R, false)} · ses aynı, akorlar ${C.noteName(R, false)}`;
     }
@@ -4716,7 +4751,7 @@ function renderNoteInspector(box, n) {
     : corr.chromatic ? 'Kromatik geçiş notası — autotune dokunmadı.'
     : n.locked ? 'Autotune bu notada kapalı.'
     : S.proj.autotune.enabled ? 'Autotune bu notada düzeltme gerektirmedi.' : 'Autotune kapalı (5. adım).';
-  box.innerHTML = `<h3>Nota ${esc(nn(n.effMidi))}${isMove ? ' <span class="tag" style="color:#5fd08a;border-color:#5fd08a">taşındı</span>' : n.label != null ? ' <span class="tag warn">etiket</span>' : ''}${manual && !isMove ? ' <span class="tag" style="color:#5fd08a;border-color:#5fd08a">elle akort</span>' : ''}</h3>
+  box.innerHTML = `<h3><button data-act="hearNote" title="notayı şu anki haliyle dinle">▶</button> Nota ${esc(nn(n.effMidi))}${manual || corr.source === 'auto' ? ' <button data-act="hearNote" data-orig="1" class="small" title="düzeltmesiz, kaydettiğin gibi">▶ orijinal</button>' : ''}${isMove ? ' <span class="tag" style="color:#5fd08a;border-color:#5fd08a">taşındı</span>' : n.label != null ? ' <span class="tag warn">etiket</span>' : ''}${manual && !isMove ? ' <span class="tag" style="color:#5fd08a;border-color:#5fd08a">elle akort</span>' : ''}</h3>
     ${rmBar(rms)}
     <div class="kv">
       <span>Algılanan</span><span>${esc(nn(n.nearest))} ${n.cents > 0 ? '+' : ''}${n.cents} cent <span class="hint">(kişisel akort referansına göre${n.refCents ? `; referans ${n.refCents >= 0 ? '+' : ''}${n.refCents.toFixed(0)}c` : ''} · A4=440'a göre ${esc(nn(n.absNearest))} ${n.absCents > 0 ? '+' : ''}${n.absCents}c · medyan MIDI ${n.median.toFixed(2)})</span></span>
@@ -4744,11 +4779,13 @@ function moveNote(n, R) {
   const ed = editFor(n, true);
   ed.target = R; ed.locked = true; ed.label = R !== n.nearest ? R : null;
   cleanupEdits(); refresh(); scheduleRender(true);
+  NotePreview.play(n, (R - n.median) * 100);
   status(`Taşındı: ${C.noteName(n.nearest, false)} → ${C.noteName(R, false)} (ses ve akorlar). Geri almak için notanın panelindeki "✕ Taşımayı geri al".`);
 }
 function soundEdit(n, fn) {
   const ed = editFor(n, true);
   ed.target = fn(ed.target ?? n.soundMidi);
+  NotePreview.play(n, (ed.target - n.median) * 100);
   ed.locked = true;
   cleanupEdits(); refresh(); scheduleRender(true);
 }
@@ -4765,7 +4802,8 @@ $('#inspector').addEventListener('click', (e) => {
   if (S.sel.type === 'note') {
     const n = S.d.notes.find((x) => x.id === S.sel.id);
     if (!n) return;
-    if (act === 'label') { const ed = editFor(n, true); const R = n.effMidi + +b.dataset.v; ed.label = R !== n.nearest ? R : null; cleanupEdits(); refresh(); }
+    if (act === 'label') { const ed = editFor(n, true); const R = n.effMidi + +b.dataset.v; ed.label = R !== n.nearest ? R : null; cleanupEdits(); refresh(); NotePreview.play(n, NotePreview.current(n), R); }
+    if (act === 'hearNote') NotePreview.play(n, b.dataset.orig ? 0 : NotePreview.current(n));
     if (act === 'move') moveNote(n, n.effMidi + +b.dataset.v);
     if (act === 'labelReset') { const ed = editFor(n); if (ed) ed.label = null; cleanupEdits(); refresh(); }
     if (act === 'snd') soundEdit(n, (t) => { const v = +b.dataset.v; const lim = Math.round(n.manualTarget ?? n.nearest); return Math.round(C.clamp(t + v, lim - 0.49, lim + 0.49) * 100) / 100; });
@@ -5098,7 +5136,7 @@ document.addEventListener('keydown', (e) => {
     if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && S.editMode !== 'select') {
       e.preventDefault();
       const dir = e.key === 'ArrowUp' ? 1 : -1;
-      if (S.editMode === 'label' || e.altKey) { const ed = editFor(n, true); const R = n.effMidi + dir; ed.label = R !== n.nearest ? R : null; cleanupEdits(); refresh(); }
+      if (S.editMode === 'label' || e.altKey) { const ed = editFor(n, true); const R = n.effMidi + dir; ed.label = R !== n.nearest ? R : null; cleanupEdits(); refresh(); NotePreview.play(n, NotePreview.current(n), R); }
       else if (e.shiftKey) soundEdit(n, (t) => Math.round((t + dir * 0.05) * 100) / 100);
       else moveNote(n, n.effMidi + dir);
     }

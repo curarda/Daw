@@ -231,10 +231,17 @@ try {
     // taşımayı geri al (panelin üstündeki ✕)
     await page.click('#inspector .rm-bar button');
     assert.deepEqual(await S(() => { const n = window.__daw.d.notes[0]; return [n.effMidi, n.manualTarget, n.locked]; }), [61, null, false]);
-    // hassasiyet: 3 satır sürükle → tam 3 yarım ses (ölçek sürüklerken donar)
+    // hassasiyet: 3 satır sürükle → tam 3 yarım ses (ölçek sürüklerken donar); tıklayınca ve her yeni yarım seste nota duyulur
     let g0 = await noteGeo(0);
+    const heard = () => S(() => window.__dawAPI.notePreview().count);
+    const h0 = await heard();
     await page.mouse.move(box.x + g0.x, box.y + g0.y); await page.mouse.down();
-    await page.mouse.move(box.x + g0.x, box.y + g0.y - g0.rowH * 3, { steps: 8 }); await page.mouse.up();
+    const h1 = await heard();
+    await page.mouse.move(box.x + g0.x, box.y + g0.y - g0.rowH * 3, { steps: 12 });
+    const h2 = await heard();
+    await page.mouse.up();
+    assert.equal(h1 - h0, 1, 'tıklayınca nota çalmalı');
+    assert.ok(h2 - h1 >= 3, 'sürüklerken her yeni yarım seste çalmalı: ' + (h2 - h1));
     assert.equal(await S(() => window.__daw.d.notes[0].effMidi), 64, '3 satır = 3 yarım ses');
     await page.click('#editSummary button[data-clear=move]');
     assert.equal(await S(() => window.__daw.d.notes[0].effMidi), 61);
@@ -259,7 +266,7 @@ try {
     assert.match(await page.textContent('#inspector .rm-bar'), /Etiket \(yalnızca analiz\)/);
     await page.click('#inspector .rm-bar button[data-act=labelReset]');
     assert.equal(await S(() => window.__daw.d.notes[0].edit), null);
-    return `sürükle → ses ve nota C#4 → D4 (+${Math.round(r.ap)}c), panelde "Taşındı" + ✕ · Shift+↑ → +5c · Shift+sürükle → ince akort ${Math.round((fine.t - 61) * 100)}c, nota aynı · Alt+sürükle → yalnızca etiket`;
+    return `tıkla → nota çaldı, 3 satır sürükle → ${h2 - h1} kez (her yarım seste) çaldı · sürükle → ses ve nota C#4 → D4 (+${Math.round(r.ap)}c), panelde "Taşındı" + ✕ · Shift+↑ → +5c · Shift+sürükle → ince akort ${Math.round((fine.t - 61) * 100)}c, nota aynı · Alt+sürükle → yalnızca etiket`;
   });
 
   await step('8) oynatma (Tone.js) + mikser + A/B', async () => {

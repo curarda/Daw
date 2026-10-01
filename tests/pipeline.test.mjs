@@ -421,6 +421,24 @@ await step('Bir akor kilitlenince diğer akorlar (çevrimleri dahil) değişmez;
   return `bar 2 = A kilitli: bar 1 C#m kaldı, öneri → A (${s1.pinSuggest.reasons[0]}) · kilitli A kök konumda, ⚠ ${s2.lockAdvice[0].text.slice(0, 45)}… · 15 ardışık rastgele kilitte başka akor değişmedi`;
 });
 
+await step('Nota önizleme: kaydın nota parçası TD-PSOLA ile istenen perdeye kayar (sürüklerken duyulan ses)', async () => {
+  // app.js'teki NotePreview ile aynı kesim: notanın kare aralığı, sabit cent kaydırma
+  const n = Core.derive(proj, st).notes[0], hop = st.track.hopSec, sr = test.sr, nF = st.track.f0.length;
+  const fa = Math.max(0, Math.floor(n.t0 / hop) - 1), fb = Math.min(nF, Math.ceil(Math.min(n.t1, n.t0 + 1.2) / hop) + 1);
+  const x = test.signal.slice(Math.round(fa * hop * sr), Math.round(fb * hop * sr));
+  const out = [];
+  for (const semis of [3, -2]) {
+    const y = Core.psolaShift(x, sr, { hopSec: hop, f0: st.track.f0.slice(fa, fb) }, new Float32Array(fb - fa).fill((n.nearest + semis - n.median) * 100));
+    const tr = await Core.detectPitch(y, sr, proj.pitch);
+    const ms = Array.from(tr.f0).filter((f) => f > 0).map((f) => Core.hzToMidi(f)).sort((p, q) => p - q);
+    const med = ms[ms.length >> 1];
+    assert.equal(y.length, x.length, 'süre değişmemeli');
+    assert.ok(Math.abs(med - (n.nearest + semis)) < 0.25, `${semis} yarım ses: ${med.toFixed(2)}`);
+    out.push(`${semis > 0 ? '+' : ''}${semis} → ${Core.noteName(Math.round(med))} (${((med - Math.round(med)) * 100).toFixed(0)}c)`);
+  }
+  return `${Core.noteName(n.nearest)} notası: ${out.join(', ')} · süre aynı`;
+});
+
 await step('Click desenleri: 4/4 yarım zaman "tık tık tıss tık", 2/4, 3/4, 6/8', () => {
   const pat = (meter, feel) => { const g = Core.makeGrid({ bpm: 120, meter }); const out = []; for (let q = 0; q < g.barQ - 1e-9; q += g.clickQ) out.push(Core.clickKind(g, q, feel)); return out.join(' '); };
   assert.equal(pat('4/4', 'halftime'), 'weak weak snare weak');
