@@ -2598,6 +2598,18 @@ function noteAccents(notes, P) {
   });
   return ws;
 }
+// en iyi fazla, notaların ızgara noktasına (vuruş/sub) ±%22 adım içinde düşme oranı
+function gridFit(ts, P, sub) {
+  const step = P / sub, tol = 0.22;
+  let best = 0;
+  for (let k = 0; k < 24; k++) {
+    const ph = (k / 24) * step;
+    let c = 0;
+    for (const t of ts) { const f = (t - ph) / step; if (Math.abs(f - Math.round(f)) < tol) c++; }
+    best = Math.max(best, c / ts.length);
+  }
+  return best;
+}
 function estimateMeter(notes, bpm, opts = {}) {
   const out = { ok: false, candidates: [], reasons: [] };
   const ns = notes.filter((n) => n.t1 > n.t0).sort((a, b) => a.t0 - b.t0);
@@ -2689,10 +2701,20 @@ function estimateMeter(notes, bpm, opts = {}) {
   out.shiftSec = tf - r; // ölçü çizgileri bu kadar kaymalı (ofset += shiftSec)
   out.firstBeat = Math.max(0, Math.round((r / beatP) * 2) / 2) + 1; // 1, 1.5, 2 … ("2.5" = 2. vuruşun ve'si)
   out.scores = score;
-  // ızgaraya oturma: vuruş / ½ / ⅓ / ⅔ noktalarına ±0.05 vuruş (rastgele notalarda beklenen ~%40)
-  const onGrid = ns.filter((n) => { const f = ((((n.t0 - phi) / P) % 1) + 1) % 1; return [0, 0.5, 1 / 3, 2 / 3, 1].some((x) => Math.abs(f - x) < 0.05); }).length / ns.length;
-  out.onGrid = onGrid;
-  if (onGrid < 0.6) out.reasons.push(`Notaların yalnızca %${Math.round(onGrid * 100)} kadarı ${bpm} BPM vuruş ızgarasına oturuyor — BPM yanlış olabilir (tahmin de bu yüzden güvenilmez).`);
+  // ızgaraya oturma: notalar bu BPM'in 16'lık (üçlemede ⅓) ızgarasına, yakın ama yanlış tempolardan (±%7–12)
+  // belirgin biçimde daha iyi oturuyor mu? Rastgele notalar her tempoya aynı oturur; doğru tempo öne çıkar.
+  // 8'lik / üçleme / 16'lık ızgaralardan en belirgin olanı (kaba ızgara zamanlama sapmasına daha toleranslı)
+  const ts = ns.map((n) => n.t0);
+  let fit = 0, mean = 0, sd = 1, zBest = -Infinity;
+  for (const sub of [2, 3, 4]) {
+    const f = gridFit(ts, P, sub);
+    const near = [0.85, 0.87, 0.89, 0.91, 0.93, 0.95, 1.05, 1.07, 1.09, 1.11, 1.13, 1.15].map((x) => gridFit(ts, P * x, sub));
+    const m = near.reduce((a, b) => a + b, 0) / near.length;
+    const d = Math.max(0.015, Math.sqrt(near.reduce((a, b) => a + (b - m) ** 2, 0) / near.length));
+    if ((f - m) / d > zBest) { zBest = (f - m) / d; fit = f; mean = m; sd = d; }
+  }
+  out.onGrid = fit; out.gridZ = (fit - mean) / sd;
+  if (out.gridZ < 2) out.reasons.push(`Notalar ${bpm} BPM ızgarasına yakın tempolardan daha iyi oturmuyor (%${Math.round(fit * 100)}; yakın tempolarda ortalama %${Math.round(mean * 100)}) — BPM yanlış olabilir; tahmin de bu yüzden güvenilmez.`);
   if (conf < 0.12) out.reasons.push('Vurgular iki ölçüye de benzer uyuyor; tahmin zayıf — ölçüyü kendin seçebilirsin.');
   return out;
 }
@@ -2715,6 +2737,8 @@ const DRUM_LOOPS = [
     K: '........x.......', S: '........X.......', H: '..x...x...x...x.', desc: "1. vuruş boş, kick ve trampet birlikte 3'te" },
   { id: 'shuffle', name: 'Shuffle / swing (üçleme)', meter: '4/4', spb: 3, feel: 'triple', bpm: [70, 140], base: 0,
     K: 'x.....x.....', S: '...X.....X..', H: 'x.xx.xx.xx.x', desc: "üçleme hissi: hi-hat 'uzun-kısa', 2 ve 4'te trampet" },
+  { id: 'push332', name: 'İtmeli pop-rock (3+3+2 kick, 4\'ün ve\'sinde öncel)', meter: '4/4', spb: 4, feel: 'straight', bpm: [128, 180], base: 0,
+    K: 'x..x....x..x..x.', S: '....X.......X...', H: 'x.x.x.x.x.x.x.o.', desc: "kick 1, 1'in son 16'lığı, 3, 3'ün son 16'lığı ve 4'ün ve'sinde (sonraki 1'i önden iter, açık hi-hat); trampet 2 ve 4'te. Melodisi vuruşların önüne/arkasına senkoplu hızlı şarkılar için" },
   { id: 'minimal', name: 'Sade — kick + hi-hat', meter: '4/4', spb: 4, feel: 'straight', bpm: [55, 150], base: -0.12,
     K: 'x.......x.......', S: '................', H: 'x.x.x.x.x.x.x.x.', desc: 'trampetsiz, en az müdahale' },
   { id: 'waltz', name: 'Vals', meter: '3/4', spb: 4, feel: 'straight', bpm: [84, 200], base: 0,
@@ -2800,7 +2824,7 @@ function suggestDrumLoop(notes, settings, est = null) {
   // ---- "uygun loop yok" kararı
   if (ns.length < 8) res.reasons.push(`Melodide ${ns.length} nota var; vurgulara göre seçim için en az 8 gerekir (seçim yalnızca tempoya göre).`);
   if (est && est.ok && est.meter !== meter && est.confidence >= 0.2) res.reasons.push(`Melodinin vurguları ${est.meter} ölçüsüne daha çok benziyor ama proje ${meter}; loop proje ölçüsüne göre seçildi.`);
-  if (est && est.ok && est.onGrid < 0.6) res.reasons.push(`Melodi ${bpm} BPM ızgarasına oturmuyor; önce BPM'i kontrol et.`);
+  if (est && est.ok && est.gridZ < 2) res.reasons.push(`Melodi ${bpm} BPM ızgarasına oturmuyor; önce BPM'i kontrol et (oynatırken metronomu açıp dinle).`);
   if (est && est.unsupported) res.reasons.push(`Melodi ${est.meter} gibi görünüyor; bu ölçü için loop yok.`);
   if (b) {
     if (b.tempo < 0.5) res.reasons.push(`${bpm} BPM ${meter} için hiçbir loop'un tempo aralığına uymuyor (en yakın: ${b.loop.name}, ${b.loop.bpm[0]}–${b.loop.bpm[1]}).`);

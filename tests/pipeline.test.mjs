@@ -622,6 +622,26 @@ await step('Davul 2: loop kütüphanesi ve seçimi (ölçü + BPM + vurgu); uygu
   return `100 BPM 4/4 → ${r1.best.loop.name} · 3/4 → ${r2.best.loop.name} · 6/8 → ${r3.best.loop.name} · yarım zaman click → ${r4.best.loop.name} · 200 BPM → bulamadı: "${n1.reasons[0]}" · 6/8 melodi / 4/4 proje → bulamadı (${n2.reasons.length} neden)`;
 });
 
+await step('Davul 2b: 16\'lık senkoplu hızlı melodi (kullanıcının 156 BPM isteği) → itmeli 3+3+2 loop; ızgara kontrolü 16\'lıkları ve zamanlama sapmasını kaldırır, yanlış BPM\'i yakalar', () => {
+  let r = 5; const rnd = () => ((r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+  const gauss = () => { let s = 0; for (let i = 0; i < 6; i++) s += rnd(); return (s - 3) / Math.sqrt(0.5); };
+  const steps = [[0, 2], [3, 2], [5, 3], [8, 3], [11, 2], [14, 2]]; // 1, 1'in a'sı, 2'nin e'si, 3, 3'ün a'sı, 4'ün ve'si
+  const mk = (bpm, jit) => { const s16 = 60 / bpm / 4, o = []; for (let b = 0; b < 12; b++) for (const [st, d] of steps) { const t = (b * 16 + st) * s16 + gauss() * jit; o.push({ t0: t, t1: t + d * s16 * 0.9 }); } return o; };
+  const ns = mk(156, 0.025);
+  const e = Core.estimateMeter(ns, 156);
+  assert.ok(e.gridZ >= 2, '156 BPM ızgarası tanınmalı (±25 ms sapma, 16\'lık senkop): z=' + e.gridZ.toFixed(1));
+  for (const wrong of [120, 140, 170]) assert.ok(Core.estimateMeter(ns, wrong).gridZ < 2, wrong + ' BPM yanlış: uyarmalı');
+  const sug = Core.suggestDrumLoop(ns, { meter: '4/4', bpm: 156 }, e);
+  assert.ok(sug.ok, sug.reasons.join(' '));
+  assert.equal(sug.best.loop.id, 'push332');
+  // istekteki profil: yeni loop 4/4 loop'ları içinde vurguya en iyi uyan
+  const prof = '7846052252152497'.split('').map(Number);
+  const corr = (a, b) => { const n = a.length, ma = a.reduce((x, y) => x + y) / n, mb = b.reduce((x, y) => x + y) / n; let q = 0, sa = 0, sb2 = 0; for (let i = 0; i < n; i++) { q += (a[i] - ma) * (b[i] - mb); sa += (a[i] - ma) ** 2; sb2 += (b[i] - mb) ** 2; } return q / Math.sqrt(sa * sb2); };
+  const cs = Core.loopsFor('4/4').filter((l) => l.spb === 4).map((l) => [l.id, corr(prof, Array.from(Core.loopProfile(l)))]).sort((a, b) => b[1] - a[1]);
+  assert.equal(cs[0][0], 'push332');
+  return `156 BPM z=${e.gridZ.toFixed(1)} (yanlış BPM'ler uyarılı) · seçilen: ${sug.best.loop.name} (vurgu ${sug.best.accent.toFixed(2)}) · istek profiliyle örtüşme ${cs[0][1].toFixed(2)} (eski en iyi ${cs[1][0]} ${cs[1][1].toFixed(2)})`;
+});
+
 await step('Davul 3: vuruşlar, ses ve MIDI davul kanalı', () => {
   const L = Core.DRUM_LOOPS.find((l) => l.id === 'rock8');
   const ev = Core.drumEvents(L, g, 2);
