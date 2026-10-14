@@ -177,7 +177,7 @@ await step('Harmonik ritim: "bars" kaydedilir; yoksa süre istatistiğine girmez
   assert.deepEqual([...ph.rate].map(([k, e]) => [k, e.songs.size]), [[2, 2]]);
   // şema: uzunluk uyuşmazlığı ve geçersiz süre
   const bad = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'a', title: 'b', sections: [{ name: 'x', chords: ['C', 'F'], bars: [1, 0, 2] }] }));
-  assert.deepEqual(bad.errors, ['sections[0].bars: chords ile aynı uzunlukta olmalı (3 ≠ 2)', 'sections[0].bars[1]: pozitif sayı olmalı (0)']);
+  assert.deepEqual(bad.errors, ['sections[0].bars: chords ile aynı uzunlukta olmalı (3 ≠ 2)', 'sections[0].bars[1]: pozitif sayı ya da null olmalı (0)']);
   // düz metin: ölçü çizgileri ve "akor:süre"
   const tx = Style.parseImportText('Sanatçı: M\nŞarkı: N\n[Verse] C# Frig — ölçü 1–4\n| C#m | % | Dmaj7 C#m |\n[B: B dorian] Bm:4 E:2 A:2\n[C: B dorian] Bm E', {}).songs[0];
   assert.deepEqual(tx.sections.map((x) => x.bars), [[1, 1, 0.5, 0.5], [4, 2, 2], null]);
@@ -337,6 +337,15 @@ await step('Sohbet JSON biçimi: label, type, source_notes, bars (dizi/null), de
   assert.deepEqual(bad.mismatches.map((m) => [m.index, m.layers.join('+')]), [[0, 'color'], [1, 'bass']]);
   const e = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'a', title: 'b', source_notes: { capo: [1] }, sections: [{ type: 3, chords: ['C'], degrees_preview: [5] }] })).errors;
   assert.deepEqual(e, ['source_notes.capo: sayı, metin ya da null olmalı', 'sections[0].label: boş olmayan metin olmalı', 'sections[0].type: metin ya da null olmalı', 'sections[0].degrees_preview[0]: {core, color, bass} nesnesi olmalı']);
+  // istem "süre yoksa null yaz" der: öğe öğe null (hepsi ya da bir kısmı) kabul edilir, bölüm süre istatistiğine girmez
+  const nb = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'N', title: 'Null süre', sections: [
+    { label: 'Verse 1', type: 'verse', chords: ['C', 'G', 'Am'], bars: [null, null, null] },
+    { label: 'Solo', type: 'instrumental', chords: ['F', 'Fm6', 'C'], bars: [0.5, 0.5, 1] },
+    { label: 'Outro', type: 'outro', chords: ['F', 'C'], bars: [1, null] }] }));
+  assert.deepEqual(nb.errors, []);
+  assert.deepEqual(nb.songs[0].sections.map((x) => x.bars), [null, [0.5, 0.5, 1], null]);
+  assert.match(nb.songs[0].sections[2].warnings.join(' '), /yalnızca bazı akorlarda/);
+  assert.deepEqual(Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'N', title: 'x', sections: [{ label: 'A', chords: ['C'], bars: [0] }] })).errors, ['sections[0].bars[0]: pozitif sayı ya da null olmalı (0)']);
   confirmAll(song);
   const st = Style.buildStats({ songs: [song] }).byMode.get('major');
   assert.equal(st.durSongs.size, 1); // chorus bars null → süreye girmez, değişime girer

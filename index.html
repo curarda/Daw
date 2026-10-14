@@ -3377,12 +3377,12 @@ function validateSongJson(obj, path = '') {
         for (const k of ['core', 'color', 'bass']) if (d[k] != null && typeof d[k] !== 'string') errs.push(`${sp}.degrees_preview[${j}].${k}: metin ya da null olmalı`);
       });
     }
-    // isteğe bağlı: her akorun süresi (ölçü), chords ile aynı uzunlukta
+    // isteğe bağlı: her akorun süresi (ölçü), chords ile aynı uzunlukta; bilinmeyen süre null (istem böyle ister)
     if (s.bars != null) {
-      if (!Array.isArray(s.bars)) errs.push(`${sp}.bars: sayı dizisi olmalı`);
+      if (!Array.isArray(s.bars)) errs.push(`${sp}.bars: sayı dizisi ya da null olmalı`);
       else {
         if (Array.isArray(s.chords) && s.bars.length !== s.chords.length) errs.push(`${sp}.bars: chords ile aynı uzunlukta olmalı (${s.bars.length} ≠ ${s.chords.length})`);
-        s.bars.forEach((b, j) => { if (!(typeof b === 'number' && Number.isFinite(b) && b > 0)) errs.push(`${sp}.bars[${j}]: pozitif sayı olmalı (${JSON.stringify(b)})`); });
+        s.bars.forEach((b, j) => { if (b !== null && !(typeof b === 'number' && Number.isFinite(b) && b > 0)) errs.push(`${sp}.bars[${j}]: pozitif sayı ya da null olmalı (${JSON.stringify(b)})`); });
       }
     }
     if (s.warnings != null && !(Array.isArray(s.warnings) && s.warnings.every((w) => typeof w === 'string'))) errs.push(`${sp}.warnings: metin dizisi olmalı`);
@@ -3424,9 +3424,14 @@ function songFromJson(o) {
     sourceNotes: o.source_notes ? { capo: o.source_notes.capo ?? null, tuning: o.source_notes.tuning ?? null, other: o.source_notes.other ?? null } : null,
     sections: o.sections.map((s) => {
       const proposals = (s.key_proposals || []).map(proposalFrom);
+      // süre: hepsi sayıysa kullan; null varsa bölüm süre istatistiğine girmez (akorlar yine sayılır)
+      const known = Array.isArray(s.bars) ? s.bars.filter((b) => b != null).length : 0;
+      const bars = Array.isArray(s.bars) && known === s.bars.length ? s.bars.slice() : null;
+      const warnings = (s.warnings || []).slice();
+      if (known > 0 && !bars) warnings.push('Süre bilgisi yalnızca bazı akorlarda var — bölüm süre istatistiğine girmez.');
       return {
-        name: String(s.label ?? s.name).trim(), type: s.type ?? null, chords: s.chords.map((c) => c.trim()), bars: Array.isArray(s.bars) ? s.bars.slice() : null, proposals,
-        degreesPreview: s.degrees_preview || null, warnings: s.warnings || [],
+        name: String(s.label ?? s.name).trim(), type: s.type ?? null, chords: s.chords.map((c) => c.trim()), bars, proposals,
+        degreesPreview: s.degrees_preview || null, warnings,
         selected: proposals[0] ? { tonic: proposals[0].tonic, mode: proposals[0].mode } : null, confirmed: false,
       };
     }),
