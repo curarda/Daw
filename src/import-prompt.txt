@@ -32,7 +32,7 @@ Kurallar:
 - source_notes: capo (sayı ya da null), tuning (metin ya da null). Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz.
 - Bölümler: şarkıda çalındığı sırayla, tekrar eden bölümler dahil (her tekrar ayrı bölüm). label kaynaktaki ad, tekrarlarda numaralı ("Chorus 2"). type şu listeden: intro, verse, pre_chorus, chorus, post_chorus, bridge, instrumental, outro, other.
 - Tekrar işaretlerini aç: "x2", "(2x)", "repeat" gibi işaretlerde kalıbı o kadar kez yaz. Bir bölüm yalnızca adıyla anılıp akorları yazılmamışsa ("[Chorus]", "Repeat Chorus"), akorları AYNI şemadaki önceki bölümden kopyala ve warnings'e yaz.
-- chords: bölümde çalındığı sırayla, art arda gelen aynı akorlar dahil; akor yoksa "N.C.". Akorları kaynaktaki yazımla yaz (slash akor "A/C#"). Niteliği yazılmamış bir akor (ör. tek başına "D#") majör sayılır; emin değilsen warnings'e yaz.
+- chords: bölümde çalındığı sırayla, art arda gelen aynı akorlar dahil; akor yoksa "N.C.". Akorları kaynaktaki yazımla yaz (slash akor "A/C#"). Niteliği yazılmamış bir akor (ör. tek başına "D#") majör sayılır; emin değilsen warnings'e yaz. Tab sitelerine özgü kısaltmaları açık yaz: "C4" → "Csus4", "C2" → "Cadd9", "F(b5)" parantezli kalabilir; neyi açtığını warnings'e yaz.
 - bars: her akorun süresi ölçü cinsinden (yarım ölçü = 0.5), chords ile aynı uzunlukta. Akorun söz üzerindeki yeri süre DEĞİLDİR: şemada ölçü çizgisi (|) ya da açık süre yoksa null yaz; tahmin etme.
 - key_proposals: her bölüm için, en olası önce (1–3 öneri). mode şu listeden: major, minor, harmonic_minor, dorian, phrygian, lydian, mixolydian, locrian, major_pentatonic, minor_pentatonic.
 - degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta; her öğe üç katman:

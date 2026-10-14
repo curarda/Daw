@@ -28,7 +28,8 @@ const SUFFIX = {
   'add9': ['M', 'add9'], 'add2': ['M', 'add9'], '2': ['M', 'add9'],
   'madd9': ['m', 'add9'], 'madd2': ['m', 'add9'], 'm2': ['m', 'add9'],
   'add11': ['M', 'add11'], 'add4': ['M', 'add11'], 'madd11': ['m', 'add11'], 'madd4': ['m', 'add11'],
-  'sus2': ['x', 'sus2'], 'sus4': ['x', 'sus4'], 'sus': ['x', 'sus4'],
+  'sus2': ['x', 'sus2'], 'sus4': ['x', 'sus4'], 'sus': ['x', 'sus4'], '4': ['x', 'sus4'], // tab sitelerinde "C4" = Csus4
+  'b5': ['M', 'b5'], '-5': ['M', 'b5'], 'mb5': ['d', ''], 'm-5': ['d', ''], '7-5': ['M', '7b5'], // F(b5): majör üçlü + eksiltilmiş beşli
   '7sus4': ['x', '7sus4'], '7sus': ['x', '7sus4'], '9sus4': ['x', '9sus4'], '9sus': ['x', '9sus4'], '7sus2': ['x', '7sus2'], 'sus2sus4': ['x', 'sus2sus4'], 'sus24': ['x', 'sus2sus4'],
   'dim7': ['d', '°7'], '°7': ['d', '°7'], 'o7': ['d', '°7'],
   'm7b5': ['d', 'ø7'], 'ø': ['d', 'ø7'], 'ø7': ['d', 'ø7'], 'm7-5': ['d', 'ø7'], 'min7b5': ['d', 'ø7'], '-7b5': ['d', 'ø7'],

@@ -353,6 +353,12 @@ await step('Sohbet JSON biçimi: label, type, source_notes, bars (dizi/null), de
   return `katmanlı önizleme: ${bad.mismatches.map((m) => `#${m.index + 1} ${m.chord}: ${m.layers.join('+')} (önizleme "${m.preview}", hesaplanan ${m.expected})`).join(' · ')}`;
 });
 
+await step('Tab yazımları: F(b5) = majör üçlü + ♭5, C4 = Csus4, m(b5) = dim', () => {
+  const P = (x) => { const r = Style.parseSymbol(x); return r.ok ? `${r.tq}:${r.color}` : 'yok'; };
+  assert.deepEqual(['F(b5)', 'F(♭5)', 'Fb5', 'C4', 'Am(b5)', 'G7-5'].map(P), ['M:b5', 'M:b5', 'x:5', 'x:sus4', 'd:', 'M:7b5']);
+  return 'F(b5) → majör + ♭5 (parantezsiz Fb5 = F♭ power chord) · C4 → sus4 · Am(b5) → dim · G7-5 → 7♭5';
+});
+
 await step('sus = belirsiz nitelik; aynı kökte (Csus4 → C, C → Cmaj7) süre birleşir; bas hareketi ayrı sayılır', () => {
   const r = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'Sus', title: 'Bas', sections: [
     { label: 'A', chords: ['Csus4', 'C', 'Cmaj7', 'C/B', 'C/Bb', 'F', 'Fsus2'], bars: [1, 1, 1, 1, 1, 2, 1], key_proposals: [{ tonic: 'C', mode: 'major' }] }] }));
