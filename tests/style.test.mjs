@@ -353,6 +353,29 @@ await step('Sohbet JSON biçimi: label, type, source_notes, bars (dizi/null), de
   return `katmanlı önizleme: ${bad.mismatches.map((m) => `#${m.index + 1} ${m.chord}: ${m.layers.join('+')} (önizleme "${m.preview}", hesaplanan ${m.expected})`).join(' · ')}`;
 });
 
+await step('Kaynak notları: key / bpm / time_signature; bölüm tonu kaynakla denetlenir; adsız şarkılar kopya sayılmaz', () => {
+  const mk = (artist, title, sn) => Style.parseImportJson(JSON.stringify({ schema_version: 1, artist, title, source_notes: sn, sections: [
+    { label: 'Verse', chords: ['A', 'Bm', 'E'], key_proposals: [{ tonic: 'A', mode: 'major' }], warnings: ['Verse: sıra söz hizasından'] },
+    { label: 'Pre', chords: ['F#m', 'C#m', 'D', 'E'], key_proposals: [{ tonic: 'F#', mode: 'minor' }] },
+    { label: 'Bridge', chords: ['C', 'G'], key_proposals: [{ tonic: 'C', mode: 'major' }] }] }));
+  const r = mk('Keane', 'Somewhere', { capo: null, tuning: 'E A D G B E', key: 'A', bpm: 86, time_signature: '4/4', other: null });
+  assert.deepEqual(r.errors, []);
+  const song = r.songs[0];
+  assert.deepEqual([song.sourceNotes.key, song.sourceNotes.bpm, song.sourceNotes.timeSignature], ['A', 86, '4/4']);
+  assert.deepEqual(song.sections[0].warnings, ['Verse: sıra söz hizasından']);
+  assert.deepEqual(song.sections.map((x) => Style.checkSourceKey(song, x).verdict), ['agree', 'relative', 'differ']);
+  assert.equal(Style.checkSourceKey(mk('a', 'b', null).songs[0], song.sections[0]).verdict, 'none');
+  const e = mk('a', 'b', { key: 'H dur', bpm: -3, time_signature: 'dört' }).errors;
+  assert.deepEqual(e, ['source_notes.key: tanınmayan ton "H dur" (ör. "A", "F#m", "C# phrygian")', 'source_notes.bpm: pozitif sayı ya da null olmalı', 'source_notes.time_signature: "4/4" biçiminde olmalı']);
+  // "Bilinmiyor" adlı iki şarkı birbirinin kopyası değil; adı olanlar kopya
+  const u1 = mk('Bilinmiyor', 'Bilinmiyor', null).songs[0], u2 = mk('Bilinmiyor', 'Bilinmiyor', null).songs[0];
+  assert.ok(Style.hasUnknownName(u1));
+  assert.equal(Style.findDuplicate({ songs: [u1] }, u2), null);
+  const k2 = mk('KEANE', 'somewhere', null).songs[0];
+  assert.ok(Style.findDuplicate({ songs: [song] }, k2));
+  return `kaynak "A, 86 BPM, 4/4" → Verse A majör ✓ · Pre F# minör: aynı notalar (uyarı) · Bridge C majör: farklı (uyarı) · adsız iki şarkı kopya değil`;
+});
+
 await step('Tab yazımları: F(b5) = majör üçlü + ♭5, C4 = Csus4, m(b5) = dim', () => {
   const P = (x) => { const r = Style.parseSymbol(x); return r.ok ? `${r.tq}:${r.color}` : 'yok'; };
   assert.deepEqual(['F(b5)', 'F(♭5)', 'Fb5', 'C4', 'Am(b5)', 'G7-5'].map(P), ['M:b5', 'M:b5', 'x:5', 'x:sus4', 'd:', 'M:7b5']);

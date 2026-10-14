@@ -3344,7 +3344,11 @@ function validateSongJson(obj, path = '') {
     if (typeof sn !== 'object' || Array.isArray(sn)) errs.push(`${P('source_notes')}: nesne olmalı ({capo, tuning, other})`);
     else {
       if (sn.capo != null && !(typeof sn.capo === 'number' || typeof sn.capo === 'string')) errs.push(`${P('source_notes.capo')}: sayı, metin ya da null olmalı`);
-      for (const k of ['tuning', 'other']) if (sn[k] != null && typeof sn[k] !== 'string') errs.push(`${P('source_notes.' + k)}: metin ya da null olmalı`);
+      for (const k of ['tuning', 'other', 'key', 'time_signature']) if (sn[k] != null && typeof sn[k] !== 'string') errs.push(`${P('source_notes.' + k)}: metin ya da null olmalı`);
+      // kaynakta yazan ton / tempo / ölçü (ör. "Key: A", "86 bpm") — bölüm tonlarını denetlemek için
+      if (typeof sn.key === 'string' && sn.key.trim() && !parseKeyText(sn.key)) errs.push(`${P('source_notes.key')}: tanınmayan ton ${JSON.stringify(sn.key)} (ör. "A", "F#m", "C# phrygian")`);
+      if (sn.bpm != null && !(typeof sn.bpm === 'number' && sn.bpm > 0)) errs.push(`${P('source_notes.bpm')}: pozitif sayı ya da null olmalı`);
+      if (typeof sn.time_signature === 'string' && !/^\s*\d+\s*\/\s*\d+\s*$/.test(sn.time_signature)) errs.push(`${P('source_notes.time_signature')}: "4/4" biçiminde olmalı`);
     }
   }
   if (!Array.isArray(obj.sections) || !obj.sections.length) { errs.push(`${P('sections')}: boş olmayan dizi olmalı`); return errs; }
@@ -3422,7 +3426,8 @@ function songFromJson(o) {
   return {
     id: newId(), artist: o.artist.trim(), title: o.title.trim(), source: 'json', importedAt: new Date().toISOString(),
     warnings: o.warnings || [], fixes: {},
-    sourceNotes: o.source_notes ? { capo: o.source_notes.capo ?? null, tuning: o.source_notes.tuning ?? null, other: o.source_notes.other ?? null } : null,
+    sourceNotes: o.source_notes ? { capo: o.source_notes.capo ?? null, tuning: o.source_notes.tuning ?? null, other: o.source_notes.other ?? null,
+      key: o.source_notes.key ? o.source_notes.key.trim() : null, bpm: o.source_notes.bpm ?? null, timeSignature: o.source_notes.time_signature ? o.source_notes.time_signature.replace(/\s+/g, '') : null } : null,
     sections: o.sections.map((s) => {
       const proposals = (s.key_proposals || []).map(proposalFrom);
       // süre: hepsi sayıysa kullan; null varsa bölüm süre istatistiğine girmez (akorlar yine sayılır)
@@ -3501,7 +3506,10 @@ let idCounter = 0;
 function newId() { idCounter++; return 'song-' + Date.now().toString(36) + '-' + idCounter.toString(36) + Math.random().toString(36).slice(2, 5); }
 const normText = (s) => String(s || '').toLocaleLowerCase('tr').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ığüşöç]+/g, ' ').trim();
 const songKey = (s) => `${normText(s.artist)}|${normText(s.title)}`;
-function findDuplicate(dataset, song) { return dataset.songs.find((x) => x.id !== song.id && songKey(x) === songKey(song)) || null; }
+// sohbet adı bulamazsa "Bilinmiyor" yazar: bunlar birbirinin kopyası sayılmaz (ad elle düzeltilmeli)
+const UNKNOWN_NAME = new Set(['bilinmiyor', 'unknown', '']);
+const hasUnknownName = (s) => UNKNOWN_NAME.has(normText(s.artist)) || UNKNOWN_NAME.has(normText(s.title));
+function findDuplicate(dataset, song) { return hasUnknownName(song) ? null : dataset.songs.find((x) => x.id !== song.id && songKey(x) === songKey(song)) || null; }
 
 // ---------------------------------------------------------------- bölüm analizi
 // Düzeltilmiş semboller (song.fixes) uygulanır; "%" önceki akoru tekrarlar.
@@ -3708,6 +3716,17 @@ function checkChatKey(song, sec) {
   else if (top.pcs.join() === chatSet) { verdict = 'sameSet'; text = `Aynı nota kümesi, merkez belirsiz: uygulama akorlardan ${top.name} diyor, sohbet ${keyLabel(chat)}. Akorlar merkezi netleştirmiyor — kararı sen ver.`; }
   else { verdict = 'differ'; text = `Uyuşmuyor: uygulamanın akorlardan tahmini ${est.candidates.map((c) => c.name).join(', ')}; sohbetin önerisi ${keyLabel(chat)}${rank ? ` (uygulamada ${rank}. sırada)` : ' (uygulamanın ilk 3 adayında yok)'}.`; }
   return { est, chat, verdict, text, rank };
+}
+
+// Kaynakta yazan ton ("Key: A") ile bölümün seçili tonu: agree / relative (aynı notalar, merkez farklı) / differ
+function checkSourceKey(song, sec) {
+  const src = song.sourceNotes && song.sourceNotes.key ? parseKeyText(song.sourceNotes.key) : null;
+  const key = sec.selected;
+  if (!src || !key) return { verdict: 'none' };
+  const set = (k) => scalePcs(k.tonic, k.mode).sort((a, b) => a - b).join();
+  if (sameKey(src, key)) return { verdict: 'agree', src, text: `Kaynaktaki tonla aynı (${keyLabel(src)}).` };
+  if (set(src) === set(key)) return { verdict: 'relative', src, text: `Kaynakta ton ${keyLabel(src)}; bu bölümde ${keyLabel(key)} seçili — aynı notalar, merkez farklı. Bölüm gerçekten ${pcName(key.tonic)} merkezinde duruyorsa doğru; değilse kaynaktakini seç.` };
+  return { verdict: 'differ', src, text: `Kaynakta ton ${keyLabel(src)}; bu bölümde ${keyLabel(key)} seçili (farklı notalar). Bölüm modülasyon yapmıyorsa seçimi kontrol et.` };
 }
 
 // ---------------------------------------------------------------- istatistik
@@ -4432,7 +4451,7 @@ function checkFile(obj, schema) {
 }
 
 root.Style = {
-  parseSymbol, parseMode, parseKeyText, keyLabel, modeName, sameKey, romanOf, parseRoman, coreKey, coreParts, coreLabel, degreeLabel, argmaxKey,
+  parseSymbol, checkSourceKey, hasUnknownName, parseMode, parseKeyText, keyLabel, modeName, sameKey, romanOf, parseRoman, coreKey, coreParts, coreLabel, degreeLabel, argmaxKey,
   analyzeChord, analyzeSection, detectLoop, comparePreview, previewFor, unknownSymbols, QUALITY_NAMES,
   validateSongJson, parseImportJson, extractJson, looksLikeJson, parseImportText, songKey, findDuplicate,
   buildStats, modeSongCounts, nSongs, ALL, confirmedKey,
@@ -6716,7 +6735,7 @@ view.addEventListener('input', (e) => { if (e.target.id && e.target.id.startsWit
 
 // ---------------------------------------------------------------- 1) İÇE AKTARMA
 // tek kaynak: src/import-prompt.txt (derlemede buraya gömülür)
-const PROMPT = "Aşağıya yapıştırdığım akor şemasını YALNIZCA şu JSON biçimine dönüştür:\n{\n  \"schema_version\": 1,\n  \"artist\": \"Sanatçı\",\n  \"title\": \"Şarkı adı\",\n  \"source_notes\": { \"capo\": null, \"tuning\": null, \"other\": null },\n  \"warnings\": [],\n  \"sections\": [\n    {\n      \"label\": \"Verse 1\",\n      \"type\": \"verse\",\n      \"chords\": [\"C#m\", \"D\", \"C#m\", \"D\"],\n      \"bars\": [2, 2, 2, 2],\n      \"key_proposals\": [\n        { \"tonic\": \"C#\", \"mode\": \"phrygian\", \"confidence\": 0.7, \"reason\": \"C# merkezde, D ♭II\" },\n        { \"tonic\": \"A\", \"mode\": \"major\", \"confidence\": 0.3, \"reason\": \"D, A majörde IV\" }\n      ],\n      \"degrees_preview\": [\n        { \"core\": \"i\", \"color\": null, \"bass\": null },\n        { \"core\": \"♭II\", \"color\": null, \"bass\": null },\n        { \"core\": \"i\", \"color\": null, \"bass\": null },\n        { \"core\": \"♭II\", \"color\": null, \"bass\": null }\n      ]\n    }\n  ]\n}\nKurallar:\n- Yanıtın YALNIZCA tek bir ```json kod bloğu olsun; öncesine ya da sonrasına açıklama yazma. Söylemek istediğin her şey warnings içine.\n- Sadece yapıştırılan akor şemasını dönüştür. Şema yapıştırılmamışsa ya da eksikse akor üretme, hafızandan tamamlama; eksik kısmı warnings'e yaz.\n- artist ve title: şemada ya da mesajımda yazdığı gibi al (yazım ve büyük harf hatalarını sessizce düzelt). İkisi de boş bırakılamaz; bulamazsan \"Bilinmiyor\" yaz ve warnings'e ekle.\n- Kaynak linkini source_notes.other alanına yaz. Link yoksa null bırak.\n- source_notes: capo (sayı ya da null), tuning (metin ya da null). Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz.\n- Bölümler: şarkıda çalındığı sırayla, tekrar eden bölümler dahil (her tekrar ayrı bölüm). label kaynaktaki ad, tekrarlarda numaralı (\"Chorus 2\"). type şu listeden: intro, verse, pre_chorus, chorus, post_chorus, bridge, instrumental, outro, other.\n- Tekrar işaretlerini aç: \"x2\", \"(2x)\", \"repeat\" gibi işaretlerde kalıbı o kadar kez yaz. Bir bölüm yalnızca adıyla anılıp akorları yazılmamışsa (\"[Chorus]\", \"Repeat Chorus\"), akorları AYNI şemadaki önceki bölümden kopyala ve warnings'e yaz.\n- chords: bölümde çalındığı sırayla, art arda gelen aynı akorlar dahil; akor yoksa \"N.C.\". Akorları kaynaktaki yazımla yaz (slash akor \"A/C#\"). Niteliği yazılmamış bir akor (ör. tek başına \"D#\") majör sayılır; emin değilsen warnings'e yaz. Tab sitelerine özgü kısaltmaları açık yaz: \"C4\" → \"Csus4\", \"C2\" → \"Cadd9\", \"F(b5)\" parantezli kalabilir; neyi açtığını warnings'e yaz.\n- bars: her akorun süresi ölçü cinsinden (yarım ölçü = 0.5), chords ile aynı uzunlukta. Akorun söz üzerindeki yeri süre DEĞİLDİR: şemada ölçü çizgisi (|) ya da açık süre yoksa null yaz; tahmin etme.\n- key_proposals: her bölüm için, en olası önce (1–3 öneri). mode şu listeden: major, minor, harmonic_minor, dorian, phrygian, lydian, mixolydian, locrian, major_pentatonic, minor_pentatonic.\n- degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta; her öğe üç katman:\n  core: Romen rakamı merkezin MAJÖR gamına göre — büyük harf majör, küçük minör, ° dim, + aug; power chord ve sus akorlarında nitelik belirsizdir, kök derecesini büyük harfle yaz (ör. \"♭VII\", \"V\").\n  color: ek (maj7, 7, sus2, sus4, add9, 5, m7b5 …) ya da null. bass: slash akorda bas derecesi (ör. \"III\") ya da null. N.C. için core \"N.C.\".\n- warnings'e YALNIZCA akorları, sıralarını, sürelerini ya da tonu etkileyen belirsizlikleri ve doğrulanması gereken yerleri yaz (ör. belirsiz tekrar işareti, eksik sayfa, niteliği belirsiz akor), hangi bölümde olduğunu belirterek. Şunları YAZMA: link / kapo / akort boş kaldı; yazım düzeltildi; bölümleri numaralandırdın; type listede olmadığı için başka tip seçtin; bars null bıraktın; Romen rakamlarını nasıl yazdığın — bunlar kurallar gereği zaten beklenen şeyler.";
+const PROMPT = "Aşağıya yapıştırdığım akor şemasını YALNIZCA şu JSON biçimine dönüştür:\n{\n  \"schema_version\": 1,\n  \"artist\": \"Sanatçı\",\n  \"title\": \"Şarkı adı\",\n  \"source_notes\": { \"capo\": null, \"tuning\": null, \"key\": null, \"bpm\": null, \"time_signature\": null, \"other\": null },\n  \"warnings\": [],\n  \"sections\": [\n    {\n      \"label\": \"Verse 1\",\n      \"type\": \"verse\",\n      \"chords\": [\"C#m\", \"D\", \"C#m\", \"D\"],\n      \"bars\": [2, 2, 2, 2],\n      \"warnings\": [],\n      \"key_proposals\": [\n        { \"tonic\": \"C#\", \"mode\": \"phrygian\", \"confidence\": 0.7, \"reason\": \"C# merkezde, D ♭II\" },\n        { \"tonic\": \"A\", \"mode\": \"major\", \"confidence\": 0.3, \"reason\": \"D, A majörde IV\" }\n      ],\n      \"degrees_preview\": [\n        { \"core\": \"i\", \"color\": null, \"bass\": null },\n        { \"core\": \"♭II\", \"color\": null, \"bass\": null },\n        { \"core\": \"i\", \"color\": null, \"bass\": null },\n        { \"core\": \"♭II\", \"color\": null, \"bass\": null }\n      ]\n    }\n  ]\n}\nKurallar:\n- Yanıtın YALNIZCA tek bir ```json kod bloğu olsun; öncesine ya da sonrasına açıklama yazma. Söylemek istediğin her şey warnings içine.\n- Sadece yapıştırılan akor şemasını dönüştür. Şema yapıştırılmamışsa ya da eksikse akor üretme, hafızandan tamamlama; eksik kısmı warnings'e yaz.\n- artist ve title: şemada ya da mesajımda yazdığı gibi al (yazım ve büyük harf hatalarını sessizce düzelt). İkisi de boş bırakılamaz; bulamazsan \"Bilinmiyor\" yaz ve warnings'e ekle.\n- Kaynak linkini source_notes.other alanına yaz. Link yoksa null bırak.\n- source_notes: capo (sayı ya da null), tuning (metin ya da null); kaynakta yazıyorsa key (ör. \"A\", \"F#m\"), bpm (sayı), time_signature (ör. \"4/4\"), yazmıyorsa null — tahmin etme. Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz.\n- Bölümler: şarkıda çalındığı sırayla, tekrar eden bölümler dahil (her tekrar ayrı bölüm). label kaynaktaki ad, tekrarlarda numaralı (\"Chorus 2\"). type şu listeden: intro, verse, pre_chorus, chorus, post_chorus, bridge, instrumental, outro, other.\n- Tekrar işaretlerini aç: \"x2\", \"(2x)\", \"repeat\" gibi işaretlerde kalıbı o kadar kez yaz. Bir bölüm yalnızca adıyla anılıp akorları yazılmamışsa (\"[Chorus]\", \"Repeat Chorus\"), akorları AYNI şemadaki önceki bölümden kopyala ve warnings'e yaz.\n- chords: bölümde çalındığı sırayla, art arda gelen aynı akorlar dahil; akor yoksa \"N.C.\". Akorları kaynaktaki yazımla yaz (slash akor \"A/C#\"). Niteliği yazılmamış bir akor (ör. tek başına \"D#\") majör sayılır; emin değilsen warnings'e yaz. Tab sitelerine özgü kısaltmaları açık yaz: \"C4\" → \"Csus4\", \"C2\" → \"Cadd9\", \"F(b5)\" parantezli kalabilir; neyi açtığını warnings'e yaz.\n- bars: her akorun süresi ölçü cinsinden (yarım ölçü = 0.5), chords ile aynı uzunlukta. Akorun söz üzerindeki yeri süre DEĞİLDİR: şemada ölçü çizgisi (|) ya da açık süre yoksa null yaz; tahmin etme.\n- key_proposals: her bölüm için, en olası önce (1–3 öneri). mode şu listeden: major, minor, harmonic_minor, dorian, phrygian, lydian, mixolydian, locrian, major_pentatonic, minor_pentatonic.\n- degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta; her öğe üç katman:\n  core: Romen rakamı merkezin MAJÖR gamına göre — büyük harf majör, küçük minör, ° dim, + aug; power chord ve sus akorlarında nitelik belirsizdir, kök derecesini büyük harfle yaz (ör. \"♭VII\", \"V\").\n  color: ek (maj7, 7, sus2, sus4, add9, 5, m7b5 …) ya da null. bass: slash akorda bas derecesi (ör. \"III\") ya da null. N.C. için core \"N.C.\".\n- warnings'e YALNIZCA akorları, sıralarını, sürelerini ya da tonu etkileyen belirsizlikleri ve doğrulanması gereken yerleri yaz (ör. belirsiz tekrar işareti, eksik sayfa, niteliği belirsiz akor). Tek bir bölümü ilgilendiren uyarı o bölümün warnings dizisine, şarkının geneliyle ilgili olan (eksik sayfa, ad bulunamadı) en üstteki warnings'e. Şunları YAZMA: link / kapo / akort boş kaldı; yazım düzeltildi; bölümleri numaralandırdın; type listede olmadığı için başka tip seçtin; bars null bıraktın; Romen rakamlarını nasıl yazdığın — bunlar kurallar gereği zaten beklenen şeyler.";
 function tabImport() {
   const errs = SS.importErrors.length ? `<div class="st-err" role="alert"><b>İçe aktarılamadı — bozuk alanlar:</b><ul>${SS.importErrors.map((x) => `<li><code>${esc(x)}</code></li>`).join('')}</ul></div>` : '';
   const pend = SS.pending.map((p, i) => `<div class="st-warn" role="alert">⚠ <b>${esc(songName(p.song))}</b> zaten veri setinde (${esc(songName(p.dup))}).
@@ -7003,7 +7022,9 @@ function songEditor(s, stats) {
       <button data-act="confirmAll" data-id="${s.id}">Tüm seçili tonları onayla</button>
       <button data-act="delSong" data-id="${s.id}" class="danger">Şarkıyı sil</button></div>
     <div class="hint">Kaynak: ${s.source === 'json' ? 'JSON (schema_version 1)' : 'düz metin'} · ${esc(new Date(s.importedAt).toLocaleString())}${fixes.length ? ` · düzeltmeler: ${fixes.map(([a, b]) => `${esc(a)}→${esc(b)}`).join(', ')}` : ''}</div>
-    ${s.sourceNotes && (s.sourceNotes.capo != null || s.sourceNotes.tuning || s.sourceNotes.other) ? `<div class="hint">Kaynak notları: ${[s.sourceNotes.capo != null ? `capo ${esc(s.sourceNotes.capo)}` : '', s.sourceNotes.tuning ? `akort: ${esc(s.sourceNotes.tuning)}` : '', s.sourceNotes.other ? esc(s.sourceNotes.other) : ''].filter(Boolean).join(' · ')} <span class="hint">(akorlar kaynaktaki gibi; dereceler göreli olduğu için kapo istatistiği etkilemez)</span></div>` : ''}
+    ${(() => { const sn = s.sourceNotes || {}; const parts = [sn.key ? `ton ${esc(sn.key)}` : '', sn.bpm ? `${esc(sn.bpm)} BPM` : '', sn.timeSignature ? esc(sn.timeSignature) : '', sn.capo != null ? `capo ${esc(sn.capo)}` : '', sn.tuning ? `akort: ${esc(sn.tuning)}` : '', sn.other ? esc(sn.other) : ''].filter(Boolean);
+      return parts.length ? `<div class="hint">Kaynak notları: ${parts.join(' · ')}${sn.capo != null ? ' <span class="hint">(akorlar kaynaktaki gibi; dereceler göreli olduğu için kapo istatistiği etkilemez)</span>' : ''}</div>` : ''; })()}
+    ${St.hasUnknownName(s) ? '<div class="st-warn">⚠ Sanatçı / şarkı adı bilinmiyor — yukarıdan yaz. Adsız şarkılar kopya kontrolüne girmez; aynı şarkıyı iki kez yüklersen fark edilmez.</div>' : ''}
     ${s.warnings.length ? `<div class="st-warn"><b>Uyarılar (şarkı):</b> ${s.warnings.map(esc).join(' · ')}</div>` : ''}
     ${loops}${unkBox}
     ${s.sections.map((sec, si) => sectionCard(s, sec, si, unk)).join('')}
@@ -7045,7 +7066,11 @@ function sectionCard(s, sec, si, unk) {
     </div>
     <div>${pvTxt}</div>
     ${(() => { const ck = St.checkChatKey(s, sec); if (ck.verdict === 'none') return ''; const amb = ck.est.ambiguity.map((a) => `<div class="hint">${esc(a.text)}</div>`).join('');
-      return `<div class="${ck.verdict === 'agree' ? 'hint' : 'st-warn'}">${ck.verdict === 'agree' ? '✓' : '⚠'} ${esc(ck.text)}</div>${ck.verdict === 'agree' ? amb : ''}`; })()}
+      // merkez belirsiz ama kaynakta yazan ton sohbetin önerisiyle aynı → uyarı değil, bilgi
+      const backed = ck.verdict === 'sameSet' && St.checkSourceKey(s, Object.assign({}, sec, { selected: ck.chat })).verdict === 'agree';
+      const ok = ck.verdict === 'agree' || backed;
+      return `<div class="${ok ? 'hint' : 'st-warn'}">${ok ? '✓' : '⚠'} ${esc(ck.text)}${backed ? ' Kaynakta yazan ton da sohbetin önerisiyle aynı.' : ''}</div>${ck.verdict === 'agree' ? amb : ''}`; })()}
+    ${(() => { const sk = St.checkSourceKey(s, sec); return sk.verdict === 'none' ? '' : `<div class="${sk.verdict === 'agree' ? 'hint' : 'st-warn'}">${sk.verdict === 'agree' ? '✓' : '⚠'} ${esc(sk.text)}</div>`; })()}
     ${sec.warnings.length ? `<div class="st-warn"><b>Uyarılar:</b> ${sec.warnings.map(esc).join(' · ')}</div>` : ''}
   </div>`;
 }

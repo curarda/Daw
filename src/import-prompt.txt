@@ -3,7 +3,7 @@ Aşağıya yapıştırdığım akor şemasını YALNIZCA şu JSON biçimine dön
   "schema_version": 1,
   "artist": "Sanatçı",
   "title": "Şarkı adı",
-  "source_notes": { "capo": null, "tuning": null, "other": null },
+  "source_notes": { "capo": null, "tuning": null, "key": null, "bpm": null, "time_signature": null, "other": null },
   "warnings": [],
   "sections": [
     {
@@ -11,6 +11,7 @@ Aşağıya yapıştırdığım akor şemasını YALNIZCA şu JSON biçimine dön
       "type": "verse",
       "chords": ["C#m", "D", "C#m", "D"],
       "bars": [2, 2, 2, 2],
+      "warnings": [],
       "key_proposals": [
         { "tonic": "C#", "mode": "phrygian", "confidence": 0.7, "reason": "C# merkezde, D ♭II" },
         { "tonic": "A", "mode": "major", "confidence": 0.3, "reason": "D, A majörde IV" }
@@ -29,7 +30,7 @@ Kurallar:
 - Sadece yapıştırılan akor şemasını dönüştür. Şema yapıştırılmamışsa ya da eksikse akor üretme, hafızandan tamamlama; eksik kısmı warnings'e yaz.
 - artist ve title: şemada ya da mesajımda yazdığı gibi al (yazım ve büyük harf hatalarını sessizce düzelt). İkisi de boş bırakılamaz; bulamazsan "Bilinmiyor" yaz ve warnings'e ekle.
 - Kaynak linkini source_notes.other alanına yaz. Link yoksa null bırak.
-- source_notes: capo (sayı ya da null), tuning (metin ya da null). Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz.
+- source_notes: capo (sayı ya da null), tuning (metin ya da null); kaynakta yazıyorsa key (ör. "A", "F#m"), bpm (sayı), time_signature (ör. "4/4"), yazmıyorsa null — tahmin etme. Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz.
 - Bölümler: şarkıda çalındığı sırayla, tekrar eden bölümler dahil (her tekrar ayrı bölüm). label kaynaktaki ad, tekrarlarda numaralı ("Chorus 2"). type şu listeden: intro, verse, pre_chorus, chorus, post_chorus, bridge, instrumental, outro, other.
 - Tekrar işaretlerini aç: "x2", "(2x)", "repeat" gibi işaretlerde kalıbı o kadar kez yaz. Bir bölüm yalnızca adıyla anılıp akorları yazılmamışsa ("[Chorus]", "Repeat Chorus"), akorları AYNI şemadaki önceki bölümden kopyala ve warnings'e yaz.
 - chords: bölümde çalındığı sırayla, art arda gelen aynı akorlar dahil; akor yoksa "N.C.". Akorları kaynaktaki yazımla yaz (slash akor "A/C#"). Niteliği yazılmamış bir akor (ör. tek başına "D#") majör sayılır; emin değilsen warnings'e yaz. Tab sitelerine özgü kısaltmaları açık yaz: "C4" → "Csus4", "C2" → "Cadd9", "F(b5)" parantezli kalabilir; neyi açtığını warnings'e yaz.
@@ -38,4 +39,4 @@ Kurallar:
 - degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta; her öğe üç katman:
   core: Romen rakamı merkezin MAJÖR gamına göre — büyük harf majör, küçük minör, ° dim, + aug; power chord ve sus akorlarında nitelik belirsizdir, kök derecesini büyük harfle yaz (ör. "♭VII", "V").
   color: ek (maj7, 7, sus2, sus4, add9, 5, m7b5 …) ya da null. bass: slash akorda bas derecesi (ör. "III") ya da null. N.C. için core "N.C.".
-- warnings'e YALNIZCA akorları, sıralarını, sürelerini ya da tonu etkileyen belirsizlikleri ve doğrulanması gereken yerleri yaz (ör. belirsiz tekrar işareti, eksik sayfa, niteliği belirsiz akor), hangi bölümde olduğunu belirterek. Şunları YAZMA: link / kapo / akort boş kaldı; yazım düzeltildi; bölümleri numaralandırdın; type listede olmadığı için başka tip seçtin; bars null bıraktın; Romen rakamlarını nasıl yazdığın — bunlar kurallar gereği zaten beklenen şeyler.
+- warnings'e YALNIZCA akorları, sıralarını, sürelerini ya da tonu etkileyen belirsizlikleri ve doğrulanması gereken yerleri yaz (ör. belirsiz tekrar işareti, eksik sayfa, niteliği belirsiz akor). Tek bir bölümü ilgilendiren uyarı o bölümün warnings dizisine, şarkının geneliyle ilgili olan (eksik sayfa, ad bulunamadı) en üstteki warnings'e. Şunları YAZMA: link / kapo / akort boş kaldı; yazım düzeltildi; bölümleri numaralandırdın; type listede olmadığı için başka tip seçtin; bars null bıraktın; Romen rakamlarını nasıl yazdığın — bunlar kurallar gereği zaten beklenen şeyler.

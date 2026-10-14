@@ -366,7 +366,9 @@ function songEditor(s, stats) {
       <button data-act="confirmAll" data-id="${s.id}">Tüm seçili tonları onayla</button>
       <button data-act="delSong" data-id="${s.id}" class="danger">Şarkıyı sil</button></div>
     <div class="hint">Kaynak: ${s.source === 'json' ? 'JSON (schema_version 1)' : 'düz metin'} · ${esc(new Date(s.importedAt).toLocaleString())}${fixes.length ? ` · düzeltmeler: ${fixes.map(([a, b]) => `${esc(a)}→${esc(b)}`).join(', ')}` : ''}</div>
-    ${s.sourceNotes && (s.sourceNotes.capo != null || s.sourceNotes.tuning || s.sourceNotes.other) ? `<div class="hint">Kaynak notları: ${[s.sourceNotes.capo != null ? `capo ${esc(s.sourceNotes.capo)}` : '', s.sourceNotes.tuning ? `akort: ${esc(s.sourceNotes.tuning)}` : '', s.sourceNotes.other ? esc(s.sourceNotes.other) : ''].filter(Boolean).join(' · ')} <span class="hint">(akorlar kaynaktaki gibi; dereceler göreli olduğu için kapo istatistiği etkilemez)</span></div>` : ''}
+    ${(() => { const sn = s.sourceNotes || {}; const parts = [sn.key ? `ton ${esc(sn.key)}` : '', sn.bpm ? `${esc(sn.bpm)} BPM` : '', sn.timeSignature ? esc(sn.timeSignature) : '', sn.capo != null ? `capo ${esc(sn.capo)}` : '', sn.tuning ? `akort: ${esc(sn.tuning)}` : '', sn.other ? esc(sn.other) : ''].filter(Boolean);
+      return parts.length ? `<div class="hint">Kaynak notları: ${parts.join(' · ')}${sn.capo != null ? ' <span class="hint">(akorlar kaynaktaki gibi; dereceler göreli olduğu için kapo istatistiği etkilemez)</span>' : ''}</div>` : ''; })()}
+    ${St.hasUnknownName(s) ? '<div class="st-warn">⚠ Sanatçı / şarkı adı bilinmiyor — yukarıdan yaz. Adsız şarkılar kopya kontrolüne girmez; aynı şarkıyı iki kez yüklersen fark edilmez.</div>' : ''}
     ${s.warnings.length ? `<div class="st-warn"><b>Uyarılar (şarkı):</b> ${s.warnings.map(esc).join(' · ')}</div>` : ''}
     ${loops}${unkBox}
     ${s.sections.map((sec, si) => sectionCard(s, sec, si, unk)).join('')}
@@ -408,7 +410,11 @@ function sectionCard(s, sec, si, unk) {
     </div>
     <div>${pvTxt}</div>
     ${(() => { const ck = St.checkChatKey(s, sec); if (ck.verdict === 'none') return ''; const amb = ck.est.ambiguity.map((a) => `<div class="hint">${esc(a.text)}</div>`).join('');
-      return `<div class="${ck.verdict === 'agree' ? 'hint' : 'st-warn'}">${ck.verdict === 'agree' ? '✓' : '⚠'} ${esc(ck.text)}</div>${ck.verdict === 'agree' ? amb : ''}`; })()}
+      // merkez belirsiz ama kaynakta yazan ton sohbetin önerisiyle aynı → uyarı değil, bilgi
+      const backed = ck.verdict === 'sameSet' && St.checkSourceKey(s, Object.assign({}, sec, { selected: ck.chat })).verdict === 'agree';
+      const ok = ck.verdict === 'agree' || backed;
+      return `<div class="${ok ? 'hint' : 'st-warn'}">${ok ? '✓' : '⚠'} ${esc(ck.text)}${backed ? ' Kaynakta yazan ton da sohbetin önerisiyle aynı.' : ''}</div>${ck.verdict === 'agree' ? amb : ''}`; })()}
+    ${(() => { const sk = St.checkSourceKey(s, sec); return sk.verdict === 'none' ? '' : `<div class="${sk.verdict === 'agree' ? 'hint' : 'st-warn'}">${sk.verdict === 'agree' ? '✓' : '⚠'} ${esc(sk.text)}</div>`; })()}
     ${sec.warnings.length ? `<div class="st-warn"><b>Uyarılar:</b> ${sec.warnings.map(esc).join(' · ')}</div>` : ''}
   </div>`;
 }

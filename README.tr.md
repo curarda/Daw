@@ -66,7 +66,7 @@ Tonda söyleyen biri A440'a göre sabit bir kayma ile söyleyebilir (ör. herkes
   "schema_version": 1,
   "artist": "Sanatçı",
   "title": "Şarkı",
-  "source_notes": { "capo": 2, "tuning": null, "other": null },
+  "source_notes": { "capo": 2, "tuning": null, "key": "C#m", "bpm": 86, "time_signature": "4/4", "other": null },
   "warnings": [],
   "sections": [
     {
@@ -74,6 +74,7 @@ Tonda söyleyen biri A440'a göre sabit bir kayma ile söyleyebilir (ör. herkes
       "type": "verse",
       "chords": ["C#m", "D", "C#m", "D"],
       "bars": [2, 2, 2, 2],
+      "warnings": [],
       "key_proposals": [{ "tonic": "C#", "mode": "phrygian", "confidence": 0.8, "reason": "…" }],
       "degrees_preview": [{ "core": "i", "color": null, "bass": null }, { "core": "♭II", "color": null, "bass": null }, "…"]
     }
@@ -86,7 +87,9 @@ Tonda söyleyen biri A440'a göre sabit bir kayma ile söyleyebilir (ör. herkes
 - `source_notes` (capo, akort, diğer) şarkı kaydında gösterilir. Akorlar dönüştürülmez: dereceler göreli olduğu için kapo istatistiği etkilemez.
 - `bars` bir dizi ya da `null` olabilir. `null` olan bölüm süre istatistiğine girmez ama değişim istatistiğine girer.
 - `degrees_preview` öğeleri `{core, color, bass}` üç katmanı taşır ve her katman ayrı karşılaştırılır. Eski düz metin biçimi ("IVmaj7") de okunur; o biçimde yalnızca core karşılaştırılır.
-- Claude'un yanıtı ```json kod bloğu içinde ya da önünde/arkasında açıklamayla gelse de JSON ayıklanır; düz metin şema (`[Verse: …]`) JSON sanılmaz.
+- Claude'un yanıtı ```
+
+`bars` içinde `null` = süre bilinmiyor (bölüm süre istatistiğine girmez). `source_notes.key` / `bpm` / `time_signature` kaynakta yazıyorsa doldurulur; uygulama her bölümün seçili tonunu kaynaktaki tonla karşılaştırır (aynı / aynı notalar, farklı merkez / farklı). Bölüme özgü uyarılar `sections[].warnings`'te, bölüm kartının altında görünür. Adı "Bilinmiyor" olan şarkılar kopya kontrolüne girmez; adı elle yazılmalı.json kod bloğu içinde ya da önünde/arkasında açıklamayla gelse de JSON ayıklanır; düz metin şema (`[Verse: …]`) JSON sanılmaz.
 - Birden çok şarkı için `{"schema_version": 1, "songs": [ … ]}` de kabul edilir.
 - Şema hatası olursa içe aktarım durur ve bozuk alanlar yol ile listelenir (ör. `sections[0].key_proposals[0].mode: tanınmayan mod "phrigian"`).
 - Yedek giriş olarak düz metin kabul edilir: `Sanatçı:` / `Şarkı:` satırları ve `[Verse: C# phrygian] C#m D …`. Süre iki yolla verilebilir: `C#m:4 D:2` ya da ölçü çizgileriyle `| C#m | D C#m |` (her hücre 1 ölçü, içindeki akorlara eşit bölünür). DAW'ın dışa aktardığı akor şeması da okunur.

@@ -185,7 +185,11 @@ function validateSongJson(obj, path = '') {
     if (typeof sn !== 'object' || Array.isArray(sn)) errs.push(`${P('source_notes')}: nesne olmalı ({capo, tuning, other})`);
     else {
       if (sn.capo != null && !(typeof sn.capo === 'number' || typeof sn.capo === 'string')) errs.push(`${P('source_notes.capo')}: sayı, metin ya da null olmalı`);
-      for (const k of ['tuning', 'other']) if (sn[k] != null && typeof sn[k] !== 'string') errs.push(`${P('source_notes.' + k)}: metin ya da null olmalı`);
+      for (const k of ['tuning', 'other', 'key', 'time_signature']) if (sn[k] != null && typeof sn[k] !== 'string') errs.push(`${P('source_notes.' + k)}: metin ya da null olmalı`);
+      // kaynakta yazan ton / tempo / ölçü (ör. "Key: A", "86 bpm") — bölüm tonlarını denetlemek için
+      if (typeof sn.key === 'string' && sn.key.trim() && !parseKeyText(sn.key)) errs.push(`${P('source_notes.key')}: tanınmayan ton ${JSON.stringify(sn.key)} (ör. "A", "F#m", "C# phrygian")`);
+      if (sn.bpm != null && !(typeof sn.bpm === 'number' && sn.bpm > 0)) errs.push(`${P('source_notes.bpm')}: pozitif sayı ya da null olmalı`);
+      if (typeof sn.time_signature === 'string' && !/^\s*\d+\s*\/\s*\d+\s*$/.test(sn.time_signature)) errs.push(`${P('source_notes.time_signature')}: "4/4" biçiminde olmalı`);
     }
   }
   if (!Array.isArray(obj.sections) || !obj.sections.length) { errs.push(`${P('sections')}: boş olmayan dizi olmalı`); return errs; }
@@ -263,7 +267,8 @@ function songFromJson(o) {
   return {
     id: newId(), artist: o.artist.trim(), title: o.title.trim(), source: 'json', importedAt: new Date().toISOString(),
     warnings: o.warnings || [], fixes: {},
-    sourceNotes: o.source_notes ? { capo: o.source_notes.capo ?? null, tuning: o.source_notes.tuning ?? null, other: o.source_notes.other ?? null } : null,
+    sourceNotes: o.source_notes ? { capo: o.source_notes.capo ?? null, tuning: o.source_notes.tuning ?? null, other: o.source_notes.other ?? null,
+      key: o.source_notes.key ? o.source_notes.key.trim() : null, bpm: o.source_notes.bpm ?? null, timeSignature: o.source_notes.time_signature ? o.source_notes.time_signature.replace(/\s+/g, '') : null } : null,
     sections: o.sections.map((s) => {
       const proposals = (s.key_proposals || []).map(proposalFrom);
       // süre: hepsi sayıysa kullan; null varsa bölüm süre istatistiğine girmez (akorlar yine sayılır)
@@ -342,7 +347,10 @@ let idCounter = 0;
 function newId() { idCounter++; return 'song-' + Date.now().toString(36) + '-' + idCounter.toString(36) + Math.random().toString(36).slice(2, 5); }
 const normText = (s) => String(s || '').toLocaleLowerCase('tr').normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ığüşöç]+/g, ' ').trim();
 const songKey = (s) => `${normText(s.artist)}|${normText(s.title)}`;
-function findDuplicate(dataset, song) { return dataset.songs.find((x) => x.id !== song.id && songKey(x) === songKey(song)) || null; }
+// sohbet adı bulamazsa "Bilinmiyor" yazar: bunlar birbirinin kopyası sayılmaz (ad elle düzeltilmeli)
+const UNKNOWN_NAME = new Set(['bilinmiyor', 'unknown', '']);
+const hasUnknownName = (s) => UNKNOWN_NAME.has(normText(s.artist)) || UNKNOWN_NAME.has(normText(s.title));
+function findDuplicate(dataset, song) { return hasUnknownName(song) ? null : dataset.songs.find((x) => x.id !== song.id && songKey(x) === songKey(song)) || null; }
 
 // ---------------------------------------------------------------- bölüm analizi
 // Düzeltilmiş semboller (song.fixes) uygulanır; "%" önceki akoru tekrarlar.
@@ -549,6 +557,17 @@ function checkChatKey(song, sec) {
   else if (top.pcs.join() === chatSet) { verdict = 'sameSet'; text = `Aynı nota kümesi, merkez belirsiz: uygulama akorlardan ${top.name} diyor, sohbet ${keyLabel(chat)}. Akorlar merkezi netleştirmiyor — kararı sen ver.`; }
   else { verdict = 'differ'; text = `Uyuşmuyor: uygulamanın akorlardan tahmini ${est.candidates.map((c) => c.name).join(', ')}; sohbetin önerisi ${keyLabel(chat)}${rank ? ` (uygulamada ${rank}. sırada)` : ' (uygulamanın ilk 3 adayında yok)'}.`; }
   return { est, chat, verdict, text, rank };
+}
+
+// Kaynakta yazan ton ("Key: A") ile bölümün seçili tonu: agree / relative (aynı notalar, merkez farklı) / differ
+function checkSourceKey(song, sec) {
+  const src = song.sourceNotes && song.sourceNotes.key ? parseKeyText(song.sourceNotes.key) : null;
+  const key = sec.selected;
+  if (!src || !key) return { verdict: 'none' };
+  const set = (k) => scalePcs(k.tonic, k.mode).sort((a, b) => a - b).join();
+  if (sameKey(src, key)) return { verdict: 'agree', src, text: `Kaynaktaki tonla aynı (${keyLabel(src)}).` };
+  if (set(src) === set(key)) return { verdict: 'relative', src, text: `Kaynakta ton ${keyLabel(src)}; bu bölümde ${keyLabel(key)} seçili — aynı notalar, merkez farklı. Bölüm gerçekten ${pcName(key.tonic)} merkezinde duruyorsa doğru; değilse kaynaktakini seç.` };
+  return { verdict: 'differ', src, text: `Kaynakta ton ${keyLabel(src)}; bu bölümde ${keyLabel(key)} seçili (farklı notalar). Bölüm modülasyon yapmıyorsa seçimi kontrol et.` };
 }
 
 // ---------------------------------------------------------------- istatistik
@@ -1273,7 +1292,7 @@ function checkFile(obj, schema) {
 }
 
 root.Style = {
-  parseSymbol, parseMode, parseKeyText, keyLabel, modeName, sameKey, romanOf, parseRoman, coreKey, coreParts, coreLabel, degreeLabel, argmaxKey,
+  parseSymbol, checkSourceKey, hasUnknownName, parseMode, parseKeyText, keyLabel, modeName, sameKey, romanOf, parseRoman, coreKey, coreParts, coreLabel, degreeLabel, argmaxKey,
   analyzeChord, analyzeSection, detectLoop, comparePreview, previewFor, unknownSymbols, QUALITY_NAMES,
   validateSongJson, parseImportJson, extractJson, looksLikeJson, parseImportText, songKey, findDuplicate,
   buildStats, modeSongCounts, nSongs, ALL, confirmedKey,
