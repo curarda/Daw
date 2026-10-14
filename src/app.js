@@ -162,7 +162,10 @@ function refresh() {
   $('#markCount').textContent = nmk ? `(${nmk})` : ''; $('#btnClearMarks').disabled = !nmk;
   const conf = S.d.chords.markConflict ? S.d.sections.filter((x) => S.d.chords.markConflict[x.id]).map((x) => x.name) : [];
   $('#markInfo').innerHTML = (nmk && S.proj.chordOpts.engine === 'greedy' ? '<div class="st-warn">⚠ Değişim işaretleri süreli Viterbi motorunda uygulanır; ölçü ölçü motor bunları yok sayar.</div>' : '')
-    + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor (ör. ✂ noktasının iki yanında aynı akor kilitli); bu bölüm işaretler olmadan dolduruldu.</div>` : '');
+    + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor; bu bölüm işaretler olmadan dolduruldu.</div>` : '')
+    + (S.d.chords.lockOverrides || []).map((x) => `<div class="hint">✂ öncelikli: ${x.kind === 'cut'
+      ? `ölçü ${x.bar}'deki kilitli ${esc(C.chordName(x.chord))} ölçünün 1. yarısında kaldı, ortadaki ✂'ten sonrası serbest.`
+      : `ölçü ${x.markBar}${x.markHalf ? ' ortasındaki' : ' başındaki'} ✂'in iki yanında aynı akor (${esc(C.chordName(x.chord))}) kilitli; işaretten sonraki kilit bu hesapta yok sayıldı.`}</div>`).join('');
   const nch = S.proj.chordLocks.filter((l) => l.src === 'chart').length;
   $('#chartCount').textContent = nch ? `(${nch})` : ''; $('#btnChartRemove').disabled = !nch;
   const ns = S.d.chords.filter((c) => c.pinSuggest).length;
@@ -1719,6 +1722,9 @@ function pinOthers(covers) {
   S.proj.chordPinsSig = pinSig();
 }
 function setLock(bar, half, chord) {
+  // tam ölçülük kilidin yalnızca bir yarısı yeniden kilitleniyorsa diğer yarı eski akoruyla kilitli kalsın (1 ölçüde 2 akor)
+  const full = half != null ? S.proj.chordLocks.find((l) => l.bar === bar && l.half == null) : null;
+  if (full) full.half = 1 - half;
   pinOthers((b, h) => b === bar && (half == null || h == null || h === half));
   S.proj.chordPins = (S.proj.chordPins || []).filter((p) => !(p.bar === bar && (half == null || p.half == null || p.half === half)));
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === bar && (half == null || l.half == null || l.half === half)));

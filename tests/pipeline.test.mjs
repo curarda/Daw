@@ -584,6 +584,38 @@ await step('Değişim işaretleri: ✂ noktada akor değişir, = noktada değiş
   return `✂ 6½ → ölçü 6: ${ex1} · = 2 ve 4½ değişmedi · yalnızca ✂3 → verse yalnızca ölçü 3'te değişti · 25 rastgele işaret setinde hepsi uygulandı`;
 });
 
+await step('✂ kilitten önceliklidir: kilitli ölçünün ortasına ✂ → kilit 1. yarıda kalır, 2. yarı değişir; işaretin iki yanında aynı kilit → sonraki yok sayılır', () => {
+  const p = JSON.parse(JSON.stringify(proj));
+  p.chordPins = []; p.noteEdits = []; p.changeMarks = [];
+  p.sections.forEach((x) => { x.tonic = null; x.mode = null; });
+  const base = Core.derive(p, st);
+  const at = (dd, bar, half) => dd.chords.find((c) => { const q = (bar - 1) * g.barQ + half * g.split + 0.01; return q >= c.q0 && q < c.q1; });
+  const X = at(base, 6, 0).chord;
+  // ölçü 6'yı tamamen X'e kilitle, sonra ölçü 6 ortasına ✂
+  p.chordLocks = [{ bar: 6, half: null, chord: { root: X.root, q: X.q, bass: null } }];
+  p.changeMarks = [{ bar: 6, half: 1, kind: 'change' }];
+  const dd = Core.derive(p, st);
+  const a = at(dd, 6, 0), b = at(dd, 6, 1);
+  assert.ok(Core.sameChord(a.chord, X) && a.locked, '1. yarı kilitli X');
+  assert.ok(!b.locked && b.chord.root !== X.root, `2. yarı değişmeli (${Core.chordName(b.chord)})`);
+  assert.ok(!dd.chords.markConflict);
+  assert.deepEqual(dd.chords.lockOverrides.map((x) => x.kind), ['cut']);
+  assert.equal(p.chordLocks[0].half, null, 'proje kilidi değişmez (işaret kalkınca tam ölçü)');
+  // işaret kalkınca kilit yine tam ölçü
+  p.changeMarks = [];
+  const d0 = Core.derive(p, st);
+  assert.ok(at(d0, 6, 1).locked && Core.sameChord(at(d0, 6, 1).chord, X));
+  // ölçü 5 ve 6 aynı akora kilitli, ✂ ölçü 6 başında → ölçü 6 kilidi yok sayılır, 6'da akor değişir
+  p.chordLocks = [{ bar: 5, half: null, chord: { root: X.root, q: X.q, bass: null } }, { bar: 6, half: null, chord: { root: X.root, q: X.q, bass: null } }];
+  p.changeMarks = [{ bar: 6, half: 0, kind: 'change' }];
+  const d2 = Core.derive(p, st);
+  assert.ok(!d2.chords.markConflict, 'çelişki yok');
+  assert.ok(at(d2, 5, 1).locked && Core.sameChord(at(d2, 5, 1).chord, X));
+  assert.ok(at(d2, 6, 0).chord.root !== X.root, 'ölçü 6 başında değişim');
+  assert.deepEqual(d2.chords.lockOverrides.map((x) => [x.kind, x.bar]), [['drop', 6]]);
+  return `ölçü 6 = ${Core.chordName(X)} kilitli + ✂ 6½ → ${Core.chordName(a.chord)} | ${Core.chordName(b.chord)} · 5 ve 6 aynı kilit + ✂6 → 6: ${Core.chordName(at(d2, 6, 0).chord)}`;
+});
+
 await step('"Akorlar yalnızca 1. vuruşta değişsin": ölçü ortası değişimi yok (iki motorda); ✂ ile işaretlenen ölçü ortası hariç', () => {
   const p9 = JSON.parse(JSON.stringify(proj));
   p9.chordLocks = []; p9.chordPins = []; p9.noteEdits = []; p9.changeMarks = [];

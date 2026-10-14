@@ -2311,9 +2311,32 @@ function derive(proj, st) {
   const chordOpts = Object.assign({}, proj.chordOpts, { marks: proj.changeMarks || [] }, st.style ? { style: st.style } : {}, st.engineOverride ? { engine: st.engineOverride } : {});
   // Kullanıcı kilitleri + "kilit sonrası sabit tutulan" akorlar (pins). Bir akor kilitlenince diğer akorlar
   // olduğu gibi kalır; motorun aksi yöndeki tercihi yalnızca öneri (pinSuggest) olarak, gerekçesiyle gösterilir.
-  const userLocks = proj.chordLocks || [];
   const covers = (l, bar, half) => l.bar === bar && (l.half == null || half == null || l.half === half);
-  const pins = (proj.chordPins || []).filter((p) => !userLocks.some((l) => covers(l, p.bar, p.half)));
+  // ✂ işaretleri kilitlerden önceliklidir (proje kilitleri değişmez, yalnızca bu hesapta):
+  //  · işaret tam ölçülük bir kilidin ortasına düşerse kilit işaretin önünde (1. yarı) kalır, sonrası serbest;
+  //  · işaretin iki yanında aynı akor kilitliyse işaretten sonraki kilit yok sayılır (yoksa orada değişim olamaz).
+  const lockOverrides = [];
+  const underMarks = (list, report) => {
+    let L = list.map((l) => Object.assign({}, l));
+    const changes = (proj.changeMarks || []).filter((m) => m.kind === 'change');
+    if (g.split) for (const l of L) if (l.half == null && changes.some((m) => m.bar === l.bar && (m.half || 0) === 1)) {
+      l.half = 0;
+      if (report) lockOverrides.push({ kind: 'cut', bar: l.bar, chord: l.chord });
+    }
+    const same = (a, b) => sameChord(a, b) && (a.bass ?? null) === (b.bass ?? null);
+    for (const m of changes) {
+      const h = g.split ? m.half || 0 : 0;
+      const lb = L.find((l) => (h === 1 ? covers(l, m.bar, 0) : covers(l, m.bar - 1, g.split ? 1 : null)));
+      const la = L.find((l) => covers(l, m.bar, g.split ? h : null));
+      if (lb && la && lb !== la && same(lb.chord, la.chord)) {
+        L = L.filter((x) => x !== la);
+        if (report) lockOverrides.push({ kind: 'drop', bar: la.bar, half: la.half ?? null, chord: la.chord, markBar: m.bar, markHalf: h });
+      }
+    }
+    return L;
+  };
+  const userLocks = underMarks(proj.chordLocks || [], true);
+  const pins = underMarks((proj.chordPins || []).filter((p) => !userLocks.some((l) => covers(l, p.bar, p.half))), false);
   const chords = buildChords(notes, sections, g, chordOpts, [...userLocks, ...pins]);
   for (const sl of chords) {
     const ul = userLocks.find((l) => covers(l, sl.bar, sl.half));
@@ -2341,6 +2364,7 @@ function derive(proj, st) {
   }
   // kilitli akor için uyarı/öneriler: sürtünme (önemli), renk ve çevrim (isteğe bağlı)
   chords.forEach((sl) => { if (sl.locked) { sl.lockAdvice = lockAdvice(sl, slotNotes(notes, sl.q0, sl.q1, g), chordOpts.colorPenalty || 0); sl.suggest = null; } });
+  chords.lockOverrides = lockOverrides;
   return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning, timeMap };
 }
 
@@ -4662,7 +4686,10 @@ function refresh() {
   $('#markCount').textContent = nmk ? `(${nmk})` : ''; $('#btnClearMarks').disabled = !nmk;
   const conf = S.d.chords.markConflict ? S.d.sections.filter((x) => S.d.chords.markConflict[x.id]).map((x) => x.name) : [];
   $('#markInfo').innerHTML = (nmk && S.proj.chordOpts.engine === 'greedy' ? '<div class="st-warn">⚠ Değişim işaretleri süreli Viterbi motorunda uygulanır; ölçü ölçü motor bunları yok sayar.</div>' : '')
-    + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor (ör. ✂ noktasının iki yanında aynı akor kilitli); bu bölüm işaretler olmadan dolduruldu.</div>` : '');
+    + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor; bu bölüm işaretler olmadan dolduruldu.</div>` : '')
+    + (S.d.chords.lockOverrides || []).map((x) => `<div class="hint">✂ öncelikli: ${x.kind === 'cut'
+      ? `ölçü ${x.bar}'deki kilitli ${esc(C.chordName(x.chord))} ölçünün 1. yarısında kaldı, ortadaki ✂'ten sonrası serbest.`
+      : `ölçü ${x.markBar}${x.markHalf ? ' ortasındaki' : ' başındaki'} ✂'in iki yanında aynı akor (${esc(C.chordName(x.chord))}) kilitli; işaretten sonraki kilit bu hesapta yok sayıldı.`}</div>`).join('');
   const nch = S.proj.chordLocks.filter((l) => l.src === 'chart').length;
   $('#chartCount').textContent = nch ? `(${nch})` : ''; $('#btnChartRemove').disabled = !nch;
   const ns = S.d.chords.filter((c) => c.pinSuggest).length;
@@ -6219,6 +6246,9 @@ function pinOthers(covers) {
   S.proj.chordPinsSig = pinSig();
 }
 function setLock(bar, half, chord) {
+  // tam ölçülük kilidin yalnızca bir yarısı yeniden kilitleniyorsa diğer yarı eski akoruyla kilitli kalsın (1 ölçüde 2 akor)
+  const full = half != null ? S.proj.chordLocks.find((l) => l.bar === bar && l.half == null) : null;
+  if (full) full.half = 1 - half;
   pinOthers((b, h) => b === bar && (half == null || h == null || h === half));
   S.proj.chordPins = (S.proj.chordPins || []).filter((p) => !(p.bar === bar && (half == null || p.half == null || p.half === half)));
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === bar && (half == null || l.half == null || l.half === half)));

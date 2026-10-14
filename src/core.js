@@ -1794,9 +1794,32 @@ function derive(proj, st) {
   const chordOpts = Object.assign({}, proj.chordOpts, { marks: proj.changeMarks || [] }, st.style ? { style: st.style } : {}, st.engineOverride ? { engine: st.engineOverride } : {});
   // Kullanıcı kilitleri + "kilit sonrası sabit tutulan" akorlar (pins). Bir akor kilitlenince diğer akorlar
   // olduğu gibi kalır; motorun aksi yöndeki tercihi yalnızca öneri (pinSuggest) olarak, gerekçesiyle gösterilir.
-  const userLocks = proj.chordLocks || [];
   const covers = (l, bar, half) => l.bar === bar && (l.half == null || half == null || l.half === half);
-  const pins = (proj.chordPins || []).filter((p) => !userLocks.some((l) => covers(l, p.bar, p.half)));
+  // ✂ işaretleri kilitlerden önceliklidir (proje kilitleri değişmez, yalnızca bu hesapta):
+  //  · işaret tam ölçülük bir kilidin ortasına düşerse kilit işaretin önünde (1. yarı) kalır, sonrası serbest;
+  //  · işaretin iki yanında aynı akor kilitliyse işaretten sonraki kilit yok sayılır (yoksa orada değişim olamaz).
+  const lockOverrides = [];
+  const underMarks = (list, report) => {
+    let L = list.map((l) => Object.assign({}, l));
+    const changes = (proj.changeMarks || []).filter((m) => m.kind === 'change');
+    if (g.split) for (const l of L) if (l.half == null && changes.some((m) => m.bar === l.bar && (m.half || 0) === 1)) {
+      l.half = 0;
+      if (report) lockOverrides.push({ kind: 'cut', bar: l.bar, chord: l.chord });
+    }
+    const same = (a, b) => sameChord(a, b) && (a.bass ?? null) === (b.bass ?? null);
+    for (const m of changes) {
+      const h = g.split ? m.half || 0 : 0;
+      const lb = L.find((l) => (h === 1 ? covers(l, m.bar, 0) : covers(l, m.bar - 1, g.split ? 1 : null)));
+      const la = L.find((l) => covers(l, m.bar, g.split ? h : null));
+      if (lb && la && lb !== la && same(lb.chord, la.chord)) {
+        L = L.filter((x) => x !== la);
+        if (report) lockOverrides.push({ kind: 'drop', bar: la.bar, half: la.half ?? null, chord: la.chord, markBar: m.bar, markHalf: h });
+      }
+    }
+    return L;
+  };
+  const userLocks = underMarks(proj.chordLocks || [], true);
+  const pins = underMarks((proj.chordPins || []).filter((p) => !userLocks.some((l) => covers(l, p.bar, p.half))), false);
   const chords = buildChords(notes, sections, g, chordOpts, [...userLocks, ...pins]);
   for (const sl of chords) {
     const ul = userLocks.find((l) => covers(l, sl.bar, sl.half));
@@ -1824,6 +1847,7 @@ function derive(proj, st) {
   }
   // kilitli akor için uyarı/öneriler: sürtünme (önemli), renk ve çevrim (isteğe bağlı)
   chords.forEach((sl) => { if (sl.locked) { sl.lockAdvice = lockAdvice(sl, slotNotes(notes, sl.q0, sl.q1, g), chordOpts.colorPenalty || 0); sl.suggest = null; } });
+  chords.lockOverrides = lockOverrides;
   return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning, timeMap };
 }
 
