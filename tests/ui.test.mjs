@@ -633,15 +633,31 @@ try {
     page.once('dialog', (d) => d.accept());
     await page.click('#btnTest');
     await waitStatus(/Test melodisi hazır/);
+    await page.uncheck('#inMeterLock'); // 1. adımda elle seçilen ölçü kesinleşmişti
     assert.match(await page.textContent('#meterEst'), /Ölçü tahmini: 4\/4/);
     assert.match(await page.textContent('#meterEst'), /Proje ölçüsüyle uyumlu/);
-    // proje ölçüsünü yanlış seç (3/4) → tahmin uyarır, Uygula ile 4/4'e döner
+    // ölçüyü elle seç (3/4) → kesin olur: tahmin (4/4) yalnızca bilgi, Uygula yok; üç seçici de aynı
     await page.selectOption('#inMeter', '3/4');
-    assert.match(await page.textContent('#meterEst'), /Uygula: 4\/4/);
+    assert.ok(await page.isChecked('#inMeterLock') && await page.isChecked('#inDrumMeterLock') && await page.isChecked('#inQuantMeterLock'));
+    assert.deepEqual([await page.inputValue('#inDrumMeter'), await page.inputValue('#inQuantMeter')], ['3/4', '3/4']);
+    let me = await page.textContent('#meterEst');
+    assert.match(me, /Ölçü: 3\/4, 120 BPM — kesin/); assert.match(me, /tahmin 4\/4 olurdu .* yok sayıldı/); assert.doesNotMatch(me, /Uygula: 4\/4/);
     const loops34 = await page.locator('#inDrumLoop option').allTextContents();
     assert.ok(loops34.some((x) => /Vals/.test(x)) && !loops34.some((x) => /Rock/.test(x)), 'loop listesi proje ölçüsüne göre');
+    await page.selectOption('#inDrumLoop', 'ballad34');
+    assert.match(await page.textContent('#drumInfo'), /3\/4 balad/);
+    assert.doesNotMatch(await page.textContent('#drumInfo'), /ölçüsüne daha çok benziyor/);
+    assert.equal(await page.inputValue('#inDrumLoop'), 'ballad34');
+    // kesin'i kaldır → tahmin yine önerir; Uygula ile 4/4'e döner
+    await page.uncheck('#inDrumMeterLock');
+    assert.ok(!(await page.isChecked('#inMeterLock')));
+    assert.match(await page.textContent('#meterEst'), /Uygula: 4\/4/);
     await page.click('#btnMeterApply');
     assert.equal(await page.inputValue('#inMeter'), '4/4');
+    // davul panelinden seç → kesin; quantize panelinde de görünür
+    await page.selectOption('#inDrumMeter', '4/4');
+    assert.ok(await page.isChecked('#inQuantMeterLock'));
+    assert.match(await page.textContent('fieldset:has(#inQuantMeter) .meter-info'), /120 BPM · kesin/);
     const auto = await page.textContent('#inDrumLoop option[value=auto]');
     assert.match(auto, /Otomatik \(öneri: .+\)/);
     assert.match(await page.textContent('#drumGrid'), /Kick\s+\|/);

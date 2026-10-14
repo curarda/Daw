@@ -1682,7 +1682,7 @@ function synthTestVocal(sr = 44100, opts = {}) {
 function newProject() {
   return {
     version: 1,
-    settings: { bpm: 120, meter: '4/4', latencyMs: 0, clickFeel: 'normal' },
+    settings: { bpm: 120, meter: '4/4', meterLocked: false, latencyMs: 0, clickFeel: 'normal' },
     audio: { offsetSec: 0, alignMode: 'none' },
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],

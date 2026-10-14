@@ -43,7 +43,8 @@
       <summary><b>1</b> Proje ayarı</summary>
       <div class="grid2">
         <label>BPM <small id="bpmUnit">(♩ = çeyrek nota)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
-        <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
+        <label>Ölçü<select id="inMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
+        <label class="chk" title="İşaretliyken davul ve tap tahmini ölçüyü değiştirmez/önermez; loop ve quantize bu ölçüyle çalışır"><input type="checkbox" id="inMeterLock" class="meter-lock"> Ölçü kesin (tahmin etme)</label>
         <label title="Yalnızca 4/4'te: yarım zaman hissinde trampet 3. vuruştadır">Click deseni<select id="inClickFeel"><option value="normal">1. vuruş vurgulu</option><option value="halftime">3. vuruş vurgulu — yarım zaman (tık tık tıss tık)</option></select></label>
         <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
         <div class="row" style="margin:0">
@@ -138,6 +139,7 @@
           <label>Kapsam<select id="inQuantScope"><option value="all">Tüm şarkı</option><option value="section">Seçili bölüm</option><option value="note">Seçili nota</option></select></label>
         </div>
         <label title="%100 = tam ızgaraya; daha az = yalnızca yaklaştırır (doğal his kalır)">Güç <output id="outQuantStrength">%100</output><input type="range" id="inQuantStrength" min="0" max="100" step="5" value="100"></label>
+        <div class="row meter-row"><label>Ölçü<select id="inQuantMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label><label class="chk"><input type="checkbox" id="inQuantMeterLock" class="meter-lock"> kesin</label><span class="hint meter-info"></span></div>
         <div class="row"><button id="btnQuantize" class="accent">Quantize uygula</button><button id="btnQuantClear">Zamanlamayı sıfırla</button></div>
       </fieldset>
       <fieldset>
@@ -247,7 +249,8 @@
 
     <details class="step" open>
       <summary><b>8b</b> Davul (basit loop)</summary>
-      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü her zaman 1. adımdan kendin de seçebilirsin; loop proje ölçüsüne göre seçilir.</p>
+      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü biliyorsan seç ve <b>kesin</b>'i işaretle: tahmin artık yalnızca bilgi olur, loop listesi o ölçünün loop'larıdır ve istediğini seçebilirsin.</p>
+      <div class="row meter-row"><label>Ölçü<select id="inDrumMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label><label class="chk"><input type="checkbox" id="inDrumMeterLock" class="meter-lock"> kesin</label><span class="hint meter-info"></span></div>
       <div id="meterEst"></div>
       <label class="chk"><input type="checkbox" id="inDrumsOn"> Oynatırken davul çalsın</label>
       <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>

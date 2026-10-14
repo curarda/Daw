@@ -681,6 +681,35 @@ await step('Davul 2b: 16\'lık senkoplu hızlı melodi (kullanıcının 156 BPM 
   return `156 BPM z=${e.gridZ.toFixed(1)} (yanlış BPM'ler uyarılı) · seçilen: ${sug.best.loop.name} (vurgu ${sug.best.accent.toFixed(2)}) · istek profiliyle örtüşme ${cs[0][1].toFixed(2)} (eski en iyi ${cs[1][0]} ${cs[1][1].toFixed(2)})`;
 });
 
+await step('Davul 2c: ölçü kesin — tahmin farklı olsa da proje ölçüsü kalır; loop, öncü ve tap bu ölçüyle', () => {
+  const mel = (bpm, bars, bar, bpb, shift = 0) => { const P = 60 / bpm, o = []; for (let b = 0; b < bars; b++) for (const [pos, d, p] of bar) { const t = (b * bpb + pos) * P + shift; o.push({ t0: t, t1: t + d * P * 0.95, pitch: p + (b % 2) }); } return o; };
+  // melodi 6/8 gibi vurgulu (üçleme), kullanıcı "bu şarkı kesinlikle 4/4" diyor
+  const m68 = [[0, 1, 67], [1, 1 / 3, 65], [4 / 3, 1 / 3, 64], [5 / 3, 1 / 3, 62]];
+  const ns = mel(60, 8, m68, 2);
+  const free = Core.estimateMeter(ns, 60);
+  assert.equal(free.meter, '6/8', 'kilitsiz tahmin 6/8');
+  const lk = Core.estimateMeter(ns, 60, { meter: '4/4' });
+  assert.deepEqual([lk.ok, lk.locked, lk.meter, lk.bpm, lk.guess.meter], [true, true, '4/4', 60, '6/8']);
+  const set = { meter: '4/4', bpm: 60 };
+  const unl = Core.suggestDrumLoop(ns, set, free);
+  assert.ok(unl.reasons.some((x) => /6\/8 ölçüsüne daha çok benziyor/.test(x)), 'kilitsiz: ölçü uyarısı');
+  const sug = Core.suggestDrumLoop(ns, Object.assign({ meterLocked: true }, set), lk);
+  assert.ok(!sug.reasons.some((x) => /ölçüsüne daha çok benziyor|bu ölçü için loop yok/.test(x)), sug.reasons.join(' '));
+  assert.ok(sug.ranked.length === Core.loopsFor('4/4').length && sug.ranked.every((r) => r.loop.meter === '4/4'));
+  assert.match(sug.request, /Ölçü kesin/);
+  // öncü kilitliyken de bulunur (4/4, vokal 3. vuruşta)
+  const m44 = [[0, 1.5, 64], [1.5, 0.5, 62], [2, 1, 64], [3, 0.5, 60], [3.5, 0.5, 62]];
+  const pk = [[2, 0.5, 60], [2.5, 0.5, 62], [3, 1, 64]].map(([p, d, q]) => ({ t0: (p - 2) * 0.5, t1: (p - 2 + d * 0.95) * 0.5, pitch: q }));
+  const ep = Core.estimateMeter([...pk, ...mel(120, 8, m44, 4, 1.0)], 120, { meter: '4/4' });
+  assert.equal(ep.firstBeat, 3);
+  // tap: 2 s'de bir değişim (6/8, 60 BPM gibi) ama ölçü kesin 4/4 → yalnızca 4/4 okumaları
+  const taps = [0, 2, 4, 6, 8, 10];
+  const tf = Core.estimateFromTaps(taps, ns, { bpm: 60, meter: '4/4' });
+  const tl = Core.estimateFromTaps(taps, ns, { bpm: 60, meter: '4/4', lockMeter: '4/4' });
+  assert.ok(tl.ok && tl.meter === '4/4' && tl.hypotheses.every((h) => h.meter === '4/4'), JSON.stringify(tl.hypotheses));
+  return `vurgular 6/8 diyor (güven %${Math.round(free.confidence * 100)}); kesin 4/4 → tahmin 4/4, uyarı yok, ${sug.ranked.length} loop (en iyi ${sug.best.loop.name}) · öncü 3. vuruş · tap: kilitsiz ${tf.meter} ${tf.bpm} BPM → kesin ${tl.meter} ${tl.bpm} BPM`;
+});
+
 await step('Davul 3: vuruşlar, ses ve MIDI davul kanalı', () => {
   const L = Core.DRUM_LOOPS.find((l) => l.id === 'rock8');
   const ev = Core.drumEvents(L, g, 2);

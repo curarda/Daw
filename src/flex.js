@@ -159,7 +159,7 @@ function estimateFromTaps(taps, notes, opts = {}) {
   const hyps = [];
   for (const [mult, prior, lbl] of [[1, 0.15, 'her değişim ölçü başında'], [2, 0.06, 'değişimler ölçü başı ve ortasında'], [0.5, 0.03, 'değişimler iki ölçüde bir']]) {
     const bar = u * mult;
-    for (const [meter, beats] of [['4/4', 4], ['3/4', 3], ['2/4', 2], ['6/8', 2]]) {
+    for (const [meter, beats] of [['4/4', 4], ['3/4', 3], ['2/4', 2], ['6/8', 2]].filter(([m]) => !opts.lockMeter || m === opts.lockMeter)) {
       const bpm = (60 * beats) / bar;
       if (bpm < 50 || bpm > 200) continue;
       const est = nts.length >= 8 ? C.estimateMeter(nts, bpm) : null;

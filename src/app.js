@@ -324,7 +324,7 @@ function addTap() {
 function tapEstimate() {
   if (!S.d || !S.proj.taps || S.proj.taps.length < 3) return null;
   const notes = S.d.notes.map((n) => ({ t0: n.tl0 + S.d.off, t1: n.tl1 + S.d.off }));
-  return C.estimateFromTaps(S.proj.taps, notes, { bpm: S.proj.settings.bpm, meter: S.proj.settings.meter });
+  return C.estimateFromTaps(S.proj.taps, notes, { bpm: S.proj.settings.bpm, meter: S.proj.settings.meter, lockMeter: S.proj.settings.meterLocked ? S.proj.settings.meter : null });
 }
 function renderTaps() {
   const box = $('#tapInfo');
@@ -382,7 +382,8 @@ function analyzeDrums() {
   const ns = drumNotes();
   // click'le kaydedildiyse ya da test melodisiyse ızgara zaten doğru: vuruş fazını tahmin etme
   const fixedPhase = S.proj.audio.source === 'test' || (S.proj.audio.source === 'record' && S.proj.audio.alignMode === 'none');
-  S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase }) : null;
+  const meter = S.proj.settings.meterLocked ? S.proj.settings.meter : null; // kesin ölçü: tahmin bu ölçüye göre ölçü başı / öncü bulur
+  S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase, meter }) : null;
   S.drumSug = C.suggestDrumLoop(ns, S.proj.settings, S.meterEst);
 }
 function currentLoop() {
@@ -397,7 +398,14 @@ function renderDrums() {
   let mh = '';
   if (!est) mh = '<p class="hint">Ölçü tahmini için önce kayıt / analiz.</p>';
   else if (!est.ok) mh = `<div class="st-warn">⚠ ${esc(est.reasons.join(' '))}</div>`;
-  else {
+  else if (est.locked) {
+    const shifted = Math.abs(est.shiftSec) > 0.03, gu = est.guess;
+    mh = `<div class="adv-opt"><b>Ölçü: ${esc(set.meter)}, ${set.bpm} BPM — kesin (senin seçimin)</b> · his: ${est.feel === 'triple' ? 'üçleme (shuffle / 6/8)' : "düz (8'lik)"}
+      <div class="hint">Vokal ${est.firstBeat === 1 ? 'ölçü başında (1. vuruşta)' : `${String(est.firstBeat).replace('.5', '. vuruşun ve\'sinde').replace(/^(\d)$/, '$1. vuruşta')} (öncü)`} başlıyor${shifted ? ` — ölçü çizgileri şu an ${Math.abs(est.shiftSec).toFixed(2)} s kayık görünüyor` : ''}.</div>
+      ${gu && gu.meter !== set.meter ? `<div class="hint">ℹ Melodinin vurgularından tahmin ${esc(gu.meter)}${gu.bpm !== set.bpm ? ` (${gu.bpm} BPM)` : ''} olurdu (güven %${Math.round(gu.confidence * 100)}) — ölçü kesin olduğu için yok sayıldı.</div>` : ''}
+      ${est.reasons.map((r) => `<div class="hint">${esc(r)}</div>`).join('')}
+      ${shifted ? `<div class="row"><button class="accent" id="btnMeterApply">Ölçü çizgilerini hizala (${esc(set.meter)} kalır)</button></div>` : ''}</div>`;
+  } else {
     const differs = est.meter !== set.meter || (est.bpm && est.bpm !== set.bpm);
     const shifted = Math.abs(est.shiftSec) > 0.03;
     const others = est.candidates.slice(1).map((c) => `${c.meter}${c.bpm !== set.bpm ? ` (${c.bpm} BPM)` : ''}`).join(', ');
@@ -437,7 +445,7 @@ $('#meterEst').addEventListener('click', (e) => {
   if (!e.target.closest('#btnMeterApply') || !S.meterEst) return;
   const est = S.meterEst, set = S.proj.settings;
   const before = `${set.meter}, ${set.bpm} BPM`;
-  set.meter = est.meter; if (est.bpm) set.bpm = est.bpm;
+  if (!est.locked) { set.meter = est.meter; if (est.bpm) set.bpm = est.bpm; } // kesin ölçüde yalnızca ölçü çizgileri hizalanır
   if (Math.abs(est.shiftSec) > 0.03) {
     S.proj.audio.offsetSec += est.shiftSec;
     S.proj.audio.alignMode = 'none';
@@ -1837,7 +1845,10 @@ $('#altBox').addEventListener('change', (e) => {
 // ---------------------------------------------------------------- giriş alanları
 function syncInputs() {
   const p = S.proj;
-  $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
+  $('#inBpm').value = p.settings.bpm; $('#inLatency').value = p.settings.latencyMs;
+  $$('.meter-sel').forEach((el) => { el.value = p.settings.meter; });
+  $$('.meter-lock').forEach((el) => { el.checked = !!p.settings.meterLocked; });
+  $$('.meter-info').forEach((el) => { el.textContent = `${p.settings.bpm} BPM · ${p.settings.meterLocked ? 'kesin (tahmin değiştirmez)' : 'tahmin önerebilir'}`; });
   const gq = C.makeGrid(p.settings);
   $('#inClickFeel').value = p.settings.clickFeel || 'normal';
   $('#inOnlyMarked').checked = !!p.chordOpts.onlyMarked;
@@ -1876,7 +1887,16 @@ function syncInputs() {
 }
 const onNum = (id, fn) => $(id).addEventListener('change', (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) fn(v); });
 onNum('#inBpm', (v) => { S.proj.settings.bpm = C.clamp(v, 30, 300); applyAlign(); syncInputs(); refresh(); });
-$('#inMeter').addEventListener('change', (e) => { /* BPM birimi syncInputs'ta güncellenir */ S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
+// ölçü: 1. adım, quantize ve davul panelindeki seçiciler aynı ayarı değiştirir; elle seçmek ölçüyü kesinleştirir
+function setMeter(m, lock = true) {
+  const set = S.proj.settings, before = set.meter;
+  set.meter = m; if (lock) set.meterLocked = true;
+  S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[m].split);
+  applyAlign(); syncInputs(); refresh(); /* BPM birimi syncInputs'ta güncellenir */
+  if (before !== m || lock) status(`Ölçü ${m}${set.meterLocked ? ' (kesin: tahmin bunu değiştirmez; davul loop\'ları ve quantize bu ölçüyle)' : ''}.`);
+}
+$$('.meter-sel').forEach((el) => el.addEventListener('change', (e) => setMeter(e.target.value)));
+$$('.meter-lock').forEach((el) => el.addEventListener('change', (e) => { S.proj.settings.meterLocked = e.target.checked; syncInputs(); refresh(); status(e.target.checked ? `Ölçü ${S.proj.settings.meter} kesin — tahmin yalnızca bilgi olarak gösterilir.` : 'Ölçü kesin değil — davul paneli melodiden ölçü tahmin edip önerecek.'); }));
 onNum('#inLatency', (v) => { S.proj.settings.latencyMs = v; refresh(); });
 onNum('#inOffset', (v) => { S.proj.audio.offsetSec = v / 1000; S.proj.audio.alignMode = 'none'; $('#inAlign').value = 'none'; refresh(); });
 $('#inPickupBeat').addEventListener('change', (e) => { S.proj.audio.pickupBeat = +e.target.value; S.proj.audio.alignMode = 'pickup'; applyAlign(); syncInputs(); refresh(); });

@@ -232,6 +232,9 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 #drumRequest { width: 100%; box-sizing: border-box; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; background: #111318; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
 .drum-rank { margin: 4px 0 0 16px; padding: 0; font-size: 12px; }
 .tapbox { border-top: 1px dashed #ffd16655; margin-top: 8px; padding-top: 6px; }
+.meter-row { align-items: center; gap: 10px; flex-wrap: wrap; }
+.meter-row label:not(.chk) { display: flex; align-items: center; gap: 6px; }
+.meter-row select { width: auto; }
 .range2 { display: flex; align-items: center; gap: 6px; }
 .range2 input { width: 64px; }
 </style>
@@ -267,7 +270,8 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
       <summary><b>1</b> Proje ayarı</summary>
       <div class="grid2">
         <label>BPM <small id="bpmUnit">(♩ = çeyrek nota)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
-        <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
+        <label>Ölçü<select id="inMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
+        <label class="chk" title="İşaretliyken davul ve tap tahmini ölçüyü değiştirmez/önermez; loop ve quantize bu ölçüyle çalışır"><input type="checkbox" id="inMeterLock" class="meter-lock"> Ölçü kesin (tahmin etme)</label>
         <label title="Yalnızca 4/4'te: yarım zaman hissinde trampet 3. vuruştadır">Click deseni<select id="inClickFeel"><option value="normal">1. vuruş vurgulu</option><option value="halftime">3. vuruş vurgulu — yarım zaman (tık tık tıss tık)</option></select></label>
         <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
         <div class="row" style="margin:0">
@@ -362,6 +366,7 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
           <label>Kapsam<select id="inQuantScope"><option value="all">Tüm şarkı</option><option value="section">Seçili bölüm</option><option value="note">Seçili nota</option></select></label>
         </div>
         <label title="%100 = tam ızgaraya; daha az = yalnızca yaklaştırır (doğal his kalır)">Güç <output id="outQuantStrength">%100</output><input type="range" id="inQuantStrength" min="0" max="100" step="5" value="100"></label>
+        <div class="row meter-row"><label>Ölçü<select id="inQuantMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label><label class="chk"><input type="checkbox" id="inQuantMeterLock" class="meter-lock"> kesin</label><span class="hint meter-info"></span></div>
         <div class="row"><button id="btnQuantize" class="accent">Quantize uygula</button><button id="btnQuantClear">Zamanlamayı sıfırla</button></div>
       </fieldset>
       <fieldset>
@@ -471,7 +476,8 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 
     <details class="step" open>
       <summary><b>8b</b> Davul (basit loop)</summary>
-      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü her zaman 1. adımdan kendin de seçebilirsin; loop proje ölçüsüne göre seçilir.</p>
+      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü biliyorsan seç ve <b>kesin</b>'i işaretle: tahmin artık yalnızca bilgi olur, loop listesi o ölçünün loop'larıdır ve istediğini seçebilirsin.</p>
+      <div class="row meter-row"><label>Ölçü<select id="inDrumMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label><label class="chk"><input type="checkbox" id="inDrumMeterLock" class="meter-lock"> kesin</label><span class="hint meter-info"></span></div>
       <div id="meterEst"></div>
       <label class="chk"><input type="checkbox" id="inDrumsOn"> Oynatırken davul çalsın</label>
       <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>
@@ -2193,7 +2199,7 @@ function synthTestVocal(sr = 44100, opts = {}) {
 function newProject() {
   return {
     version: 1,
-    settings: { bpm: 120, meter: '4/4', latencyMs: 0, clickFeel: 'normal' },
+    settings: { bpm: 120, meter: '4/4', meterLocked: false, latencyMs: 0, clickFeel: 'normal' },
     audio: { offsetSec: 0, alignMode: 'none' },
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],
@@ -2633,6 +2639,8 @@ function gridFit(ts, P, sub) {
   }
   return best;
 }
+// kesin ölçüde sayılan vuruş (6/8: noktalı çeyrek → 2)
+const LOCK_BEATS = { '4/4': 4, '3/4': 3, '2/4': 2, '6/8': 2 };
 function estimateMeter(notes, bpm, opts = {}) {
   const out = { ok: false, candidates: [], reasons: [] };
   const ns = notes.filter((n) => n.t1 > n.t0).sort((a, b) => a.t0 - b.t0);
@@ -2703,16 +2711,25 @@ function estimateMeter(notes, bpm, opts = {}) {
   // aynı ölçünün iki okuması varsa birini tut
   const seen = new Set(), cs = [];
   for (const c of cand) { const k = c.meter + (c.bpm || ''); if (!seen.has(k)) { seen.add(k); cs.push(c); } }
-  const best = cs[0];
+  const guess = cs[0];
   const fam = (m) => (m === '4/4' || m === '2/4' ? 'duple' : m);
-  const second = cs.find((c) => fam(c.meter) !== fam(best.meter)); // 4/4 ↔ 2/4 aynı aile (ayrıca bildirilir)
-  const conf = best.score > 0 ? clamp((best.score - Math.max(0, second ? second.score : 0)) / best.score, 0, 1) : 0;
+  const second = cs.find((c) => fam(c.meter) !== fam(guess.meter)); // 4/4 ↔ 2/4 aynı aile (ayrıca bildirilir)
+  const conf = guess.score > 0 ? clamp((guess.score - Math.max(0, second ? second.score : 0)) / guess.score, 0, 1) : 0;
+  // ölçü kesin (kullanıcı seçti): tahmin yalnızca bilgi; ölçü başı / öncü / kayma bu ölçüye göre hesaplanır
+  const lock = opts.meter || null;
+  let best = guess;
+  if (lock) {
+    const M0 = LOCK_BEATS[lock] || 4;
+    best = cs.find((c) => c.meter === lock && !c.bpm && c.beats === M0) || { meter: lock, beats: M0, score: score[M0].s, downbeat: score[M0].p };
+    out.locked = true;
+    out.guess = { meter: guess.meter, bpm: guess.bpm || bpm, confidence: conf, unsupported: !!guess.unsupported };
+  }
   out.ok = true;
   out.feel = feel; out.phase = phi; out.beatSec = P;
-  out.meter = best.meter; out.bpm = best.bpm || bpm; out.unsupported = !!best.unsupported; out.note = best.note || null;
+  out.meter = best.meter; out.bpm = lock ? bpm : best.bpm || bpm; out.unsupported = !!best.unsupported; out.note = lock ? null : best.note || null;
   out.confidence = conf; out.candidates = cs.slice(0, 3).map((c) => ({ meter: c.meter, bpm: c.bpm || bpm, score: c.score, note: c.note || null, unsupported: !!c.unsupported }));
   // 2/4 ile 4/4 çoğu zaman ayırt edilemez (4/4 = iki 2/4)
-  out.ambiguous24 = (best.meter === '4/4' || best.meter === '2/4') && Math.abs(score[4].s - score[2].s) < 0.08;
+  out.ambiguous24 = !lock && (best.meter === '4/4' || best.meter === '2/4') && Math.abs(score[4].s - score[2].s) < 0.08;
   // ölçü başı (1. vuruş): faz + kaçıncı vuruş; zaman çizelgesinin ölçü çizgilerine göre kayma ve öncü
   const M = best.beats, beatP = best.bpm ? 60 / best.bpm : P;
   const down = phi + best.downbeat * P; // bir ölçü başının zamanı (saniye)
@@ -2738,7 +2755,7 @@ function estimateMeter(notes, bpm, opts = {}) {
   }
   out.onGrid = fit; out.gridZ = (fit - mean) / sd;
   if (out.gridZ < 2) out.reasons.push(`Notalar ${bpm} BPM ızgarasına yakın tempolardan daha iyi oturmuyor (%${Math.round(fit * 100)}; yakın tempolarda ortalama %${Math.round(mean * 100)}) — BPM yanlış olabilir; tahmin de bu yüzden güvenilmez.`);
-  if (conf < 0.12) out.reasons.push('Vurgular iki ölçüye de benzer uyuyor; tahmin zayıf — ölçüyü kendin seçebilirsin.');
+  if (conf < 0.12 && !lock) out.reasons.push('Vurgular iki ölçüye de benzer uyuyor; tahmin zayıf — ölçüyü kendin seçebilirsin.');
   return out;
 }
 
@@ -2846,9 +2863,10 @@ function suggestDrumLoop(notes, settings, est = null) {
   res.best = b || null;
   // ---- "uygun loop yok" kararı
   if (ns.length < 8) res.reasons.push(`Melodide ${ns.length} nota var; vurgulara göre seçim için en az 8 gerekir (seçim yalnızca tempoya göre).`);
-  if (est && est.ok && est.meter !== meter && est.confidence >= 0.2) res.reasons.push(`Melodinin vurguları ${est.meter} ölçüsüne daha çok benziyor ama proje ${meter}; loop proje ölçüsüne göre seçildi.`);
+  const locked = !!settings.meterLocked;
+  if (!locked && est && est.ok && est.meter !== meter && est.confidence >= 0.2) res.reasons.push(`Melodinin vurguları ${est.meter} ölçüsüne daha çok benziyor ama proje ${meter}; loop proje ölçüsüne göre seçildi.`);
   if (est && est.ok && est.gridZ < 2) res.reasons.push(`Melodi ${bpm} BPM ızgarasına oturmuyor; önce BPM'i kontrol et (oynatırken metronomu açıp dinle).`);
-  if (est && est.unsupported) res.reasons.push(`Melodi ${est.meter} gibi görünüyor; bu ölçü için loop yok.`);
+  if (!locked && est && est.unsupported) res.reasons.push(`Melodi ${est.meter} gibi görünüyor; bu ölçü için loop yok.`);
   if (b) {
     if (b.tempo < 0.5) res.reasons.push(`${bpm} BPM ${meter} için hiçbir loop'un tempo aralığına uymuyor (en yakın: ${b.loop.name}, ${b.loop.bpm[0]}–${b.loop.bpm[1]}).`);
     if (!b.feelOk) res.reasons.push(feel === 'triple' ? `Melodi üçleme (shuffle/swing) hisli; ${meter} için üçleme hisli loop yok.` : `En iyi loop'un hissi melodiye uymuyor.`);
@@ -2864,7 +2882,7 @@ function suggestDrumLoop(notes, settings, est = null) {
     'Mini DAW için yeni bir davul loop\'u istiyorum.',
     `Ölçü: ${meter} · Tempo: ${bpm} BPM (${meter === '6/8' ? 'noktalı çeyrek' : 'çeyrek'}) · His: ${feel === 'triple' ? 'üçleme (shuffle/swing)' : "düz 8'lik/16'lık"}`,
     mp ? `Melodinin ölçü içi vurgu profili (${steps16} adım, 0–9): ${PROFILE_DIGITS(mp)}` : '',
-    est && est.ok ? `Ölçü tahmini: ${est.meter} (güven %${Math.round(est.confidence * 100)})` : '',
+    locked ? 'Ölçü kesin (kullanıcı belirledi).' : est && est.ok ? `Ölçü tahmini: ${est.meter} (güven %${Math.round(est.confidence * 100)})` : '',
     `Neden mevcutlar uymadı: ${(blocking.length ? blocking : res.reasons).join(' ') || '—'}`,
     `Biçim: { id, name, meter: '${meter}', spb, feel, bpm: [min, max], K: '…', S: '…', H: '…' } (src/drums.js DRUM_LOOPS)`,
   ].filter(Boolean).join('\n');
@@ -3091,7 +3109,7 @@ function estimateFromTaps(taps, notes, opts = {}) {
   const hyps = [];
   for (const [mult, prior, lbl] of [[1, 0.15, 'her değişim ölçü başında'], [2, 0.06, 'değişimler ölçü başı ve ortasında'], [0.5, 0.03, 'değişimler iki ölçüde bir']]) {
     const bar = u * mult;
-    for (const [meter, beats] of [['4/4', 4], ['3/4', 3], ['2/4', 2], ['6/8', 2]]) {
+    for (const [meter, beats] of [['4/4', 4], ['3/4', 3], ['2/4', 2], ['6/8', 2]].filter(([m]) => !opts.lockMeter || m === opts.lockMeter)) {
       const bpm = (60 * beats) / bar;
       if (bpm < 50 || bpm > 200) continue;
       const est = nts.length >= 8 ? C.estimateMeter(nts, bpm) : null;
@@ -4748,7 +4766,7 @@ function addTap() {
 function tapEstimate() {
   if (!S.d || !S.proj.taps || S.proj.taps.length < 3) return null;
   const notes = S.d.notes.map((n) => ({ t0: n.tl0 + S.d.off, t1: n.tl1 + S.d.off }));
-  return C.estimateFromTaps(S.proj.taps, notes, { bpm: S.proj.settings.bpm, meter: S.proj.settings.meter });
+  return C.estimateFromTaps(S.proj.taps, notes, { bpm: S.proj.settings.bpm, meter: S.proj.settings.meter, lockMeter: S.proj.settings.meterLocked ? S.proj.settings.meter : null });
 }
 function renderTaps() {
   const box = $('#tapInfo');
@@ -4806,7 +4824,8 @@ function analyzeDrums() {
   const ns = drumNotes();
   // click'le kaydedildiyse ya da test melodisiyse ızgara zaten doğru: vuruş fazını tahmin etme
   const fixedPhase = S.proj.audio.source === 'test' || (S.proj.audio.source === 'record' && S.proj.audio.alignMode === 'none');
-  S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase }) : null;
+  const meter = S.proj.settings.meterLocked ? S.proj.settings.meter : null; // kesin ölçü: tahmin bu ölçüye göre ölçü başı / öncü bulur
+  S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase, meter }) : null;
   S.drumSug = C.suggestDrumLoop(ns, S.proj.settings, S.meterEst);
 }
 function currentLoop() {
@@ -4821,7 +4840,14 @@ function renderDrums() {
   let mh = '';
   if (!est) mh = '<p class="hint">Ölçü tahmini için önce kayıt / analiz.</p>';
   else if (!est.ok) mh = `<div class="st-warn">⚠ ${esc(est.reasons.join(' '))}</div>`;
-  else {
+  else if (est.locked) {
+    const shifted = Math.abs(est.shiftSec) > 0.03, gu = est.guess;
+    mh = `<div class="adv-opt"><b>Ölçü: ${esc(set.meter)}, ${set.bpm} BPM — kesin (senin seçimin)</b> · his: ${est.feel === 'triple' ? 'üçleme (shuffle / 6/8)' : "düz (8'lik)"}
+      <div class="hint">Vokal ${est.firstBeat === 1 ? 'ölçü başında (1. vuruşta)' : `${String(est.firstBeat).replace('.5', '. vuruşun ve\'sinde').replace(/^(\d)$/, '$1. vuruşta')} (öncü)`} başlıyor${shifted ? ` — ölçü çizgileri şu an ${Math.abs(est.shiftSec).toFixed(2)} s kayık görünüyor` : ''}.</div>
+      ${gu && gu.meter !== set.meter ? `<div class="hint">ℹ Melodinin vurgularından tahmin ${esc(gu.meter)}${gu.bpm !== set.bpm ? ` (${gu.bpm} BPM)` : ''} olurdu (güven %${Math.round(gu.confidence * 100)}) — ölçü kesin olduğu için yok sayıldı.</div>` : ''}
+      ${est.reasons.map((r) => `<div class="hint">${esc(r)}</div>`).join('')}
+      ${shifted ? `<div class="row"><button class="accent" id="btnMeterApply">Ölçü çizgilerini hizala (${esc(set.meter)} kalır)</button></div>` : ''}</div>`;
+  } else {
     const differs = est.meter !== set.meter || (est.bpm && est.bpm !== set.bpm);
     const shifted = Math.abs(est.shiftSec) > 0.03;
     const others = est.candidates.slice(1).map((c) => `${c.meter}${c.bpm !== set.bpm ? ` (${c.bpm} BPM)` : ''}`).join(', ');
@@ -4861,7 +4887,7 @@ $('#meterEst').addEventListener('click', (e) => {
   if (!e.target.closest('#btnMeterApply') || !S.meterEst) return;
   const est = S.meterEst, set = S.proj.settings;
   const before = `${set.meter}, ${set.bpm} BPM`;
-  set.meter = est.meter; if (est.bpm) set.bpm = est.bpm;
+  if (!est.locked) { set.meter = est.meter; if (est.bpm) set.bpm = est.bpm; } // kesin ölçüde yalnızca ölçü çizgileri hizalanır
   if (Math.abs(est.shiftSec) > 0.03) {
     S.proj.audio.offsetSec += est.shiftSec;
     S.proj.audio.alignMode = 'none';
@@ -6261,7 +6287,10 @@ $('#altBox').addEventListener('change', (e) => {
 // ---------------------------------------------------------------- giriş alanları
 function syncInputs() {
   const p = S.proj;
-  $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
+  $('#inBpm').value = p.settings.bpm; $('#inLatency').value = p.settings.latencyMs;
+  $$('.meter-sel').forEach((el) => { el.value = p.settings.meter; });
+  $$('.meter-lock').forEach((el) => { el.checked = !!p.settings.meterLocked; });
+  $$('.meter-info').forEach((el) => { el.textContent = `${p.settings.bpm} BPM · ${p.settings.meterLocked ? 'kesin (tahmin değiştirmez)' : 'tahmin önerebilir'}`; });
   const gq = C.makeGrid(p.settings);
   $('#inClickFeel').value = p.settings.clickFeel || 'normal';
   $('#inOnlyMarked').checked = !!p.chordOpts.onlyMarked;
@@ -6300,7 +6329,16 @@ function syncInputs() {
 }
 const onNum = (id, fn) => $(id).addEventListener('change', (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) fn(v); });
 onNum('#inBpm', (v) => { S.proj.settings.bpm = C.clamp(v, 30, 300); applyAlign(); syncInputs(); refresh(); });
-$('#inMeter').addEventListener('change', (e) => { /* BPM birimi syncInputs'ta güncellenir */ S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
+// ölçü: 1. adım, quantize ve davul panelindeki seçiciler aynı ayarı değiştirir; elle seçmek ölçüyü kesinleştirir
+function setMeter(m, lock = true) {
+  const set = S.proj.settings, before = set.meter;
+  set.meter = m; if (lock) set.meterLocked = true;
+  S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[m].split);
+  applyAlign(); syncInputs(); refresh(); /* BPM birimi syncInputs'ta güncellenir */
+  if (before !== m || lock) status(`Ölçü ${m}${set.meterLocked ? ' (kesin: tahmin bunu değiştirmez; davul loop\'ları ve quantize bu ölçüyle)' : ''}.`);
+}
+$$('.meter-sel').forEach((el) => el.addEventListener('change', (e) => setMeter(e.target.value)));
+$$('.meter-lock').forEach((el) => el.addEventListener('change', (e) => { S.proj.settings.meterLocked = e.target.checked; syncInputs(); refresh(); status(e.target.checked ? `Ölçü ${S.proj.settings.meter} kesin — tahmin yalnızca bilgi olarak gösterilir.` : 'Ölçü kesin değil — davul paneli melodiden ölçü tahmin edip önerecek.'); }));
 onNum('#inLatency', (v) => { S.proj.settings.latencyMs = v; refresh(); });
 onNum('#inOffset', (v) => { S.proj.audio.offsetSec = v / 1000; S.proj.audio.alignMode = 'none'; $('#inAlign').value = 'none'; refresh(); });
 $('#inPickupBeat').addEventListener('change', (e) => { S.proj.audio.pickupBeat = +e.target.value; S.proj.audio.alignMode = 'pickup'; applyAlign(); syncInputs(); refresh(); });

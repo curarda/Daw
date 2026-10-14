@@ -45,6 +45,8 @@ function gridFit(ts, P, sub) {
   }
   return best;
 }
+// kesin ölçüde sayılan vuruş (6/8: noktalı çeyrek → 2)
+const LOCK_BEATS = { '4/4': 4, '3/4': 3, '2/4': 2, '6/8': 2 };
 function estimateMeter(notes, bpm, opts = {}) {
   const out = { ok: false, candidates: [], reasons: [] };
   const ns = notes.filter((n) => n.t1 > n.t0).sort((a, b) => a.t0 - b.t0);
@@ -115,16 +117,25 @@ function estimateMeter(notes, bpm, opts = {}) {
   // aynı ölçünün iki okuması varsa birini tut
   const seen = new Set(), cs = [];
   for (const c of cand) { const k = c.meter + (c.bpm || ''); if (!seen.has(k)) { seen.add(k); cs.push(c); } }
-  const best = cs[0];
+  const guess = cs[0];
   const fam = (m) => (m === '4/4' || m === '2/4' ? 'duple' : m);
-  const second = cs.find((c) => fam(c.meter) !== fam(best.meter)); // 4/4 ↔ 2/4 aynı aile (ayrıca bildirilir)
-  const conf = best.score > 0 ? clamp((best.score - Math.max(0, second ? second.score : 0)) / best.score, 0, 1) : 0;
+  const second = cs.find((c) => fam(c.meter) !== fam(guess.meter)); // 4/4 ↔ 2/4 aynı aile (ayrıca bildirilir)
+  const conf = guess.score > 0 ? clamp((guess.score - Math.max(0, second ? second.score : 0)) / guess.score, 0, 1) : 0;
+  // ölçü kesin (kullanıcı seçti): tahmin yalnızca bilgi; ölçü başı / öncü / kayma bu ölçüye göre hesaplanır
+  const lock = opts.meter || null;
+  let best = guess;
+  if (lock) {
+    const M0 = LOCK_BEATS[lock] || 4;
+    best = cs.find((c) => c.meter === lock && !c.bpm && c.beats === M0) || { meter: lock, beats: M0, score: score[M0].s, downbeat: score[M0].p };
+    out.locked = true;
+    out.guess = { meter: guess.meter, bpm: guess.bpm || bpm, confidence: conf, unsupported: !!guess.unsupported };
+  }
   out.ok = true;
   out.feel = feel; out.phase = phi; out.beatSec = P;
-  out.meter = best.meter; out.bpm = best.bpm || bpm; out.unsupported = !!best.unsupported; out.note = best.note || null;
+  out.meter = best.meter; out.bpm = lock ? bpm : best.bpm || bpm; out.unsupported = !!best.unsupported; out.note = lock ? null : best.note || null;
   out.confidence = conf; out.candidates = cs.slice(0, 3).map((c) => ({ meter: c.meter, bpm: c.bpm || bpm, score: c.score, note: c.note || null, unsupported: !!c.unsupported }));
   // 2/4 ile 4/4 çoğu zaman ayırt edilemez (4/4 = iki 2/4)
-  out.ambiguous24 = (best.meter === '4/4' || best.meter === '2/4') && Math.abs(score[4].s - score[2].s) < 0.08;
+  out.ambiguous24 = !lock && (best.meter === '4/4' || best.meter === '2/4') && Math.abs(score[4].s - score[2].s) < 0.08;
   // ölçü başı (1. vuruş): faz + kaçıncı vuruş; zaman çizelgesinin ölçü çizgilerine göre kayma ve öncü
   const M = best.beats, beatP = best.bpm ? 60 / best.bpm : P;
   const down = phi + best.downbeat * P; // bir ölçü başının zamanı (saniye)
@@ -150,7 +161,7 @@ function estimateMeter(notes, bpm, opts = {}) {
   }
   out.onGrid = fit; out.gridZ = (fit - mean) / sd;
   if (out.gridZ < 2) out.reasons.push(`Notalar ${bpm} BPM ızgarasına yakın tempolardan daha iyi oturmuyor (%${Math.round(fit * 100)}; yakın tempolarda ortalama %${Math.round(mean * 100)}) — BPM yanlış olabilir; tahmin de bu yüzden güvenilmez.`);
-  if (conf < 0.12) out.reasons.push('Vurgular iki ölçüye de benzer uyuyor; tahmin zayıf — ölçüyü kendin seçebilirsin.');
+  if (conf < 0.12 && !lock) out.reasons.push('Vurgular iki ölçüye de benzer uyuyor; tahmin zayıf — ölçüyü kendin seçebilirsin.');
   return out;
 }
 
@@ -258,9 +269,10 @@ function suggestDrumLoop(notes, settings, est = null) {
   res.best = b || null;
   // ---- "uygun loop yok" kararı
   if (ns.length < 8) res.reasons.push(`Melodide ${ns.length} nota var; vurgulara göre seçim için en az 8 gerekir (seçim yalnızca tempoya göre).`);
-  if (est && est.ok && est.meter !== meter && est.confidence >= 0.2) res.reasons.push(`Melodinin vurguları ${est.meter} ölçüsüne daha çok benziyor ama proje ${meter}; loop proje ölçüsüne göre seçildi.`);
+  const locked = !!settings.meterLocked;
+  if (!locked && est && est.ok && est.meter !== meter && est.confidence >= 0.2) res.reasons.push(`Melodinin vurguları ${est.meter} ölçüsüne daha çok benziyor ama proje ${meter}; loop proje ölçüsüne göre seçildi.`);
   if (est && est.ok && est.gridZ < 2) res.reasons.push(`Melodi ${bpm} BPM ızgarasına oturmuyor; önce BPM'i kontrol et (oynatırken metronomu açıp dinle).`);
-  if (est && est.unsupported) res.reasons.push(`Melodi ${est.meter} gibi görünüyor; bu ölçü için loop yok.`);
+  if (!locked && est && est.unsupported) res.reasons.push(`Melodi ${est.meter} gibi görünüyor; bu ölçü için loop yok.`);
   if (b) {
     if (b.tempo < 0.5) res.reasons.push(`${bpm} BPM ${meter} için hiçbir loop'un tempo aralığına uymuyor (en yakın: ${b.loop.name}, ${b.loop.bpm[0]}–${b.loop.bpm[1]}).`);
     if (!b.feelOk) res.reasons.push(feel === 'triple' ? `Melodi üçleme (shuffle/swing) hisli; ${meter} için üçleme hisli loop yok.` : `En iyi loop'un hissi melodiye uymuyor.`);
@@ -276,7 +288,7 @@ function suggestDrumLoop(notes, settings, est = null) {
     'Mini DAW için yeni bir davul loop\'u istiyorum.',
     `Ölçü: ${meter} · Tempo: ${bpm} BPM (${meter === '6/8' ? 'noktalı çeyrek' : 'çeyrek'}) · His: ${feel === 'triple' ? 'üçleme (shuffle/swing)' : "düz 8'lik/16'lık"}`,
     mp ? `Melodinin ölçü içi vurgu profili (${steps16} adım, 0–9): ${PROFILE_DIGITS(mp)}` : '',
-    est && est.ok ? `Ölçü tahmini: ${est.meter} (güven %${Math.round(est.confidence * 100)})` : '',
+    locked ? 'Ölçü kesin (kullanıcı belirledi).' : est && est.ok ? `Ölçü tahmini: ${est.meter} (güven %${Math.round(est.confidence * 100)})` : '',
     `Neden mevcutlar uymadı: ${(blocking.length ? blocking : res.reasons).join(' ') || '—'}`,
     `Biçim: { id, name, meter: '${meter}', spb, feel, bpm: [min, max], K: '…', S: '…', H: '…' } (src/drums.js DRUM_LOOPS)`,
   ].filter(Boolean).join('\n');
