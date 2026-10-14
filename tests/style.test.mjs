@@ -382,6 +382,19 @@ await step('Tab yazımları: F(b5) = majör üçlü + ♭5, C4 = Csus4, m(b5) = 
   return 'F(b5) → majör + ♭5 (parantezsiz Fb5 = F♭ power chord) · C4 → sus4 · Am(b5) → dim · G7-5 → 7♭5';
 });
 
+await step('Tablo dışı ekler parça parça okunur (Bbadd#11, D6sus2, Cmaj7#11b9 …); anlamsız ek reddedilir', () => {
+  const P = (x) => { const r = Style.parseSymbol(x); return r.ok ? `${r.tq}:${r.color}` : 'yok'; };
+  const got = ['Bbadd#11', 'D6sus2', 'Cmaj7#11b9', 'Am9b5', 'E7sus4b9', 'Gm6add9', 'Cmmaj9', 'F#m11b5', 'Cxyz', 'C#q', 'Cadd', 'Gsus9b'].map(P);
+  assert.deepEqual(got, ['M:add#11', 'x:6sus2', 'M:maj7#11b9', 'd:ø9', 'x:7sus4b9', 'm:6add9', 'm:maj9', 'd:ø11', 'yok', 'yok', 'yok', 'yok']);
+  assert.deepEqual(Style.colorTones('6sus2').sort((a, b) => a - b), [2, 9]);
+  assert.deepEqual(Style.colorTones('add#11'), [6]);
+  // D6sus2: çekirdek sesleri sus2'ye göre (sus4 sanılmaz)
+  const sec = { chords: ['D6sus2'], bars: null };
+  const it = Style.analyzeSection({ fixes: {} }, sec, { tonic: 2, mode: 'major' }).items[0];
+  assert.equal(it.sus, true);
+  return got.slice(0, 8).map((g, i) => `${['Bbadd#11', 'D6sus2', 'Cmaj7#11b9', 'Am9b5', 'E7sus4b9', 'Gm6add9', 'Cmmaj9', 'F#m11b5'][i]} → ${g}`).join(' · ');
+});
+
 await step('sus = belirsiz nitelik; aynı kökte (Csus4 → C, C → Cmaj7) süre birleşir; bas hareketi ayrı sayılır', () => {
   const r = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'Sus', title: 'Bas', sections: [
     { label: 'A', chords: ['Csus4', 'C', 'Cmaj7', 'C/B', 'C/Bb', 'F', 'Fsus2'], bars: [1, 1, 1, 1, 1, 2, 1], key_proposals: [{ tonic: 'C', mode: 'major' }] }] }));
