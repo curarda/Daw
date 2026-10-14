@@ -22,6 +22,30 @@ const ds = Style.newDataset();
 const L = (k, mode) => Style.coreLabel(k, mode);
 const confirmAll = (song) => song.sections.forEach((s) => { s.confirmed = true; });
 
+await step('İçe aktarma: Claude yanıtı ```json kod bloğunda / önünde açıklamayla gelse de okunur; "pre_chorus" ön nakarat sayılır', () => {
+  const body = JSON.stringify({ schema_version: 1, artist: 'Keane', title: 'Somewhere Only We Know', source_notes: { capo: null, tuning: null, other: null }, warnings: [],
+    sections: [
+      { label: 'Pre-Chorus', type: 'pre_chorus', chords: ['F#m', 'C#m', 'D', 'E'], bars: null, key_proposals: [{ tonic: 'A', mode: 'major', confidence: 0.75, reason: 'r' }],
+        degrees_preview: ['vi', 'iii', 'IV', 'V'].map((c) => ({ core: c, color: null, bass: null })) },
+      { label: 'Outro', type: 'outro', chords: ['E', 'D#', 'D', 'A/C#'], bars: null, key_proposals: [{ tonic: 'A', mode: 'major', confidence: 0.85, reason: 'r' }],
+        degrees_preview: [{ core: 'V', color: null, bass: null }, { core: '♯IV', color: null, bass: null }, { core: 'IV', color: null, bass: null }, { core: 'I', color: null, bass: 'III' }] }] }, null, 2);
+  const variants = { duz: body, blok: '```json\n' + body + '\n```', aciklamali: 'İşte JSON:\n\n```json\n' + body + '\n```\nUmarım işe yarar.', blokSiz: 'Dönüştürdüm:\n' + body };
+  for (const [k, txt] of Object.entries(variants)) {
+    assert.ok(Style.looksLikeJson(txt), k + ' JSON sanılmalı');
+    const r = Style.parseImportJson(txt);
+    assert.deepEqual(r.errors, [], k);
+    assert.equal(r.songs[0].sections.length, 2);
+  }
+  const song = Style.parseImportJson(variants.aciklamali).songs[0];
+  assert.equal(Core.normSectionType(song.sections[0].type), 'prechorus');
+  for (const sec of song.sections) {
+    const cmp = Style.comparePreview(song, sec, sec.proposals[0]);
+    assert.ok(cmp.valid && cmp.mismatches.length === 0, sec.name + ': ' + JSON.stringify(cmp.mismatches));
+  }
+  assert.ok(!Style.looksLikeJson('[Verse: C# phrygian] C#m D'), 'düz metin şema JSON sanılmamalı');
+  return '4 biçim (düz, ```json bloğu, açıklamalı, bloksuz) hatasız · pre_chorus → ön nakarat · ♯IV (D#) ve I/III önizlemesi uyuşuyor';
+});
+
 await step('a) içe aktarma + onaysız bölüm istatistiğe girmez', () => {
   const r = Style.parseImportJson(JSON.stringify(TEST_JSON));
   assert.deepEqual(r.errors, []);

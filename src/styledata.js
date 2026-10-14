@@ -231,9 +231,20 @@ function validateSongJson(obj, path = '') {
   return errs;
 }
 // JSON metni → { songs:[kayıt], errors:[yol: mesaj] }
+// Claude chat'in yanıtı çoğu zaman ```json kod bloğu içinde ya da önünde bir cümleyle gelir: JSON'u ayıkla
+function extractJson(text) {
+  const t = String(text || '').replace(/^\uFEFF/, '');
+  const fence = /```(?:json|JSON)?\s*\n?([\s\S]*?)```/.exec(t);
+  if (fence && /[{[]/.test(fence[1])) return fence[1].trim();
+  const a = t.search(/\{|\[\s*[{\]]/), b = Math.max(t.lastIndexOf('}'), t.lastIndexOf(']'));
+  if (a > 0 && b > a) return t.slice(a, b + 1);
+  return t.trim();
+}
+// "[" ile başlayan düz metin şemayı ("[Verse: C# phrygian] …") JSON dizisi sanma: dizi "[" + "{" / "]" ile başlar
+const looksLikeJson = (text) => /^\s*(\{|\[\s*[{\]])/.test(text) || /```/.test(text) || /"schema_version"\s*:/.test(text);
 function parseImportJson(text) {
   let obj;
-  try { obj = JSON.parse(text); } catch (e) { return { songs: [], errors: [`JSON sözdizimi: ${e.message}`] }; }
+  try { obj = JSON.parse(extractJson(text)); } catch (e) { return { songs: [], errors: [`JSON sözdizimi: ${e.message}`] }; }
   const errors = [];
   if (!obj || typeof obj !== 'object') return { songs: [], errors: ['kök: nesne olmalı'] };
   if (obj.schema_version !== 1) errors.push(`schema_version: 1 olmalı (${JSON.stringify(obj.schema_version)} geldi)`);
@@ -1258,7 +1269,7 @@ function checkFile(obj, schema) {
 root.Style = {
   parseSymbol, parseMode, parseKeyText, keyLabel, modeName, sameKey, romanOf, parseRoman, coreKey, coreParts, coreLabel, degreeLabel, argmaxKey,
   analyzeChord, analyzeSection, detectLoop, comparePreview, previewFor, unknownSymbols, QUALITY_NAMES,
-  validateSongJson, parseImportJson, parseImportText, songKey, findDuplicate,
+  validateSongJson, parseImportJson, extractJson, looksLikeJson, parseImportText, songKey, findDuplicate,
   buildStats, modeSongCounts, nSongs, ALL, confirmedKey,
   MODEL_DEFAULTS, PROG_DEFAULTS, buildModel, diatonicCores, modeColors, homeCore, suggestKAlpha, songTransitions,
   chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,

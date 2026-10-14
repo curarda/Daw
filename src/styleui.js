@@ -128,7 +128,7 @@ function addSongs(songs) {
 }
 function doImport(text, fmt) {
   SS.lastText = text;
-  const isJson = fmt === 'json' || (fmt === 'auto' && /^\s*[{[]/.test(text));
+  const isJson = fmt === 'json' || (fmt === 'auto' && St.looksLikeJson(text));
   const r = isJson ? St.parseImportJson(text) : St.parseImportText(text, { artist: ($('#stArtist') || {}).value, title: ($('#stTitle') || {}).value });
   SS.importErrors = r.errors;
   if (r.errors.length) { A.status(`İçe aktarma: ${r.errors.length} şema hatası (alanlar listelendi).`, 'err'); render(); return; }
