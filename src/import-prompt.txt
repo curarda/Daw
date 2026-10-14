@@ -27,8 +27,8 @@ Aşağıya yapıştırdığım akor şemasını YALNIZCA şu JSON biçimine dön
 Kurallar:
 - Yanıtın YALNIZCA tek bir ```json kod bloğu olsun; öncesine ya da sonrasına açıklama yazma. Söylemek istediğin her şey warnings içine.
 - Sadece yapıştırılan akor şemasını dönüştür. Şema yapıştırılmamışsa ya da eksikse akor üretme, hafızandan tamamlama; eksik kısmı warnings'e yaz.
-- artist ve title: şemada ya da mesajımda yazdığı gibi al (yazım hatasını düzeltebilirsin, warnings'e not düş). İkisi de boş bırakılamaz; bulamazsan "Bilinmiyor" yaz ve warnings'e ekle.
-- Kaynak linkini source_notes.other alanına yaz. Link yoksa null bırak ve warnings'e yaz.
+- artist ve title: şemada ya da mesajımda yazdığı gibi al (yazım ve büyük harf hatalarını sessizce düzelt). İkisi de boş bırakılamaz; bulamazsan "Bilinmiyor" yaz ve warnings'e ekle.
+- Kaynak linkini source_notes.other alanına yaz. Link yoksa null bırak.
 - source_notes: capo (sayı ya da null), tuning (metin ya da null). Akorları kapoya göre dönüştürme; kaynaktaki gibi yaz.
 - Bölümler: şarkıda çalındığı sırayla, tekrar eden bölümler dahil (her tekrar ayrı bölüm). label kaynaktaki ad, tekrarlarda numaralı ("Chorus 2"). type şu listeden: intro, verse, pre_chorus, chorus, post_chorus, bridge, instrumental, outro, other.
 - Tekrar işaretlerini aç: "x2", "(2x)", "repeat" gibi işaretlerde kalıbı o kadar kez yaz. Bir bölüm yalnızca adıyla anılıp akorları yazılmamışsa ("[Chorus]", "Repeat Chorus"), akorları AYNI şemadaki önceki bölümden kopyala ve warnings'e yaz.
@@ -38,4 +38,4 @@ Kurallar:
 - degrees_preview: ilk öneriye göre, chords ile aynı uzunlukta; her öğe üç katman:
   core: Romen rakamı merkezin MAJÖR gamına göre — büyük harf majör, küçük minör, ° dim, + aug; power chord ve sus akorlarında nitelik belirsizdir, kök derecesini büyük harfle yaz (ör. "♭VII", "V").
   color: ek (maj7, 7, sus2, sus4, add9, 5, m7b5 …) ya da null. bass: slash akorda bas derecesi (ör. "III") ya da null. N.C. için core "N.C.".
-- Emin olmadığın her şeyi warnings içine yaz.
+- warnings'e YALNIZCA akorları, sıralarını, sürelerini ya da tonu etkileyen belirsizlikleri ve doğrulanması gereken yerleri yaz (ör. belirsiz tekrar işareti, eksik sayfa, niteliği belirsiz akor), hangi bölümde olduğunu belirterek. Şunları YAZMA: link / kapo / akort boş kaldı; yazım düzeltildi; bölümleri numaralandırdın; type listede olmadığı için başka tip seçtin; bars null bıraktın; Romen rakamlarını nasıl yazdığın — bunlar kurallar gereği zaten beklenen şeyler.
