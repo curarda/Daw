@@ -476,6 +476,7 @@ await step('Süreli Viterbi: kısıtlar, 3 farklı alternatif, doğrulama setind
 
 await step('Bölüm tipi normalizasyonu + mod × tip × havuz hiyerarşik havuzlama', () => {
   const T = Core.normSectionType;
+  assert.deepEqual(['pre_chorus', 'post_chorus', 'Pre.Chorus'].map(T), ['prechorus', 'postchorus', 'prechorus'], 'alt çizgili / noktalı yazım');
   assert.deepEqual(['Verse 2', 'Kıta', 'Nakarat', 'Refrain', 'Pre-Chorus', 'Ön Nakarat', 'Post-Chorus', 'Köprü', 'Middle 8', 'Intro', 'Outro', 'Solo', 'Ara', 'xyz'].map(T),
     ['verse', 'verse', 'chorus', 'chorus', 'prechorus', 'prechorus', 'postchorus', 'bridge', 'bridge', 'intro', 'outro', 'instrumental', 'instrumental', 'other']);
   // 10 majör şarkı: verse'lerde I→IV, nakaratlarda I→V

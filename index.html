@@ -972,9 +972,9 @@ const TYPE_PATTERNS = [
   ['instrumental', /(solo|instrumental|enstrümantal|enstrumantal|interlude|ara\s*(müzik|bölüm)?|break(down)?|riff)/],
 ];
 function normSectionType(s) {
-  // "Intro" → tr küçük harfte "ıntro" olur; eşleştirmeden önce Türkçe harfleri ASCII'ye indir
+  // "Intro" → tr küçük harfte "ıntro" olur; eşleştirmeden önce Türkçe harfleri ASCII'ye indir; "pre_chorus" → "pre chorus"
   const t = String(s || '').toLocaleLowerCase('tr').trim()
-    .replace(/ı/g, 'i').replace(/ç/g, 'c').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u');
+    .replace(/[_.]+/g, ' ').replace(/ı/g, 'i').replace(/ç/g, 'c').replace(/ş/g, 's').replace(/ğ/g, 'g').replace(/ö/g, 'o').replace(/ü/g, 'u');
   if (!t) return 'other';
   if (SECTION_TYPES.includes(t)) return t;
   for (const [type, re] of TYPE_PATTERNS) if (re.test(t)) return type;
