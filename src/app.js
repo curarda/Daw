@@ -1861,9 +1861,9 @@ function syncInputs() {
   document.querySelectorAll('input[name=atTarget]').forEach((r) => { r.checked = r.value === (p.autotune.target || 'semitone'); });
   $('#scaleWarn').hidden = p.autotune.target !== 'scale';
   $('#inSkipChrom').disabled = p.autotune.target !== 'scale';
-  $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
+  $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars; $('#inMaxBarsMin').value = p.chordOpts.maxBarsMin ?? p.chordOpts.maxBars;
   $('#inEngine').value = p.chordOpts.engine || 'greedy';
-  $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
+  $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
   $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
   p.quant = p.quant || { grid: '1/8', strength: 100 };
   $('#inQuantGrid').value = p.quant.grid; $('#inQuantStrength').value = p.quant.strength; $('#outQuantStrength').textContent = '%' + p.quant.strength;
@@ -1990,8 +1990,9 @@ $('#btnClearManual').onclick = () => { clearEdits('move'); clearEdits('fine'); }
 $('#editSummary').addEventListener('click', (e) => { const b = e.target.closest('button[data-clear]'); if (b) { clearEdits(b.dataset.clear); status('Kaldırıldı: ' + b.dataset.what + '.'); } });
 $('#btnClearLabels').onclick = () => { S.proj.noteEdits.forEach((e) => { e.label = null; }); cleanupEdits(); refresh(); };
 $('#inPct').addEventListener('input', (e) => { S.proj.chordOpts.changePct = +e.target.value; $('#outPct').textContent = '%' + e.target.value; refresh(); });
-onNum('#inMaxBars', (v) => { S.proj.chordOpts.maxBars = Math.max(1, Math.round(v)); refresh(); });
-onNum('#inHomeEvery', (v) => { S.proj.chordOpts.homeEvery = Math.max(0, Math.round(v)); refresh(); });
+// "aynı akor en fazla A–B ölçü": iki kutu birbirini geçemez (A > B yazılırsa diğeri onu izler)
+onNum('#inMaxBars', (v) => { const o = S.proj.chordOpts; o.maxBars = C.clamp(Math.round(v), 1, 32); if ((o.maxBarsMin ?? o.maxBars) > o.maxBars) o.maxBarsMin = o.maxBars; syncInputs(); refresh(); });
+onNum('#inMaxBarsMin', (v) => { const o = S.proj.chordOpts; o.maxBarsMin = C.clamp(Math.round(v), 1, 32); if (o.maxBarsMin > o.maxBars) o.maxBars = o.maxBarsMin; syncInputs(); refresh(); });
 $('#inEngine').addEventListener('change', (e) => { S.proj.chordOpts.engine = e.target.value; refresh(); });
 $('#inColorPen').addEventListener('input', (e) => { S.proj.chordOpts.colorPenalty = +e.target.value; $('#outColorPen').textContent = e.target.value; refresh(); });
 $('#btnModeLabel').onclick = () => setEditMode('label');

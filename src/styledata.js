@@ -1121,7 +1121,7 @@ function suggestSectionTransition(model, from, to, top = 3) {
 // Metrikler (yarım ölçü birimlerinde; N.C. hariç): core tam eşleşme, kök derecesi eşleşmesi, doğru akor ilk 3 adayda,
 // değişim noktası eşleşmesi (F1). Ayar (λ, λ_ritim, %X, M) şarkı bazlı dışarıda bırakmayla; raporlanan başarı ayarda
 // kullanılmamış şarkıdan gelir.
-const EVAL_GRID = { lambda: [0, 0.5, 1, 2], lambdaRhythm: [0, 1, 2], changePct: [10, 25, 40], homeEvery: [0, 2, 4] };
+const EVAL_GRID = { lambda: [0, 0.5, 1, 2], lambdaRhythm: [0, 1, 2], changePct: [10, 25, 40] };
 function newEvalSet() { return { schema: 'mini-daw-eval-set', version: 1, items: [], reference: null }; }
 function parseTruthChart(text, nBars) {
   const errors = [];
@@ -1165,7 +1165,7 @@ function runFinder(item, params, model) {
   const secs = item.sections.map((s) => Object.assign({}, s));
   const style = model ? makeStyleScorer(model, { lambda: params.lambda, lambdaRhythm: params.lambdaRhythm, temperature: 0 }) : null;
   // değerlendirmede yalnızca en iyi yol gerekir (ilk 3 metriği slot adaylarından gelir)
-  const opts = Object.assign({}, C.CHORD_DEFAULTS, { changePct: params.changePct, homeEvery: params.homeEvery, engine: params.engine || 'greedy', nBest: 1 }, style ? { style } : {});
+  const opts = Object.assign({}, C.CHORD_DEFAULTS, { changePct: params.changePct, engine: params.engine || 'greedy', nBest: 1 }, params.maxBars ? { maxBars: params.maxBars, maxBarsMin: params.maxBarsMin ?? params.maxBars } : {}, style ? { style } : {});
   return C.buildChords(notes, secs, g, opts, []);
 }
 function scoreItem(item, slots) {
@@ -1213,20 +1213,20 @@ function modelFor(item, dataset, settings, feedback) {
   const songs = dataset.songs.filter((s) => songKey(s) !== songKey(item));
   return buildModel({ songs }, settings, feedback);
 }
-function paramCombos(grid = EVAL_GRID, engine = 'greedy') {
+function paramCombos(grid = EVAL_GRID, engine = 'greedy', fixed = null) {
   const out = [];
-  for (const lambda of grid.lambda) for (const lambdaRhythm of grid.lambdaRhythm) for (const changePct of grid.changePct) for (const homeEvery of grid.homeEvery) out.push({ lambda, lambdaRhythm, changePct, homeEvery, engine });
+  for (const lambda of grid.lambda) for (const lambdaRhythm of grid.lambdaRhythm) for (const changePct of grid.changePct) out.push(Object.assign({ lambda, lambdaRhythm, changePct, engine }, fixed || {}));
   return out;
 }
 // items için: (1) verilen sabit ayarlarla sonuç, (2) iç içe şarkı-dışarıda ayar + ayarda kullanılmamış şarkıda ölçüm
 async function evaluateSet(items, { dataset = null, settings = {}, feedback = null, params, grid = EVAL_GRID, engine = 'greedy', onProgress } = {}) {
   const models = items.map((it) => modelFor(it, dataset, settings, feedback));
-  const fixedParams = Object.assign({ lambda: 1, lambdaRhythm: 1, changePct: 25, homeEvery: 2, engine }, params || {});
+  const fixedParams = Object.assign({ lambda: 1, lambdaRhythm: 1, changePct: 25, engine }, params || {});
   const fixedPer = items.map((it, i) => scoreItem(it, runFinder(it, fixedParams, models[i])));
   const out = { engine, fixed: { params: fixedParams, metrics: summarize(fixedPer), perItem: fixedPer.map((m, i) => ({ id: items[i].id, ...summarize([m]) })) }, tuned: null, warnings: [] };
   if (items.length < 2) { out.warnings.push('Şarkı bazlı dışarıda bırakma için en az 2 doğrulama şarkısı gerekli.'); return out; }
   if (items.length < 5) out.warnings.push(`Yalnızca ${items.length} doğrulama şarkısı var: ayarlı sonuç güvenilir değil.`);
-  const combos = paramCombos(grid, engine);
+  const combos = paramCombos(grid, engine, fixedParams.maxBars ? { maxBars: fixedParams.maxBars, maxBarsMin: fixedParams.maxBarsMin } : null);
   // her kombinasyonun her öğedeki ham sayıları bir kez hesaplanır
   const table = [];
   for (let c = 0; c < combos.length; c++) {

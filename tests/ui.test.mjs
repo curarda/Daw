@@ -126,7 +126,7 @@ try {
     const names = () => S(() => window.__daw.d.chords.map((c) => window.Core.chordName(c.chord, c.flats)));
     assert.equal(await page.inputValue('#inEngine'), 'viterbi');
     const v = await names();
-    assert.deepEqual(v.slice(0, 5), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7', 'C#m']);
+    assert.deepEqual(v.slice(0, 5), ['C#m', 'Dmaj7', 'Dmaj7', 'Dmaj7', 'C#m']); // ev akoru M kuralı yok: Dmaj7 sürer
     assert.equal(v[v.length - 1], 'Bm');
     const radios = page.locator('#altBox input[type=radio]');
     assert.equal(await radios.count(), 6);
@@ -139,23 +139,32 @@ try {
     return `${v.join(' · ')} · verse alternatif 2: ${alt.slice(0, 5).join(' · ')} · ${texts[0].replace(/\s+/g, ' ').trim()}`;
   });
 
-  await step('6) akorlar (ölçü ölçü motor): verse C#m | Dmaj7 | C#m | Dmaj7 C#m, nakarat sonu Bm; M ve renk cezası ayarları', async () => {
+  await step('6) akorlar (ölçü ölçü motor) + "aynı akor en fazla A–B ölçü" aralığı; M kutusu yok; renk cezası', async () => {
     await page.selectOption('#inEngine', 'greedy');
     const names = () => S(() => window.__daw.d.chords.map((c) => window.Core.chordName(c.chord, c.flats)));
     const ch = await names();
-    assert.deepEqual(ch.slice(0, 5), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7', 'C#m']);
+    assert.deepEqual(ch.slice(0, 5), ['C#m', 'Dmaj7', 'Dmaj7', 'Dmaj7', 'C#m']);
     assert.equal(ch[ch.length - 1], 'Bm');
-    await page.fill('#inHomeEvery', '0'); await page.dispatchEvent('#inHomeEvery', 'change');
-    const off = await names();
-    assert.equal(off[2], 'Dmaj7');
+    assert.equal(await page.locator('#inHomeEvery').count(), 0, 'ev akoru M kutusu kaldırıldı');
+    // aralık 1–1: her ölçüde akor değişir (Dmaj7 tek ölçüden uzun süremez)
+    await page.fill('#inMaxBars', '1'); await page.dispatchEvent('#inMaxBars', 'change');
+    assert.equal(await page.inputValue('#inMaxBarsMin'), '1', 'alt sınır üst sınırı geçemez');
+    const one = await names();
+    assert.equal(one[2], 'C#m', '1–1: ' + one.join(' '));
+    // 6–8: alt sınır yazılınca üst sınır onu izler
+    await page.fill('#inMaxBarsMin', '6'); await page.dispatchEvent('#inMaxBarsMin', 'change');
+    assert.equal(await page.inputValue('#inMaxBars'), '6');
+    await page.fill('#inMaxBars', '8'); await page.dispatchEvent('#inMaxBars', 'change');
+    assert.equal(await S(() => `${window.__daw.proj.chordOpts.maxBarsMin}-${window.__daw.proj.chordOpts.maxBars}`), '6-8');
     await page.locator('#inColorPen').fill('0.1');
     const pen = await names();
     assert.equal(pen[2], 'C#m');
     await page.locator('#inColorPen').fill('0');
-    await page.fill('#inHomeEvery', '2'); await page.dispatchEvent('#inHomeEvery', 'change');
+    await page.fill('#inMaxBarsMin', '4'); await page.dispatchEvent('#inMaxBarsMin', 'change');
+    await page.fill('#inMaxBars', '4'); await page.dispatchEvent('#inMaxBars', 'change');
     assert.deepEqual(await names(), ch);
     await page.selectOption('#inEngine', 'viterbi');
-    return `${ch.join(' · ')} | M=0: ${off.slice(0, 4).join(' · ')} | +ceza 0.1: ${pen.slice(0, 4).join(' · ')}`;
+    return `${ch.join(' · ')} | aralık 1–1: ${one.slice(0, 4).join(' · ')} | 6–8 kaydedildi | +ceza 0.1: ${pen.slice(0, 4).join(' · ')}`;
   });
 
   const box = await page.locator('#tl').boundingBox();
@@ -512,7 +521,7 @@ try {
     const n1 = await names();
     n0.forEach((x, i) => { if (i !== 1) assert.equal(n1[i], x, 'akor ' + i + ' değişti'); });
     assert.equal(n1[1], 'A');
-    assert.match(await page.textContent('#btnApplySug'), /\(1\)/);
+    assert.match(await page.textContent('#btnApplySug'), /\([1-9]\d*\)/);
     // bar 1: sabit + öneri ve neden
     await page.mouse.click(tl.x + (await mid(1)), cy);
     const insp = await page.textContent('#inspector');

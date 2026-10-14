@@ -202,8 +202,8 @@
       <div id="altBox"></div>
       <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
       <div class="grid2">
-        <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
-        <label title="Bu kadar ölçüde bir ev akoru duyulmalı; dolunca ev akoru %X şartı olmadan aday olur. 0 = kapalı">Ev akoru her M ölçüde<input type="number" id="inHomeEvery" min="0" max="16" value="2"></label>
+        <label title="Aynı akor en az A ölçüye kadar serbestçe sürebilir; A ile B arasında nerede değişeceğine motor melodiye göre karar verir; B'den uzun sürmez. Tek sayı için iki kutuya aynı değeri yaz. ✂ işaretlerin ve kilitlerin her zaman önceliklidir.">Aynı akor en fazla (ölçü)
+          <span class="range2"><input type="number" id="inMaxBarsMin" min="1" max="32" value="4" aria-label="aralığın alt sınırı"> – <input type="number" id="inMaxBars" min="1" max="32" value="4" aria-label="aralığın üst sınırı"></span></label>
       </div>
       <label title="7, 9/2, 11/4, 6 renk notalarının kök/3/5'e göre eksik puanı. 0 = ceza yok">Renk notası cezası <output id="outColorPen">0</output><input type="range" id="inColorPen" min="0" max="0.5" step="0.05" value="0"></label>
       <p class="hint">Akora tıklayın: en iyi 3 aday, melodi notalarının akordaki rolü, elle yazma ve kilitleme.</p>

@@ -266,7 +266,7 @@ const ACTIONS = {
     SS.evalBusy = true; render();
     try {
       SS.evalRes = await St.evaluateSet(SS.evalSet.items, { dataset: SS.dataset, settings: SS.settings, feedback: SS.feedback, engine: SS.evalEngine,
-        params: { lambda: SS.settings.lambda, lambdaRhythm: SS.settings.lambdaRhythm, changePct: A.S.proj.chordOpts.changePct, homeEvery: A.S.proj.chordOpts.homeEvery },
+        params: { lambda: SS.settings.lambda, lambdaRhythm: SS.settings.lambdaRhythm, changePct: A.S.proj.chordOpts.changePct, maxBars: A.S.proj.chordOpts.maxBars, maxBarsMin: A.S.proj.chordOpts.maxBarsMin ?? A.S.proj.chordOpts.maxBars },
         onProgress: (x) => A.status(`Doğrulama: ayar taraması %${Math.round(x * 100)}`, 'busy') });
       A.status('Doğrulama tamam.');
     } finally { SS.evalBusy = false; render(); }
@@ -628,12 +628,12 @@ function tabEval() {
   const R = SS.evalRes;
   const res = R ? `<h3>Sonuç — motor: ${esc(R.engine)}</h3>${R.warnings.map((w) => `<div class="st-warn">⚠ ${esc(w)}</div>`).join('')}
     <table class="st-t"><thead><tr><th></th><th>core tam eşleşme</th><th>kök derecesi</th><th>doğru akor ilk 3'te</th><th>değişim noktaları (F1)</th><th>birim</th></tr></thead><tbody>
-      ${row(`Sabit ayar (λ ${R.fixed.params.lambda}, λ_ritim ${R.fixed.params.lambdaRhythm}, %X ${R.fixed.params.changePct}, M ${R.fixed.params.homeEvery}) — tüm şarkılar`, R.fixed.metrics, ref && ref.fixed)}
+      ${row(`Sabit ayar (λ ${R.fixed.params.lambda}, λ_ritim ${R.fixed.params.lambdaRhythm}, %X ${R.fixed.params.changePct}, aynı akor ${R.fixed.params.maxBars ? `${R.fixed.params.maxBarsMin ?? R.fixed.params.maxBars}–${R.fixed.params.maxBars}` : '4'} ölçü) — tüm şarkılar`, R.fixed.metrics, ref && ref.fixed)}
       ${R.tuned ? row('Ayarlı — her şarkı, ayarında kullanılmadığı turda ölçüldü', R.tuned.metrics, ref && ref.tuned) : ''}
     </tbody></table>
     ${ref ? `<p class="hint">Parantezler referansa göre fark (yüzde puan). Referans: ${esc(ref.engine)}, ${esc(new Date(ref.savedAt).toLocaleString())}${ref.items.join() !== SS.evalSet.items.map((x) => x.id).join() ? ' — <b class="bad">doğrulama seti o zamandan değişti, karşılaştırma birebir değil</b>' : ''}.</p>` : ''}
     <button data-act="evalRef">Bu sonucu referans olarak kaydet</button>
-    ${R.tuned ? `<h4>Katlar (dışarıda bırakılan şarkı → diğerleriyle seçilen ayar)</h4><table class="st-t"><thead><tr><th>şarkı</th><th>λ</th><th>λ_ritim</th><th>%X</th><th>M</th><th>core</th><th>ilk 3</th><th>değişim</th></tr></thead><tbody>${R.tuned.folds.map((f) => { const it = SS.evalSet.items.find((x) => x.id === f.heldOut); return `<tr><td>${esc(it ? it.title : f.heldOut)}</td><td>${f.params.lambda}</td><td>${f.params.lambdaRhythm}</td><td>${f.params.changePct}</td><td>${f.params.homeEvery}</td><td>${P(f.core)}</td><td>${P(f.top3)}</td><td>${P(f.change)}</td></tr>`; }).join('')}</tbody></table>` : ''}` : '';
+    ${R.tuned ? `<h4>Katlar (dışarıda bırakılan şarkı → diğerleriyle seçilen ayar)</h4><table class="st-t"><thead><tr><th>şarkı</th><th>λ</th><th>λ_ritim</th><th>%X</th><th>core</th><th>ilk 3</th><th>değişim</th></tr></thead><tbody>${R.tuned.folds.map((f) => { const it = SS.evalSet.items.find((x) => x.id === f.heldOut); return `<tr><td>${esc(it ? it.title : f.heldOut)}</td><td>${f.params.lambda}</td><td>${f.params.lambdaRhythm}</td><td>${f.params.changePct}</td><td>${P(f.core)}</td><td>${P(f.top3)}</td><td>${P(f.change)}</td></tr>`; }).join('')}</tbody></table>` : ''}` : '';
   return `<div class="st-grid2"><div>
       <h3>Doğrulama seti (${SS.evalSet.items.length} şarkı)</h3>
       <p class="hint">Akorlarını kesin bildiğin şarkıları kendin söyle, DAW'da analiz et, bölümlerin tonunu onayla; burada gerçek akorları gir. Ölçüm aracın senin sesinle ne kadar doğru çalıştığını gösterir; ayarlar bu setle, her şarkı kendi ayarında kullanılmadan seçilir.</p>

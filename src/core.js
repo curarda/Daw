@@ -896,9 +896,12 @@ function scoreChord(c, sn, colorPenalty = 0) {
 }
 const commonTones = (a, b) => (a && b ? chordPcs(a).filter((p) => chordPcs(b).includes(p)).length : 0);
 
-// changePct: X, maxBars: N, homeEvery: M (0 = kapalı), colorPenalty: renk notası cezası,
+// changePct: X, maxBarsMin–maxBars: aynı akor en fazla "A–B" ölçü (A'ya kadar serbest, A–B arası motorun kararı,
+// B'de kesin değişim; ✂ işaretleri ve kilitler her zaman önceliklidir), colorPenalty: renk notası cezası,
 // engine: 'greedy' (ölçü ölçü) | 'viterbi' (süreli, bölüm boyunca, 3 alternatif), altChoice: { bölümId: alternatif no }
-const CHORD_DEFAULTS = { changePct: 25, maxBars: 4, homeEvery: 2, colorPenalty: 0, engine: 'viterbi', altChoice: {} };
+const CHORD_DEFAULTS = { changePct: 25, maxBarsMin: 4, maxBars: 4, colorPenalty: 0, engine: 'viterbi', altChoice: {} };
+// aralığın alt sınırı (eski projelerde yalnızca maxBars vardı)
+const holdRange = (o) => { const hi = Math.max(1, Math.round(o.maxBars || 4)); const lo = Math.min(hi, Math.max(1, Math.round(o.maxBarsMin ?? hi))); return { lo, hi }; };
 // sections: [{startBar,endBar,tonic,mode,...}] (1 tabanlı, dahil), notes: {q0,q1,effMidi,cw}
 function buildChords(notes, sections, g, opts = {}, locks = []) {
   const o = Object.assign({}, CHORD_DEFAULTS, opts);
@@ -913,7 +916,8 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
     const cands = diatonicChords(sec.tonic, sec.mode);
     const home = homeChord(sec.tonic, sec.mode);
     const flats = keyUsesFlats(sec.tonic, sec.mode);
-    let cur = null, curBars = 0, sinceHome = 0;
+    let cur = null, curBars = 0;
+    const hold = holdRange(o);
     // stil modeli (isteğe bağlı): toplam = melodi uyumu + λ·log P(geçiş) + renk puanı
     const sty = o.style || null;
     const hist = []; // bu bölümde çalınan ardışık farklı akorlar (stil bağlamı)
@@ -937,9 +941,6 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
       return pool[pool.length - 1];
     };
-    // ev akoru sayılır: tonik kökte ve ev üçlüsünü içeren akor (ör. C#m, C#m7)
-    const homeThird = CHORD_Q[home.q].find((i) => i === 3 || i === 4);
-    const isHome = (c) => !!c && c.root === home.root && (homeThird == null || CHORD_Q[c.q].includes(homeThird));
     for (let bar = sec.startBar; bar <= sec.endBar; bar++) {
       const q0 = (bar - 1) * g.barQ, q1 = q0 + g.barQ;
       const isFirst = bar === sec.startBar, isLast = bar === sec.endBar;
@@ -974,14 +975,11 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       const lastNoSplit = isLast && !g.split;
       const extraBar = isFirst ? firstExtra : lastNoSplit ? homeExtra : null;
       let barChord, barReason = '', barCands = null, barRhythm = null;
-      // (d) ev akoru en az her M ölçüde bir duyulsun: M dolunca ev akoru eşik beklemeden aday olur
-      let homeDue = o.homeEvery > 0 && !isFirst && sinceHome >= o.homeEvery - 1;
-      const homeReason = `(d) ev akoru ${o.homeEvery} ölçüdür duyulmadı`;
       const lockFull = lockAt(bar, null);
       if (lockFull) {
         barChord = lockFull.chord; barReason = 'kilitli';
       } else if (!bn.length) {
-        barChord = cur && !homeDue ? cur : home; barReason = cur && !homeDue ? 'melodi yok — devam' : 'melodi yok — ev akoru';
+        barChord = cur || home; barReason = cur ? 'melodi yok — devam' : 'melodi yok — ev akoru';
       } else {
         barCands = evalAll(bn, extraBar);
         const best = pick(barCands);
@@ -990,18 +988,18 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           const cs = evalOne(cur, bn, extraBar);
           // "Değiş mi kal mı": melodi puanı + politika + harmonik ritim verisi (bu akor n ölçüdür çalıyorken
           // değişme olasılığı). Stilin "hangi akora" payı bu karşılaştırmaya girmez; yalnızca adayı seçer.
-          const margin = pct * Math.max(Math.abs(cs.melody), 0.25 * cs.W);
+          // aralık (A–B): A ölçüye kadar %X eşiği tam; A'dan B'ye eşik sıfıra iner (değişip değişmemek motorun kararı)
+          const zone = curBars >= hold.lo ? (hold.hi > hold.lo ? Math.min(1, (curBars - hold.lo + 1) / (hold.hi - hold.lo + 1)) : 1) : 0;
+          const margin = pct * (1 - zone) * Math.max(Math.abs(cs.melody), 0.25 * cs.W);
           const rh = sty && sty.changeTerm ? sty.changeTerm(sec, curBars, 1) : null;
           barRhythm = rh;
           const rhv = rh ? rh.value : 0;
           const rhTxt = rh ? ` · harmonik ritim: ${curBars} ölçüdür çalıyor, değişme olasılığı %${Math.round(rh.h * 100)}` : '';
-          const hs = homeDue && !isHome(cur) ? evalOne(home, bn, extraBar) : null;
-          if (hs && !hs.friction && hs.score > 0) { barChord = home; barReason = homeReason; }
-          else if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
-          else if (best.melody + rhv - cs.melody >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = `(b) yeni akor ≥%${o.changePct} daha iyi${rhTxt}`; }
-          else if (curBars >= o.maxBars) {
+          if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
+          else if (best.melody + rhv - cs.melody >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = zone > 0 ? `(c) aynı akor ${curBars} ölçüdür çalıyor (aralık ${hold.lo}–${hold.hi}): değişmek için uygun yer${rhTxt}` : `(b) yeni akor ≥%${o.changePct} daha iyi${rhTxt}`; }
+          else if (curBars >= hold.hi) {
             const alt = barCands.find((c) => !sameChord(c.chord, cur) && !c.friction && c.total > 0);
-            if (alt) { barChord = alt.chord; barReason = `(c) aynı akor ${o.maxBars} ölçüdür çalıyordu`; }
+            if (alt) { barChord = alt.chord; barReason = `(c) aynı akor en fazla ${hold.hi} ölçü`; }
             else { barChord = cur; barReason = 'mevcut akor korunuyor'; }
           } else { barChord = cur; barReason = 'mevcut akor korunuyor' + rhTxt; }
         }
@@ -1022,9 +1020,7 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
             const pend = h === 1 ? hc : null;
             const cs = evalOne(hc, hn, ex, pend);
             hc2 = evalAll(hn, ex, pend);
-            const hs = homeDue && !isHome(hc) && !isHome(barChord) ? evalOne(home, hn, ex, pend) : null;
-            if (hs && !hs.friction && hs.score > 0) { chord = home; reason = homeReason; homeDue = false; }
-            else if (cs.friction) { chord = pick(hc2).chord; reason = '(a) yarım ölçüde sürtünme'; }
+            if (cs.friction) { chord = pick(hc2).chord; reason = '(a) yarım ölçüde sürtünme'; }
             else if (endHalf && !sameChord(hc, home)) {
               const hs = hc2.find((c) => sameChord(c.chord, home));
               if (hs && !hs.friction && hs.total - cs.total >= pct * Math.max(Math.abs(cs.total), 0.25 * cs.W)) { chord = home; reason = 'bölüm sonu — ev akoruna dönüş'; }
@@ -1061,7 +1057,6 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
         if (sameChord(ch, cur)) curBars += 1; else curBars = 1;
         cur = ch;
       }
-      sinceHome = slots.some((sl) => sl.bar === bar && sl.section === sec.id && isHome(sl.chord)) ? 0 : sinceHome + 1;
       for (const sl of slots) if (sl.bar === bar && sl.section === sec.id && !sameChord(hist[hist.length - 1], sl.chord)) hist.push(sl.chord);
     }
     prevChord = cur;
@@ -1091,8 +1086,6 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
     const qAt = (u) => q0s + u * unitQ;
     const home = homeChord(sec.tonic, sec.mode);
     const flats = keyUsesFlats(sec.tonic, sec.mode);
-    const homeThird = CHORD_Q[home.q].find((i) => i === 3 || i === 4);
-    const isHome = (c) => !!c && c.root === home.root && (homeThird == null || CHORD_Q[c.q].includes(homeThird));
     // birim kilitleri
     const lockU = new Array(U).fill(null);
     for (const l of locks) {
@@ -1115,8 +1108,8 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
     const Wbar = Math.max(0.5, secNotes.reduce((a, x) => a + x.w, 0) / nBars);
     const kappa = (o.changePct / 100) * Wbar;
     const lastBarW = slotNotes(notes, qAt(U - per), qAt(U), g).reduce((a, x) => a + x.w, 0);
-    const homeMiss = 0.5 * Wbar; // ev akoru M ölçüyü aşınca her yarım ölçü için (greedy'deki (d) kuralının karşılığı)
-    const maxU = Math.max(per, (o.maxBars || 4) * per);
+    // aynı akor "A–B ölçü": A'ya kadar serbest, A–B arası hafif eğilim (yeri melodi belirler), B'den uzun olamaz
+    const hold = holdRange(o), loU = hold.lo * per, hiU = hold.hi * per;
     // kullanıcının değişim işaretleri (birim başı): 'change' = burada akor değişmeli, 'hold' = burada değişmemeli.
     // onlyMarked: işaret konan bölümde akor YALNIZCA işaretli noktalarda değişir.
     const mChange = new Uint8Array(U + 1), mHold = new Uint8Array(U + 1);
@@ -1127,16 +1120,18 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       if (u <= 0 || u >= U) continue;
       if (m.kind === 'change') { mChange[u] = 1; nMarks++; } else if (m.kind === 'hold') { mHold[u] = 1; nMarks++; }
     }
+    // kullanıcının kendi "=" işaretleri (aralığın üst sınırından önceliklidir)
+    const userHoldPre = [0];
+    for (let u = 0; u < U; u++) userHoldPre.push(userHoldPre[u] + (u > 0 && mHold[u] ? 1 : 0));
+    const userHoldInside = (a, b) => userHoldPre[b] - userHoldPre[a + 1] > 0; // a < k < b
     // "yalnızca 1. vuruşta": ölçü ortası birimleri, kullanıcı orada ✂ koymadıysa "değişme" sayılır
     if (o.downbeatOnly && per === 2) for (let u = 1; u < U; u += 2) if (!mChange[u]) mHold[u] = 1;
     const preChange = [0];
     for (let u = 0; u < U; u++) preChange.push(preChange[u] + mChange[u]);
     const changeInside = (a, b) => preChange[b] - preChange[a + 1] > 0; // a < k < b
     const onlyMarked = !!o.onlyMarked && mChange.some((x) => x);
-    const Dmax = nMarks ? U : Math.min(U, maxU * 2);
-    const Mu = o.homeEvery > 0 ? o.homeEvery * per : 0;
-    // "evden beri geçen" sayaç M'de doyar: ceza yalnızca M'yi aşan kısma bağlı olduğundan sonuç değişmez, durum sayısı küçülür
-    const Hcap = Mu;
+    const anyLockSec = lockU.some((x) => x);
+    const Dmax = nMarks || anyLockSec ? U : Math.min(U, hiU);
     const unitFriction = new Array(U).fill(false);
     for (let u = 0; u < U; u++) {
       const sn = slotNotes(notes, qAt(u), qAt(u + 1), g);
@@ -1145,7 +1140,7 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
     // segment melodi + süre puanları (s, d, c)
     const segCache = new Map();
     const seg = (s, d, ci) => {
-      const key = (s * 128 + d) * 64 + ci;
+      const key = (s * (U + 1) + d) * nC + ci;
       if (segCache.has(key)) return segCache.get(key);
       let v = null;
       const c = cands[ci];
@@ -1160,7 +1155,10 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
           if (s + d === U && sameChord(c, home)) val += 0.5 * lastBarW; // bölüm sonu: ev akoru (son ölçünün ağırlığıyla)
           const dt = sty && sty.durTerm ? sty.durTerm(sec, d / per) : null;
           if (dt != null) val += dt;
-          if (d > maxU && !onlyMarked) val -= (kappa * (d - maxU)) / per; // N ölçü sınırı (yumuşak; "yalnızca işaretli" modda yok)
+          if (d > hiU) {
+            // B'yi aşmak yalnızca kilit ya da "yalnızca işaretli noktalarda" isteği zorunlu kılıyorsa (senin seçimin öncelikli)
+            if (anyLock || onlyMarked || userHoldInside(s, s + d)) val -= (kappa * (d - hiU)) / per; else { segCache.set(key, null); return null; }
+          } else if (d > loU) val -= (0.15 * kappa * (d - loU)) / per;
           v = { val, dt };
         }
       }
@@ -1177,20 +1175,13 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       first[b] = f;
       for (let a = 0; a < nC; a++) trans[a][b] = sty ? sty.score(cands[a], null, cands[b], sec).value : 0;
     }
-    // list Viterbi: durum (bitiş u, akor c, evden beri geçen birim h) → en iyi K düğüm
-    const H = Mu ? Hcap + 1 : 1;
+    // list Viterbi: durum (bitiş u, akor c) → en iyi K düğüm
     const table = Array.from({ length: U + 1 }, () => new Map());
     const push = (e, key, node) => {
       let arr = table[e].get(key);
       if (!arr) { arr = []; table[e].set(key, arr); }
       if (arr.length < K) { arr.push(node); arr.sort((x, y) => y.score - x.score); }
       else if (node.score > arr[K - 1].score) { arr[K - 1] = node; arr.sort((x, y) => y.score - x.score); }
-    };
-    const homeCi = cands.map((c) => isHome(c));
-    const hStep = (hPrev, d, ci) => {
-      if (!Mu || homeCi[ci]) return { h: 0, pen: 0 };
-      const over = Math.max(0, hPrev + d - Mu); // hPrev ≤ Mu
-      return { h: Math.min(Hcap, hPrev + d), pen: homeMiss * over };
     };
     for (let e = 1; e <= U; e++) {
       for (let d = 1; d <= Math.min(Dmax, e); d++) {
@@ -1201,13 +1192,12 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
           const sg = seg(s, d, ci);
           if (!sg) continue;
           if (s === 0) {
-            const hp = hStep(0, d, ci);
-            push(e, ci * H + hp.h, { score: first[ci] + sg.val - hp.pen, s, e, ci, prev: null });
+            push(e, ci, { score: first[ci] + sg.val, s, e, ci, prev: null });
             continue;
           }
           const mid = mChange[s] ? -kappa : s % per !== 0 ? 0.5 * kappa : 0; // kullanıcının istediği değişime maliyet yok
           for (const [key, arr] of table[s]) {
-            const pci = Math.floor(key / H), ph = key % H;
+            const pci = key;
             // aynı core art arda: tek akor sayılır (C → Cmaj7 ayrı değişim değil). Ama kullanıcı ikisinden
             // birini kilitlediyse (ör. D kilitli, ardından Dmaj7 kilitli) buna izin verilir — yoksa yol kalmaz.
             const sameCore = coreK[pci] === coreK[ci];
@@ -1215,11 +1205,10 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
             const segLocked = sameCore && hasLock(s, e);
             // ✂ noktasında gerçek değişim: kök değişmeli (D → Dmaj7, C#m → C#sus2 değişim sayılmaz) — kullanıcı kilitlediyse hariç
             if (mChange[s] && cands[pci].root === cands[ci].root && !hasLock(s, e)) continue;
-            const hp = hStep(ph, d, ci);
-            const base = sg.val + trans[pci][ci] - kappa - mid - hp.pen;
+            const base = sg.val + trans[pci][ci] - kappa - mid;
             for (const nd of arr) {
               if (sameCore && !segLocked && !hasLock(nd.s, nd.e)) continue;
-              push(e, ci * H + hp.h, { score: nd.score + base, s, e, ci, prev: nd });
+              push(e, ci, { score: nd.score + base, s, e, ci, prev: nd });
             }
           }
         }
