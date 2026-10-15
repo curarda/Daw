@@ -29,6 +29,7 @@ window.__dawCal = () => Cal.last;
 window.__dawAPI = {
   S, C, status, esc, getCtx, notePreview: () => NotePreview, player: () => Player,
   refresh: () => refresh(),
+  select: (sel) => select(sel),
   preview: (chords, tonic, mode, durs) => Player.previewChords(chords, tonic, mode, durs),
   // doğrulama öğesi için mevcut analiz: kastedilen notalar + tonu belli bölümler
   snapshot() {
@@ -174,6 +175,7 @@ function refresh() {
   renderSections();
   renderInspector();
   renderInfo();
+  renderLead();
   renderDrums();
   renderTaps();
   layoutTimeline();
@@ -860,6 +862,38 @@ function applyAlign() {
   S.proj.audio.offsetSec = mode === 'bar1' ? S.onset : S.onset - Math.round(S.onset / g.pulseSec) * g.pulseSec;
 }
 
+// ---------------------------------------------------------------- başlangıç ölçüsü: ölçü çizgilerini k ölçü kaydır
+// k > 0: baştaki k ölçü silinir (k+1. ölçü 1. ölçü olur); k < 0: başa |k| boş ölçü eklenir. Ses kesilmez.
+function shiftBars(k) {
+  if (!S.d || !k) return;
+  const g = S.d.g, a = S.proj.audio, p = S.proj, mv = (b) => b - k;
+  a.offsetSec += k * g.barSec; a.alignMode = 'none';
+  if (a.source === 'record') a.recOffsetSec = a.offsetSec;
+  // başa ölçü eklenince 1. ölçüden başlayan bölüm yeni ölçüleri de kapsar (intro akorları; vokal girişi onu ayrı sayar)
+  p.sections = p.sections.map((s) => Object.assign({}, s, { startBar: k < 0 && s.startBar === 1 ? 1 : Math.max(1, mv(s.startBar)), endBar: mv(s.endBar) })).filter((s) => s.endBar >= 1);
+  p.chordLocks = p.chordLocks.map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar >= 1);
+  p.chordPins = (p.chordPins || []).map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar >= 1);
+  p.changeMarks = (p.changeMarks || []).map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar > 1 || (x.bar === 1 && x.half));
+  for (const e of p.noteEdits) if (e.q0to != null) e.q0to -= k * g.barQ;
+  if (p.entryOverrides) for (const id of Object.keys(p.entryOverrides)) { const v = p.entryOverrides[id]; if (v > 0) { if (mv(v) >= 1) p.entryOverrides[id] = mv(v); else delete p.entryOverrides[id]; } }
+  p.chordPinsSig = null;
+  syncInputs(); refresh(); scheduleRender(true);
+}
+function leadBars() {
+  if (!S.d || !S.d.notes.length) return null;
+  const q = Math.min(...S.d.notes.map((n) => n.q0));
+  return { empty: Math.max(0, Math.floor(q / S.d.g.barQ + 1e-6)), firstBar: Math.floor(q / S.d.g.barQ + 1e-6) + 1 };
+}
+function renderLead() {
+  const L = leadBars();
+  $('#leadInfo').textContent = !L ? 'Önce kayıt / analiz.' : L.empty ? `Vokal ${L.firstBar}. ölçüde başlıyor; önünde ${L.empty} boş ölçü var.` : 'Vokal 1. ölçüde başlıyor (başta boş ölçü yok).';
+  $('#btnTrimLead').disabled = !L || !L.empty;
+  $('#btnTrimLead').textContent = L && L.empty ? `Baştaki ${L.empty} boş ölçüyü sil` : 'Baştaki boş ölçüleri sil';
+}
+$('#btnTrimLead').onclick = () => { const L = leadBars(); if (L && L.empty) { shiftBars(L.empty); status(`Baştaki ${L.empty} boş ölçü silindi: vokal artık 1. ölçüde.`); } };
+$('#btnFirstBar').onclick = () => { const b = Math.round(+$('#inFirstBar').value || 1); if (b > 1) { shiftBars(b - 1); $('#inFirstBar').value = 1; status(`Ölçü ${b} artık 1. ölçü (önceki ${b - 1} ölçü silindi).`); } };
+$('#btnAddBar').onclick = () => { shiftBars(-1); status('Başa 1 boş ölçü eklendi.'); };
+
 // ---------------------------------------------------------------- zaman çizelgesi
 const TL = { KW: 46, RULER: 22, SEC: 26, CHORD: 36 };
 TL.TOP = TL.RULER + TL.SEC + TL.CHORD;
@@ -944,6 +978,12 @@ function draw() {
     const x = qToX(b * barQ);
     if (x < TL.KW - 1) continue;
     c.fillStyle = '#9aa2b4'; c.fillText(String(b + 1), x + 4, TL.RULER / 2);
+  }
+  // vokal girişleri (akor sayacının yeniden başladığı ölçüler): cetvelde yeşil ▶
+  if (d) for (const s of d.sections) for (const b of s.entries || []) {
+    const x = Math.round(qToX((b - 1) * barQ)) + 0.5;
+    if (x < TL.KW || x > W) continue;
+    c.fillStyle = '#5fd08a'; c.beginPath(); c.moveTo(x + 14, 4); c.lineTo(x + 22, TL.RULER / 2); c.lineTo(x + 14, TL.RULER - 4); c.fill();
   }
   // akor değişim noktaları (tap): cetvelde ◆, akor satırında ince çizgi
   if (d && S.proj.taps && S.proj.taps.length) {
@@ -1482,6 +1522,17 @@ function renderInspector() {
       <span>Ağırlıklı histogram</span><span>${hist || '—'}</span>
       <span>Son ağırlıklı nota</span><span>${ki && ki.last ? esc(ki.last.name) : '—'}</span>
       <span>Akorlar</span><span>${esc(chords)}</span></div>
+      ${(() => {
+        const auto = s.entriesAuto || [], ov = s.entryOverride, on = S.proj.chordOpts.phraseEntries !== false;
+        const opts = [`<option value=""${ov == null ? ' selected' : ''}>Otomatik${auto.length ? ` (ölçü ${auto.join(', ')})` : ' (nota yok)'}</option>`]
+          .concat(Array.from({ length: s.endBar - s.startBar + 1 }, (_, i) => s.startBar + i).map((b) => `<option value="${b}"${ov === b ? ' selected' : ''}>ölçü ${b}</option>`))
+          .concat(`<option value="0"${ov === 0 ? ' selected' : ''}>Yok — sayaç bölüm başından</option>`).join('');
+        const first = (s.entries || [])[0];
+        const pre = first != null && first > s.startBar ? first - s.startBar : 0;
+        return `<div class="row"><label>Vokal girişi <select data-act="secEntry" style="width:auto">${opts}</select></label></div>
+          <p class="hint">${on ? `Akor sayacı (aynı akor A–B ölçü) ${s.entries && s.entries.length ? `ölçü ${s.entries.join(', ')}'de` : 'bölüm başında'} yeniden başlar; girişte akor değişebilir ya da sürebilir.${pre ? ` Girişten önceki ${pre} ölçü (intro) ayrı sayılır.` : ''}` : 'Vokal girişi kapalı (6. adımdaki kutu): sayaç yalnızca bölüm başında başlar.'}</p>
+          ${pre && !s.implicit ? `<div class="row"><button data-act="secStartAtEntry">Bölümü vokal girişinden başlat (ölçü ${first})</button><span class="hint">önceki ${pre} ölçü bölümden çıkar</span></div>` : ''}`;
+      })()}
       <p class="hint">Ton/mod seçimini soldaki 4. adımdan yapın. Son karar her zaman sizde.</p>
       ${s.implicit ? '' : `<div class="row"><button data-act="secQuant">Bu bölümü quantize et (${esc(quantGridLabel())}, %${S.proj.quant.strength})</button><button data-act="secQuantClear">Bölümün zamanlamasını sıfırla</button></div>`}`;
   }
@@ -1571,6 +1622,16 @@ $('#inspector').addEventListener('click', (e) => {
   if (!b || !S.sel) return;
   const act = b.dataset.act;
   if (act === 'secDelete' && S.sel.type === 'section') { deleteSection(S.sel.id); return; }
+  if (act === 'secStartAtEntry' && S.sel.type === 'section') {
+    const s = S.proj.sections.find((x) => x.id === S.sel.id), ds = S.d.sections.find((x) => x.id === S.sel.id);
+    const first = ds && (ds.entries || [])[0];
+    if (!s || !first || first <= s.startBar) return;
+    const from = s.startBar; s.startBar = first;
+    if (S.proj.entryOverrides) delete S.proj.entryOverrides[s.id];
+    refresh();
+    status(`${s.name}: ölçü ${from}–${first - 1} bölümden çıkarıldı; bölüm vokal girişinden (ölçü ${first}) başlıyor.`);
+    return;
+  }
   if ((act === 'secQuant' || act === 'secQuantClear') && S.sel.type === 'section') {
     const sid = S.sel.id, sc = { f: (n) => n.section === sid, name: (S.d.sections.find((x) => x.id === sid) || {}).name };
     if (act === 'secQuant') applyQuantize(sc); else clearTiming(sc);
@@ -1640,6 +1701,13 @@ $('#inspector').addEventListener('click', (e) => {
 });
 $('#inspector').addEventListener('change', (e) => {
   const t = e.target;
+  if (t.dataset.act === 'secEntry' && S.sel && S.sel.type === 'section') {
+    const eo = S.proj.entryOverrides || (S.proj.entryOverrides = {});
+    if (t.value === '') delete eo[S.sel.id]; else eo[S.sel.id] = +t.value;
+    refresh();
+    status(t.value === '' ? 'Vokal girişi otomatik.' : t.value === '0' ? 'Bu bölümde vokal girişi ayrımı yok: akor sayacı bölüm başından.' : `Vokal girişi: ölçü ${t.value} — akor sayacı burada yeniden başlar.`);
+    return;
+  }
   if (t.dataset.act === 'lock' && S.sel && S.sel.type === 'note') {
     const n = S.d.notes.find((x) => x.id === S.sel.id);
     const ed = editFor(n, true); ed.locked = t.checked; cleanupEdits(); refresh();
@@ -1859,6 +1927,7 @@ function syncInputs() {
   $('#inClickFeel').value = p.settings.clickFeel || 'normal';
   $('#inOnlyMarked').checked = !!p.chordOpts.onlyMarked;
   $('#inDownbeatOnly').checked = !!p.chordOpts.downbeatOnly;
+  $('#inPhraseEntries').checked = p.chordOpts.phraseEntries !== false;
   $('#inClickFeel').disabled = p.settings.meter !== '4/4';
   $('#bpmUnit').textContent = p.settings.meter === '6/8' ? `(♩. = noktalı çeyrek; ♩ = ${Math.round(gq.quarterBpm)})` : '(♩ = çeyrek nota)';
   $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
@@ -1988,6 +2057,7 @@ $('#btnChartRemove').onclick = () => {
 };
 $('#inOnlyMarked').addEventListener('change', (e) => { S.proj.chordOpts.onlyMarked = e.target.checked; refresh(); });
 $('#inDownbeatOnly').addEventListener('change', (e) => { S.proj.chordOpts.downbeatOnly = e.target.checked; refresh(); });
+$('#inPhraseEntries').addEventListener('change', (e) => { S.proj.chordOpts.phraseEntries = e.target.checked; refresh(); });
 $('#btnClearMarks').onclick = () => { const n = (S.proj.changeMarks || []).length; S.proj.changeMarks = []; refresh(); status(`${n} değişim işareti kaldırıldı (akorlar yerinde kaldı).`); };
 $('#btnApplySug').onclick = () => {
   const n = S.d.chords.filter((c) => c.pinSuggest).length;

@@ -629,6 +629,40 @@ try {
     return `✂ 6½ → ${n1.filter((x) => x.startsWith('6')).join(' ')}, diğerleri aynı · tekrar tık → = → yok · akor gövdesi seçer · panel "✂ Ölçünün ortasında değiştir" → ${n2.filter((x) => x.startsWith('2')).join(' ')} · yalnızca işaretli → verse ${runs.join(' → ')}`;
   });
 
+  await step('Başlangıç ölçüsü: başa ölçü ekle / baştaki boş ölçüleri sil (bölümler müzikle taşınır); bölüm panelinde vokal girişi; cetvelde ▶', async () => {
+    page.once('dialog', (d) => d.accept());
+    await page.click('#btnTest');
+    await waitStatus(/Test melodisi hazır/);
+    assert.match(await page.textContent('#leadInfo'), /1\. ölçüde başlıyor/);
+    const secs0 = await S(() => window.__dawAPI.S.proj.sections.map((x) => [x.startBar, x.endBar]));
+    await page.click('#btnAddBar'); await page.click('#btnAddBar');
+    assert.match(await page.textContent('#leadInfo'), /3\. ölçüde başlıyor; önünde 2 boş ölçü/);
+    const secs2 = await S(() => window.__dawAPI.S.proj.sections.map((x) => [x.startBar, x.endBar]));
+    assert.deepEqual(secs2, secs0.map(([a, b]) => [a === 1 ? 1 : a + 2, b + 2]), 'bölümler müzikle kaydı; ilk bölüm yeni ölçüleri kapsar');
+    assert.deepEqual(await S(() => window.__dawAPI.S.d.sections[0].entries.slice(0, 1)), [3], 'vokal girişi 3. ölçüde');
+    const intro = await S(() => window.__dawAPI.S.d.chords.filter((c) => c.bar <= 2).length);
+    assert.ok(intro > 0, 'eklenen ölçülerde de akor var');
+    assert.match(await page.textContent('#btnTrimLead'), /Baştaki 2 boş ölçüyü sil/);
+    await page.click('#btnTrimLead');
+    assert.match(await page.textContent('#leadInfo'), /1\. ölçüde başlıyor/);
+    assert.deepEqual(await S(() => window.__dawAPI.S.proj.sections.map((x) => [x.startBar, x.endBar])), secs0);
+    // bölüm paneli: vokal girişi seçimi
+    await page.click('#btnAddBar');
+    const sid = await S(() => window.__dawAPI.S.d.sections[0].id);
+    await page.evaluate((id) => window.__dawAPI.select({ type: 'section', id }), sid);
+    await page.waitForSelector('#inspector select[data-act=secEntry]');
+    assert.match(await page.textContent('#inspector'), /Vokal girişi/);
+    const auto = await page.locator('#inspector select[data-act=secEntry] option').first().textContent();
+    assert.match(auto, /Otomatik \(ölçü 2/);
+    assert.match(await page.textContent('#inspector'), /Girişten önceki 1 ölçü \(intro\) ayrı sayılır/);
+    await page.selectOption('#inspector select[data-act=secEntry]', '0');
+    assert.deepEqual(await S(() => window.__dawAPI.S.d.sections[0].entries), []);
+    await page.selectOption('#inspector select[data-act=secEntry]', '');
+    assert.deepEqual(await S(() => window.__dawAPI.S.d.sections[0].entries.slice(0, 1)), [2]);
+    await page.click('#btnTrimLead');
+    return `2 ölçü eklendi → bölümler +2 → "Baştaki 2 boş ölçüyü sil" → geri · bölüm panelinde ${auto.trim()}`;
+  });
+
   await step('Davul: ölçü tahmini paneli + Uygula; vurgulara göre loop; oynatmada davul; uymayınca "bulamadım" + tarif', async () => {
     page.once('dialog', (d) => d.accept());
     await page.click('#btnTest');

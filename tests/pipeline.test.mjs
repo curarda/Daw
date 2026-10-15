@@ -546,6 +546,40 @@ A:1.5 E:0.5 N.C. F#m7/A:2`, '4/4');
   return `${ok.cells.length} hücre · uyarılar: ${ok.warnings.length} (atlanan akor, N.C.) · hata satır numarasıyla · dışa aktarılan şema geri yüklenince ${back.cells.length} akor aynen · uygulanınca ölçü 6 (boş) otomatik: ${Core.chordName(d7.chords.find((c) => c.bar === 6).chord)}`;
 });
 
+await step('Vokal girişi: akor sayacı girişte yeniden başlar (intro ayrı sayılır); öncü nota bir sonraki ölçüye; elle seçilen giriş; baştaki boş ölçüler', () => {
+  const p = JSON.parse(JSON.stringify(proj));
+  p.chordLocks = []; p.chordPins = []; p.noteEdits = []; p.changeMarks = [];
+  p.audio.offsetSec = proj.audio.offsetSec - 2 * g.barSec; // vokal 3. ölçüde giriyor (2 ölçü intro)
+  p.sections = [{ id: 'all', name: 'Tümü', startBar: 1, endBar: 10, tonic: 1, mode: 'phrygian' }];
+  p.chordOpts = Object.assign({}, p.chordOpts, { engine: 'viterbi', maxBarsMin: 4, maxBars: 4, phraseEntries: true });
+  const bounds = (dd) => { const out = []; let acc = 0; for (const x of dd.chords.alternatives.all.find((a) => a.chosen).segments) { acc += x.bars; out.push(acc); } return out; };
+  const d1 = Core.derive(p, st);
+  const sec = d1.sections[0];
+  assert.equal(sec.entries[0], 3, 'ilk giriş ölçü 3: ' + sec.entries);
+  assert.ok(bounds(d1).includes(2), 'intro (ölçü 1–2) ayrı segment: ' + bounds(d1));
+  // girişten sonraki ilk segment en fazla 4 ölçü ve sayım girişten başlar
+  const segs = d1.chords.alternatives.all.find((a) => a.chosen).segments;
+  assert.ok(segs.every((x) => x.bars <= 4));
+  // kapalıyken giriş yok
+  p.chordOpts.phraseEntries = false;
+  const d0 = Core.derive(p, st);
+  assert.deepEqual(d0.sections[0].entries, []);
+  // elle seçilen giriş
+  p.chordOpts.phraseEntries = true; p.entryOverrides = { all: 4 };
+  assert.equal(Core.derive(p, st).sections[0].entries[0], 4);
+  p.entryOverrides = { all: 0 };
+  assert.deepEqual(Core.derive(p, st).sections[0].entries, []);
+  // öncü: 2. ölçünün 3. vuruşunda başlayan nota → giriş ölçü 3; 1 ölçülük sessizlikten sonraki nota yeni giriş
+  const n = (q0, q1) => ({ q0, q1 });
+  const s1 = { startBar: 1, endBar: 8 };
+  assert.deepEqual(Core.vocalEntries([n(6, 7), n(8, 10), n(10, 12), n(17, 18)], s1, g), [3, 5]);
+  // greedy motor da girişte sayacı yeniler (çökmeden)
+  p.entryOverrides = {}; p.chordOpts.engine = 'greedy';
+  const dg = Core.derive(p, st);
+  assert.ok(dg.chords.length > 0);
+  return `intro 2 ölçü + vokal ölçü 3 → segmentler ${segs.map((x) => x.bars).join('+')} (sınır ölçü 3'te) · öncü 2½ → giriş 3 · sessizlik sonrası yeni giriş 5`;
+});
+
 await step('Değişim işaretleri: ✂ noktada akor değişir, = noktada değişmez, "yalnızca işaretli" modda başka yerde değişmez (rastgele işaretlerle)', () => {
   const p8 = JSON.parse(JSON.stringify(proj));
   p8.chordLocks = []; p8.chordPins = []; p8.noteEdits = [];

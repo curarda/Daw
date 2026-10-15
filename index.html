@@ -309,6 +309,14 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
         <label>Kayıt ofseti (ms)<input type="number" id="inOffset" step="1" value="0"></label>
         <div id="audioInfo" class="hint"></div>
       </div>
+      <fieldset>
+        <legend>Başlangıç ölçüsü</legend>
+        <div id="leadInfo" class="hint"></div>
+        <div class="row"><button id="btnTrimLead">Baştaki boş ölçüleri sil</button>
+          <label>1. ölçü şu olsun<input type="number" id="inFirstBar" min="1" step="1" value="1" style="width:64px"></label><button id="btnFirstBar">Uygula</button>
+          <button id="btnAddBar" title="Şarkının başına 1 boş ölçü ekler (ör. akor girişi için)">Başa 1 ölçü ekle</button></div>
+        <p class="hint">Ses kesilmez; ölçü çizgileri kayar. Bölümler, kilitler, ✂ işaretleri ve quantize konumları müzikle birlikte taşınır.</p>
+      </fieldset>
     </details>
 
     <details class="step" open>
@@ -402,6 +410,7 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
       <div class="sub marks">
         <b>✂ Akor değişim noktaları</b>
         <p class="hint">Akor satırının <b>üst kenarındaki küçük noktalara</b> tıkla (dolu = ölçü başı, içi boş = ölçü ortası; kesikli çizgi yarım ölçüyü gösterir): <b>✂</b> burada akor değişsin → <b>=</b> burada değişmesin → işaret yok. Hangi akorun geleceğini motor seçer; işaret koyunca diğer akorlar değişmez. Akora tıklayınca sağdaki panelde de "✂ Tam burada değiştir / Ölçünün ortasında değiştir" var.</p>
+        <div class="row"><label class="chk" title="Vokal girişi = bölümdeki ilk nota ya da ≥1 ölçü sessizlikten sonraki ilk nota (öncü notalar bir sonraki ölçüye sayılır). Bölüm panelinden elle seçilebilir."><input type="checkbox" id="inPhraseEntries" checked> Akor sayacı <b>vokal girişinde</b> (cümle başında) yeniden başlasın <small class="hint">(girişte akor değişebilir ya da sürebilir; intro ayrı sayılır)</small></label></div>
         <div class="row"><label class="chk"><input type="checkbox" id="inDownbeatOnly"> Akorlar yalnızca <b>ölçü başında (1. vuruşta)</b> değişsin <small class="hint">(ölçü ortası değişimi yok; ✂ ile işaretlediğin ölçü ortaları hariç)</small></label></div>
         <div class="row"><label class="chk"><input type="checkbox" id="inOnlyMarked"> Akor <b>yalnızca</b> ✂ işaretli noktalarda değişsin <small class="hint">(işaret konan bölümlerde)</small></label>
           <button id="btnClearMarks" class="danger">✕ İşaretleri temizle <span id="markCount"></span></button></div>
@@ -1419,7 +1428,26 @@ const commonTones = (a, b) => (a && b ? chordPcs(a).filter((p) => chordPcs(b).in
 const CHORD_DEFAULTS = { changePct: 25, maxBarsMin: 4, maxBars: 4, colorPenalty: 0, engine: 'viterbi', altChoice: {} };
 // aralığın alt sınırı (eski projelerde yalnızca maxBars vardı)
 const holdRange = (o) => { const hi = Math.max(1, Math.round(o.maxBars || 4)); const lo = Math.min(hi, Math.max(1, Math.round(o.maxBarsMin ?? hi))); return { lo, hi }; };
-// sections: [{startBar,endBar,tonic,mode,...}] (1 tabanlı, dahil), notes: {q0,q1,effMidi,cw}
+// Vokal girişleri (cümle başları): bölümdeki ilk nota ve ≥ 1 ölçülük sessizlikten sonra gelen nota.
+// Giriş ölçüsü = notanın ölçüsü; nota ölçünün 2. yarısında başlıyorsa (öncü: "ve-3-4-|1") bir sonraki ölçü.
+// override: kullanıcının seçtiği ilk giriş ölçüsü (otomatik ilk girişin yerine), 0 = bu bölümde giriş ayrımı yok.
+function vocalEntries(notes, sec, g, override = null) {
+  if (override === 0) return [];
+  const q0s = (sec.startBar - 1) * g.barQ, q1s = sec.endBar * g.barQ;
+  const ns = notes.filter((n) => n.q1 > n.q0 && n.q0 >= q0s - g.barQ / 2 && n.q0 < q1s).sort((a, b) => a.q0 - b.q0);
+  let out = [], lastEnd = -Infinity;
+  for (const n of ns) {
+    if (n.q0 - lastEnd >= g.barQ - 1e-6) {
+      const bar0 = Math.floor(n.q0 / g.barQ + 1e-6) + 1, pos = n.q0 - (bar0 - 1) * g.barQ;
+      const bar = pos >= g.barQ / 2 - 1e-6 ? bar0 + 1 : bar0;
+      if (bar >= sec.startBar && bar <= sec.endBar && !out.includes(bar)) out.push(bar);
+    }
+    lastEnd = Math.max(lastEnd, n.q1);
+  }
+  if (override != null && override >= sec.startBar && override <= sec.endBar) out = [override, ...out.filter((b) => b > override)];
+  return out;
+}
+// sections: [{startBar,endBar,tonic,mode,entries?,...}] (1 tabanlı, dahil), notes: {q0,q1,effMidi,cw}
 function buildChords(notes, sections, g, opts = {}, locks = []) {
   const o = Object.assign({}, CHORD_DEFAULTS, opts);
   if (o.engine === 'viterbi') return buildChordsViterbi(notes, sections, g, o, locks);
@@ -1458,9 +1486,11 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       for (let i = 0; i < pool.length; i++) { r -= w[i]; if (r <= 0) return pool[i]; }
       return pool[pool.length - 1];
     };
+    const entrySet = new Set((sec.entries || []).filter((b) => b > sec.startBar));
     for (let bar = sec.startBar; bar <= sec.endBar; bar++) {
       const q0 = (bar - 1) * g.barQ, q1 = q0 + g.barQ;
       const isFirst = bar === sec.startBar, isLast = bar === sec.endBar;
+      const isEntry = entrySet.has(bar); // vokal girişi: sayaç yeniden başlar, değişim serbest
       const bn = slotNotes(notes, q0, q1, g);
       const evalAll = (sn, extra, pending) => {
         const Wt = sn.reduce((a, b) => a + b.w, 0);
@@ -1507,14 +1537,14 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           // değişme olasılığı). Stilin "hangi akora" payı bu karşılaştırmaya girmez; yalnızca adayı seçer.
           // aralık (A–B): A ölçüye kadar %X eşiği tam; A'dan B'ye eşik sıfıra iner (değişip değişmemek motorun kararı)
           const zone = curBars >= hold.lo ? (hold.hi > hold.lo ? Math.min(1, (curBars - hold.lo + 1) / (hold.hi - hold.lo + 1)) : 1) : 0;
-          const margin = pct * (1 - zone) * Math.max(Math.abs(cs.melody), 0.25 * cs.W);
+          const margin = isEntry ? 0 : pct * (1 - zone) * Math.max(Math.abs(cs.melody), 0.25 * cs.W);
           const rh = sty && sty.changeTerm ? sty.changeTerm(sec, curBars, 1) : null;
           barRhythm = rh;
           const rhv = rh ? rh.value : 0;
           const rhTxt = rh ? ` · harmonik ritim: ${curBars} ölçüdür çalıyor, değişme olasılığı %${Math.round(rh.h * 100)}` : '';
           if (cs.friction) { barChord = best.chord; barReason = '(a) ağırlıklı nota yarım ses sürtünüyor'; }
-          else if (best.melody + rhv - cs.melody >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = zone > 0 ? `(c) aynı akor ${curBars} ölçüdür çalıyor (aralık ${hold.lo}–${hold.hi}): değişmek için uygun yer${rhTxt}` : `(b) yeni akor ≥%${o.changePct} daha iyi${rhTxt}`; }
-          else if (curBars >= hold.hi) {
+          else if (best.melody + rhv - cs.melody >= margin && !sameChord(best.chord, cur)) { barChord = best.chord; barReason = isEntry ? 'vokal girişi: akor burada değişir' : zone > 0 ? `(c) aynı akor ${curBars} ölçüdür çalıyor (aralık ${hold.lo}–${hold.hi}): değişmek için uygun yer${rhTxt}` : `(b) yeni akor ≥%${o.changePct} daha iyi${rhTxt}`; }
+          else if (curBars >= hold.hi && !isEntry) {
             const alt = barCands.find((c) => !sameChord(c.chord, cur) && !c.friction && c.total > 0);
             if (alt) { barChord = alt.chord; barReason = `(c) aynı akor en fazla ${hold.hi} ölçü`; }
             else { barChord = cur; barReason = 'mevcut akor korunuyor'; }
@@ -1566,12 +1596,12 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
       };
       if (halves.length && !sameChord(halves[0].chord, halves[1].chord)) {
         halves.forEach((h, i) => pushSlot(h.q0, h.q1, h.chord, h.reason || (i === 0 ? barReason : 'devam'), h.locked, h.sn, h.cands));
-        if (sameChord(halves[1].chord, cur)) curBars += 1; else curBars = 0.5;
+        if (sameChord(halves[1].chord, cur) && !isEntry) curBars += 1; else curBars = 0.5;
         cur = halves[1].chord;
       } else {
         const ch = halves.length ? halves[0].chord : barChord;
         pushSlot(q0, q1, ch, (halves[0] && halves[0].reason) || barReason, !!lockFull || (halves[0] && halves[0].locked && halves[1].locked), bn, barCands && sameChord(ch, barChord) ? barCands : null);
-        if (sameChord(ch, cur)) curBars += 1; else curBars = 1;
+        if (sameChord(ch, cur) && !isEntry) curBars += 1; else curBars = 1;
         cur = ch;
       }
       for (const sl of slots) if (sl.bar === bar && sl.section === sec.id && !sameChord(hist[hist.length - 1], sl.chord)) hist.push(sl.chord);
@@ -1647,6 +1677,16 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
     for (let u = 0; u < U; u++) preChange.push(preChange[u] + mChange[u]);
     const changeInside = (a, b) => preChange[b] - preChange[a + 1] > 0; // a < k < b
     const onlyMarked = !!o.onlyMarked && mChange.some((x) => x);
+    // vokal girişleri (cümle başları): akor sayacı (A–B) burada yeniden başlar; değişim serbest, aynı akor da sürebilir
+    const mEntry = new Uint8Array(U + 1);
+    for (const b of sec.entries || []) { const u = (b - sec.startBar) * per; if (u > 0 && u < U) mEntry[u] = 1; }
+    const preEntry = [0];
+    for (let u = 0; u < U; u++) preEntry.push(preEntry[u] + mEntry[u]);
+    const entryInside = (a, b) => preEntry[b] - preEntry[a + 1] > 0; // a < k < b
+    // giriş öncesi melodisiz (intro) ise "ev akoruyla başla" tercihi vokalin ilk ölçüsüne de uygulanır
+    const firstEntryU = mEntry.indexOf(1);
+    const introEmpty = firstEntryU > 0 && !slotNotes(notes, qAt(0), qAt(firstEntryU), g).length;
+    const entryBonus = (ci) => (introEmpty && si === 0 && sameChord(cands[ci], home) ? 0.15 * Wbar : 0);
     const anyLockSec = lockU.some((x) => x);
     const Dmax = nMarks || anyLockSec ? U : Math.min(U, hiU);
     const unitFriction = new Array(U).fill(false);
@@ -1703,8 +1743,10 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
     for (let e = 1; e <= U; e++) {
       for (let d = 1; d <= Math.min(Dmax, e); d++) {
         const s = e - d;
-        if (changeInside(s, e)) continue; // işaretli değişim noktasının üstünden geçen akor olmaz
-        if (s > 0 && (mHold[s] || (onlyMarked && !mChange[s]))) continue; // burada değişmesin / yalnızca işaretlerde
+        if (changeInside(s, e) || entryInside(s, e)) continue; // işaretli değişim noktasının / vokal girişinin üstünden geçen segment olmaz
+        // burada değişmesin / yalnızca işaretlerde — vokal girişinde aynı akor yine sürebilir (yalnızca sayaç yenilenir)
+        const sameOnly = s > 0 && (mHold[s] || (onlyMarked && !mChange[s]));
+        if (sameOnly && !mEntry[s]) continue;
         for (let ci = 0; ci < nC; ci++) {
           const sg = seg(s, d, ci);
           if (!sg) continue;
@@ -1712,9 +1754,17 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
             push(e, ci, { score: first[ci] + sg.val, s, e, ci, prev: null });
             continue;
           }
-          const mid = mChange[s] ? -kappa : s % per !== 0 ? 0.5 * kappa : 0; // kullanıcının istediği değişime maliyet yok
+          const mid = mChange[s] || mEntry[s] ? -kappa : s % per !== 0 ? 0.5 * kappa : 0; // kullanıcının istediği değişime ve vokal girişine maliyet yok
           for (const [key, arr] of table[s]) {
             const pci = key;
+            if (mEntry[s] && coreK[pci] === coreK[ci]) {
+              // vokal girişinde aynı akor devam ediyor: yeni segment, değişim maliyeti ve geçiş puanı yok
+              if (mChange[s] && !hasLock(s, e)) continue;
+              const eb = s === firstEntryU ? entryBonus(ci) : 0;
+              for (const nd of arr) push(e, ci, { score: nd.score + sg.val + eb, s, e, ci, prev: nd });
+              continue;
+            }
+            if (sameOnly) continue;
             // aynı core art arda: tek akor sayılır (C → Cmaj7 ayrı değişim değil). Ama kullanıcı ikisinden
             // birini kilitlediyse (ör. D kilitli, ardından Dmaj7 kilitli) buna izin verilir — yoksa yol kalmaz.
             const sameCore = coreK[pci] === coreK[ci];
@@ -1722,7 +1772,7 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
             const segLocked = sameCore && hasLock(s, e);
             // ✂ noktasında gerçek değişim: kök değişmeli (D → Dmaj7, C#m → C#sus2 değişim sayılmaz) — kullanıcı kilitlediyse hariç
             if (mChange[s] && cands[pci].root === cands[ci].root && !hasLock(s, e)) continue;
-            const base = sg.val + trans[pci][ci] - kappa - mid;
+            const base = sg.val + trans[pci][ci] - kappa - mid + (s === firstEntryU ? entryBonus(ci) : 0);
             for (const nd of arr) {
               if (sameCore && !segLocked && !hasLock(nd.s, nd.e)) continue;
               push(e, ci, { score: nd.score + base, s, e, ci, prev: nd });
@@ -1764,7 +1814,7 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
     slots.alternatives[sec.id] = alts.map((a, i) => ({
       index: i, score: a.score, chosen: i === choice,
       segments: a.segs.map((x) => ({ chord: cands[x.ci], bars: (x.e - x.s) / per })),
-      text: a.segs.map((x) => `${chordName(cands[x.ci], flats)} (${(x.e - x.s) / per})`).join(' → '),
+      text: a.segs.map((x) => `${mEntry[x.s] ? '▶ ' : ''}${chordName(cands[x.ci], flats)} (${(x.e - x.s) / per})`).join(' → '),
     }));
     const pick = alts[choice];
     // slotlara çevir (ölçü ya da yarım ölçü) — adaylar ve roller DAW denetçisi için
@@ -2307,6 +2357,13 @@ function derive(proj, st) {
   }
   for (const n of notes) n.cw = chordWeight(n, g);
   // 6) akorlar
+  // vokal girişleri (cümle başları): akor sayacı orada yeniden başlar; kullanıcı ilk girişi seçebilir (proj.entryOverrides)
+  const eo = proj.entryOverrides || {};
+  for (const sec of sections) {
+    sec.entriesAuto = vocalEntries(notes, sec, g);
+    sec.entryOverride = eo[sec.id] ?? null;
+    sec.entries = proj.chordOpts.phraseEntries === false ? [] : vocalEntries(notes, sec, g, sec.entryOverride);
+  }
   // engineOverride: etkileşim sırasında (nota sürükleme) hızlı motor; bırakınca seçili motorla yeniden hesaplanır
   const chordOpts = Object.assign({}, proj.chordOpts, { marks: proj.changeMarks || [] }, st.style ? { style: st.style } : {}, st.engineOverride ? { engine: st.engineOverride } : {});
   // Kullanıcı kilitleri + "kilit sonrası sabit tutulan" akorlar (pins). Bir akor kilitlenince diğer akorlar
@@ -2607,7 +2664,7 @@ const Core = {
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
   nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
-  diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
+  diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, vocalEntries, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
   bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
@@ -4553,6 +4610,7 @@ window.__dawCal = () => Cal.last;
 window.__dawAPI = {
   S, C, status, esc, getCtx, notePreview: () => NotePreview, player: () => Player,
   refresh: () => refresh(),
+  select: (sel) => select(sel),
   preview: (chords, tonic, mode, durs) => Player.previewChords(chords, tonic, mode, durs),
   // doğrulama öğesi için mevcut analiz: kastedilen notalar + tonu belli bölümler
   snapshot() {
@@ -4698,6 +4756,7 @@ function refresh() {
   renderSections();
   renderInspector();
   renderInfo();
+  renderLead();
   renderDrums();
   renderTaps();
   layoutTimeline();
@@ -5384,6 +5443,38 @@ function applyAlign() {
   S.proj.audio.offsetSec = mode === 'bar1' ? S.onset : S.onset - Math.round(S.onset / g.pulseSec) * g.pulseSec;
 }
 
+// ---------------------------------------------------------------- başlangıç ölçüsü: ölçü çizgilerini k ölçü kaydır
+// k > 0: baştaki k ölçü silinir (k+1. ölçü 1. ölçü olur); k < 0: başa |k| boş ölçü eklenir. Ses kesilmez.
+function shiftBars(k) {
+  if (!S.d || !k) return;
+  const g = S.d.g, a = S.proj.audio, p = S.proj, mv = (b) => b - k;
+  a.offsetSec += k * g.barSec; a.alignMode = 'none';
+  if (a.source === 'record') a.recOffsetSec = a.offsetSec;
+  // başa ölçü eklenince 1. ölçüden başlayan bölüm yeni ölçüleri de kapsar (intro akorları; vokal girişi onu ayrı sayar)
+  p.sections = p.sections.map((s) => Object.assign({}, s, { startBar: k < 0 && s.startBar === 1 ? 1 : Math.max(1, mv(s.startBar)), endBar: mv(s.endBar) })).filter((s) => s.endBar >= 1);
+  p.chordLocks = p.chordLocks.map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar >= 1);
+  p.chordPins = (p.chordPins || []).map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar >= 1);
+  p.changeMarks = (p.changeMarks || []).map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar > 1 || (x.bar === 1 && x.half));
+  for (const e of p.noteEdits) if (e.q0to != null) e.q0to -= k * g.barQ;
+  if (p.entryOverrides) for (const id of Object.keys(p.entryOverrides)) { const v = p.entryOverrides[id]; if (v > 0) { if (mv(v) >= 1) p.entryOverrides[id] = mv(v); else delete p.entryOverrides[id]; } }
+  p.chordPinsSig = null;
+  syncInputs(); refresh(); scheduleRender(true);
+}
+function leadBars() {
+  if (!S.d || !S.d.notes.length) return null;
+  const q = Math.min(...S.d.notes.map((n) => n.q0));
+  return { empty: Math.max(0, Math.floor(q / S.d.g.barQ + 1e-6)), firstBar: Math.floor(q / S.d.g.barQ + 1e-6) + 1 };
+}
+function renderLead() {
+  const L = leadBars();
+  $('#leadInfo').textContent = !L ? 'Önce kayıt / analiz.' : L.empty ? `Vokal ${L.firstBar}. ölçüde başlıyor; önünde ${L.empty} boş ölçü var.` : 'Vokal 1. ölçüde başlıyor (başta boş ölçü yok).';
+  $('#btnTrimLead').disabled = !L || !L.empty;
+  $('#btnTrimLead').textContent = L && L.empty ? `Baştaki ${L.empty} boş ölçüyü sil` : 'Baştaki boş ölçüleri sil';
+}
+$('#btnTrimLead').onclick = () => { const L = leadBars(); if (L && L.empty) { shiftBars(L.empty); status(`Baştaki ${L.empty} boş ölçü silindi: vokal artık 1. ölçüde.`); } };
+$('#btnFirstBar').onclick = () => { const b = Math.round(+$('#inFirstBar').value || 1); if (b > 1) { shiftBars(b - 1); $('#inFirstBar').value = 1; status(`Ölçü ${b} artık 1. ölçü (önceki ${b - 1} ölçü silindi).`); } };
+$('#btnAddBar').onclick = () => { shiftBars(-1); status('Başa 1 boş ölçü eklendi.'); };
+
 // ---------------------------------------------------------------- zaman çizelgesi
 const TL = { KW: 46, RULER: 22, SEC: 26, CHORD: 36 };
 TL.TOP = TL.RULER + TL.SEC + TL.CHORD;
@@ -5468,6 +5559,12 @@ function draw() {
     const x = qToX(b * barQ);
     if (x < TL.KW - 1) continue;
     c.fillStyle = '#9aa2b4'; c.fillText(String(b + 1), x + 4, TL.RULER / 2);
+  }
+  // vokal girişleri (akor sayacının yeniden başladığı ölçüler): cetvelde yeşil ▶
+  if (d) for (const s of d.sections) for (const b of s.entries || []) {
+    const x = Math.round(qToX((b - 1) * barQ)) + 0.5;
+    if (x < TL.KW || x > W) continue;
+    c.fillStyle = '#5fd08a'; c.beginPath(); c.moveTo(x + 14, 4); c.lineTo(x + 22, TL.RULER / 2); c.lineTo(x + 14, TL.RULER - 4); c.fill();
   }
   // akor değişim noktaları (tap): cetvelde ◆, akor satırında ince çizgi
   if (d && S.proj.taps && S.proj.taps.length) {
@@ -6006,6 +6103,17 @@ function renderInspector() {
       <span>Ağırlıklı histogram</span><span>${hist || '—'}</span>
       <span>Son ağırlıklı nota</span><span>${ki && ki.last ? esc(ki.last.name) : '—'}</span>
       <span>Akorlar</span><span>${esc(chords)}</span></div>
+      ${(() => {
+        const auto = s.entriesAuto || [], ov = s.entryOverride, on = S.proj.chordOpts.phraseEntries !== false;
+        const opts = [`<option value=""${ov == null ? ' selected' : ''}>Otomatik${auto.length ? ` (ölçü ${auto.join(', ')})` : ' (nota yok)'}</option>`]
+          .concat(Array.from({ length: s.endBar - s.startBar + 1 }, (_, i) => s.startBar + i).map((b) => `<option value="${b}"${ov === b ? ' selected' : ''}>ölçü ${b}</option>`))
+          .concat(`<option value="0"${ov === 0 ? ' selected' : ''}>Yok — sayaç bölüm başından</option>`).join('');
+        const first = (s.entries || [])[0];
+        const pre = first != null && first > s.startBar ? first - s.startBar : 0;
+        return `<div class="row"><label>Vokal girişi <select data-act="secEntry" style="width:auto">${opts}</select></label></div>
+          <p class="hint">${on ? `Akor sayacı (aynı akor A–B ölçü) ${s.entries && s.entries.length ? `ölçü ${s.entries.join(', ')}'de` : 'bölüm başında'} yeniden başlar; girişte akor değişebilir ya da sürebilir.${pre ? ` Girişten önceki ${pre} ölçü (intro) ayrı sayılır.` : ''}` : 'Vokal girişi kapalı (6. adımdaki kutu): sayaç yalnızca bölüm başında başlar.'}</p>
+          ${pre && !s.implicit ? `<div class="row"><button data-act="secStartAtEntry">Bölümü vokal girişinden başlat (ölçü ${first})</button><span class="hint">önceki ${pre} ölçü bölümden çıkar</span></div>` : ''}`;
+      })()}
       <p class="hint">Ton/mod seçimini soldaki 4. adımdan yapın. Son karar her zaman sizde.</p>
       ${s.implicit ? '' : `<div class="row"><button data-act="secQuant">Bu bölümü quantize et (${esc(quantGridLabel())}, %${S.proj.quant.strength})</button><button data-act="secQuantClear">Bölümün zamanlamasını sıfırla</button></div>`}`;
   }
@@ -6095,6 +6203,16 @@ $('#inspector').addEventListener('click', (e) => {
   if (!b || !S.sel) return;
   const act = b.dataset.act;
   if (act === 'secDelete' && S.sel.type === 'section') { deleteSection(S.sel.id); return; }
+  if (act === 'secStartAtEntry' && S.sel.type === 'section') {
+    const s = S.proj.sections.find((x) => x.id === S.sel.id), ds = S.d.sections.find((x) => x.id === S.sel.id);
+    const first = ds && (ds.entries || [])[0];
+    if (!s || !first || first <= s.startBar) return;
+    const from = s.startBar; s.startBar = first;
+    if (S.proj.entryOverrides) delete S.proj.entryOverrides[s.id];
+    refresh();
+    status(`${s.name}: ölçü ${from}–${first - 1} bölümden çıkarıldı; bölüm vokal girişinden (ölçü ${first}) başlıyor.`);
+    return;
+  }
   if ((act === 'secQuant' || act === 'secQuantClear') && S.sel.type === 'section') {
     const sid = S.sel.id, sc = { f: (n) => n.section === sid, name: (S.d.sections.find((x) => x.id === sid) || {}).name };
     if (act === 'secQuant') applyQuantize(sc); else clearTiming(sc);
@@ -6164,6 +6282,13 @@ $('#inspector').addEventListener('click', (e) => {
 });
 $('#inspector').addEventListener('change', (e) => {
   const t = e.target;
+  if (t.dataset.act === 'secEntry' && S.sel && S.sel.type === 'section') {
+    const eo = S.proj.entryOverrides || (S.proj.entryOverrides = {});
+    if (t.value === '') delete eo[S.sel.id]; else eo[S.sel.id] = +t.value;
+    refresh();
+    status(t.value === '' ? 'Vokal girişi otomatik.' : t.value === '0' ? 'Bu bölümde vokal girişi ayrımı yok: akor sayacı bölüm başından.' : `Vokal girişi: ölçü ${t.value} — akor sayacı burada yeniden başlar.`);
+    return;
+  }
   if (t.dataset.act === 'lock' && S.sel && S.sel.type === 'note') {
     const n = S.d.notes.find((x) => x.id === S.sel.id);
     const ed = editFor(n, true); ed.locked = t.checked; cleanupEdits(); refresh();
@@ -6383,6 +6508,7 @@ function syncInputs() {
   $('#inClickFeel').value = p.settings.clickFeel || 'normal';
   $('#inOnlyMarked').checked = !!p.chordOpts.onlyMarked;
   $('#inDownbeatOnly').checked = !!p.chordOpts.downbeatOnly;
+  $('#inPhraseEntries').checked = p.chordOpts.phraseEntries !== false;
   $('#inClickFeel').disabled = p.settings.meter !== '4/4';
   $('#bpmUnit').textContent = p.settings.meter === '6/8' ? `(♩. = noktalı çeyrek; ♩ = ${Math.round(gq.quarterBpm)})` : '(♩ = çeyrek nota)';
   $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
@@ -6512,6 +6638,7 @@ $('#btnChartRemove').onclick = () => {
 };
 $('#inOnlyMarked').addEventListener('change', (e) => { S.proj.chordOpts.onlyMarked = e.target.checked; refresh(); });
 $('#inDownbeatOnly').addEventListener('change', (e) => { S.proj.chordOpts.downbeatOnly = e.target.checked; refresh(); });
+$('#inPhraseEntries').addEventListener('change', (e) => { S.proj.chordOpts.phraseEntries = e.target.checked; refresh(); });
 $('#btnClearMarks').onclick = () => { const n = (S.proj.changeMarks || []).length; S.proj.changeMarks = []; refresh(); status(`${n} değişim işareti kaldırıldı (akorlar yerinde kaldı).`); };
 $('#btnApplySug').onclick = () => {
   const n = S.d.chords.filter((c) => c.pinSuggest).length;
