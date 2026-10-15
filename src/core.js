@@ -902,6 +902,42 @@ const commonTones = (a, b) => (a && b ? chordPcs(a).filter((p) => chordPcs(b).in
 const CHORD_DEFAULTS = { changePct: 25, maxBarsMin: 4, maxBars: 4, colorPenalty: 0, engine: 'viterbi', altChoice: {} };
 // aralığın alt sınırı (eski projelerde yalnızca maxBars vardı)
 const holdRange = (o) => { const hi = Math.max(1, Math.round(o.maxBars || 4)); const lo = Math.min(hi, Math.max(1, Math.round(o.maxBarsMin ?? hi))); return { lo, hi }; };
+// ---- Şarkı bağlamı: kullanıcının seçimleri (kilitler + elle konan akorlar) şarkının kalanına bilgi verir
+// Ağırlıklar ölçü başına melodi ağırlığı (Wbar) cinsinden: elle konan akor ≈ kesin tercih; kardeş bölümde aynı yer güçlü,
+// seçtiğin geçiş orta, seçtiğin akor paleti hafif.
+const PICK_W = 2, SIB_W = 0.35, TRANS_W = 0.25, VOCAB_W = 0.04;
+// "Verse 1" / "Verse 2" / "Nakarat (2)" → aynı aile
+const sectionFamily = (sec) => String(sec.name || '').toLocaleLowerCase('tr').replace(/[\s.#()-]*\d+[\s.)]*$/, '').trim() || String(sec.id);
+// tonik'e göre derece + çekirdek nitelik: "7:M" (V majör), "9:m" (vi minör), "5:sus4"
+const degreeKey = (c, tonic) => { const iv = CHORD_Q[c.q] || []; return `${mod12(c.root - tonic)}:${iv.includes(4) ? 'M' : iv.includes(3) ? 'm' : c.q}`; };
+function songContext(choices, sections, g) {
+  const per = g.split ? 2 : 1;
+  const ctx = { vocab: new Set(), trans: new Set(), sib: new Map(), n: 0 };
+  for (const sec of sections) {
+    if (sec.tonic == null) continue;
+    const U = (sec.endBar - sec.startBar + 1) * per, unitC = new Array(U).fill(null);
+    for (const l of choices) {
+      if (l.bar < sec.startBar || l.bar > sec.endBar) continue;
+      const hs = l.half == null || per === 1 ? Array.from({ length: per }, (_, h) => h) : [l.half];
+      for (const h of hs) unitC[(l.bar - sec.startBar) * per + h] = l;
+    }
+    const base0 = (((sec.entries || [])[0] ?? sec.startBar) - sec.startBar) * per;
+    const fam = sectionFamily(sec);
+    let prev = null;
+    for (let u = 0; u < U; u++) {
+      const l = unitC[u];
+      if (!l) { prev = null; continue; }
+      const dk = degreeKey(l.chord, sec.tonic);
+      ctx.vocab.add(dk); ctx.n++;
+      if (prev && prev !== dk) ctx.trans.add(`${prev}>${dk}`);
+      prev = dk;
+      if (!ctx.sib.has(fam)) ctx.sib.set(fam, new Map());
+      const m = ctx.sib.get(fam), off = u - base0;
+      if (!m.has(off)) m.set(off, { deg: dk, iv: mod12(l.chord.root - sec.tonic), q: l.chord.q, secId: sec.id, from: sec.name, bar: sec.startBar + Math.floor(u / per), name: chordName(l.chord, keyUsesFlats(sec.tonic, sec.mode)) });
+    }
+  }
+  return ctx.n ? ctx : null;
+}
 // Vokal girişleri (cümle başları): bölümdeki ilk nota ve ≥ 1 ölçülük sessizlikten sonra gelen nota.
 // Giriş ölçüsü = notanın ölçüsü; nota ölçünün 2. yarısında başlıyorsa (öncü: "ve-3-4-|1") bir sonraki ölçü.
 // override: kullanıcının seçtiği ilk giriş ölçüsü (otomatik ilk girişin yerine), 0 = bu bölümde giriş ayrımı yok.
@@ -925,6 +961,8 @@ function vocalEntries(notes, sec, g, override = null) {
 function buildChords(notes, sections, g, opts = {}, locks = []) {
   const o = Object.assign({}, CHORD_DEFAULTS, opts);
   if (o.engine === 'viterbi') return buildChordsViterbi(notes, sections, g, o, locks);
+  // ölçü ölçü motor: elle konan akorlar kilit gibi uygulanır (bağlam terimleri yalnızca süreli Viterbi'de)
+  if (o.picks && o.picks.length) locks = [...locks, ...o.picks.filter((p) => !locks.some((l) => l.bar === p.bar && (l.half ?? null) === (p.half ?? null)))];
   const pct = o.changePct / 100;
   const slots = [];
   let prevChord = null;
@@ -1115,14 +1153,31 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       if (l.half == null || per === 1) for (let h = 0; h < per; h++) lockU[b * per + h] = l.chord;
       else lockU[b * per + l.half] = l.chord;
     }
+    // elle konan (kilitsiz) akorlar: güçlü tercih — motor çevresini onlara göre kurar, ama kesin kısıt değildir
+    const pickU = new Array(U).fill(null);
+    for (const l of o.picks || []) {
+      if (l.bar < sec.startBar || l.bar > sec.endBar) continue;
+      const b = l.bar - sec.startBar;
+      if (l.half == null || per === 1) for (let h = 0; h < per; h++) pickU[b * per + h] = l.chord;
+      else pickU[b * per + l.half] = l.chord;
+    }
     const sameLock = (a, b) => sameChord(a, b) && (a.bass ?? null) === (b.bass ?? null);
     const lockPre = [0];
-    for (let u = 0; u < U; u++) lockPre.push(lockPre[u] + (lockU[u] ? 1 : 0));
+    for (let u = 0; u < U; u++) lockPre.push(lockPre[u] + (lockU[u] || pickU[u] ? 1 : 0));
     const hasLock = (a, b) => lockPre[b] - lockPre[a] > 0;
+    // şarkı bağlamı: kullanıcının başka yerlerdeki seçimleri (aynı adlı bölümde aynı yer, geçişler, akor paleti)
+    const ctx = o.songCtx || null;
+    const fam = sectionFamily(sec);
+    const base0 = (((sec.entries || [])[0] ?? sec.startBar) - sec.startBar) * per;
+    const sibMap = ctx && ctx.sib.get(fam);
+    const sibU = new Array(U).fill(null);
+    if (sibMap) for (let u = 0; u < U; u++) { const x = sibMap.get(u - base0); if (x && x.secId !== sec.id) sibU[u] = x; }
     const cands = diatonicChords(sec.tonic, sec.mode).map((c) => ({ root: c.root, q: c.q, deg: c.deg }));
-    for (const l of lockU) if (l && !cands.some((c) => sameLock(c, l))) cands.push(Object.assign({ deg: -1 }, l));
+    for (const l of [...lockU, ...pickU]) if (l && !cands.some((c) => sameLock(c, l))) cands.push(Object.assign({ deg: -1 }, l));
+    for (const x of sibU) if (x) { const c = { root: mod12(sec.tonic + x.iv), q: x.q }; if (!cands.some((cc) => sameChord(cc, c))) cands.push(Object.assign({ deg: -1 }, c)); }
     const nC = cands.length;
     const coreOf = (c) => { const iv = CHORD_Q[c.q]; return `${c.root}:${iv.includes(4) ? 'M' : iv.includes(3) ? 'm' : c.q}`; };
+    const degK = cands.map((c) => degreeKey(c, sec.tonic));
     const coreK = cands.map(coreOf);
     // ölçü başına melodi ağırlığı → değişim maliyeti
     const secNotes = slotNotes(notes, qAt(0), qAt(U), g);
@@ -1175,14 +1230,19 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       if (segCache.has(key)) return segCache.get(key);
       let v = null;
       const c = cands[ci];
-      let lockOk = true, anyLock = false;
+      let lockOk = true, anyLock = false, pickV = 0, ctxV = 0;
       for (let u = s; u < s + d; u++) if (lockU[u]) { anyLock = true; if (!sameLock(lockU[u], c)) { lockOk = false; break; } }
+      for (let u = s; u < s + d && lockOk; u++) {
+        if (pickU[u]) { if (sameLock(pickU[u], c)) { pickV += PICK_W * Wbar / per + 1; anyLock = true; } else pickV -= PICK_W * Wbar / per + 1; }
+        else if (!lockU[u] && sibU[u] && sibU[u].deg === degK[ci]) ctxV += (SIB_W * Wbar) / per + (sibU[u].q === c.q ? (0.1 * Wbar) / per : 0);
+      }
+      if (ctx && ctx.vocab.has(degK[ci])) ctxV += (VOCAB_W * Wbar * d) / per;
       if (lockOk) {
         const sn = slotNotes(notes, qAt(s), qAt(s + d), g);
         const r = scoreChord(c, sn, o.colorPenalty);
         const relax = d === 1 && unitFriction[s];
         if (!r.friction || relax || anyLock) {
-          let val = r.score + (sameChord(c, home) ? 0.06 * r.W : 0) + (c.deg === 3 || c.deg === 4 ? 0.02 * r.W : 0);
+          let val = r.score + (sameChord(c, home) ? 0.06 * r.W : 0) + (c.deg === 3 || c.deg === 4 ? 0.02 * r.W : 0) + pickV + ctxV;
           if (s + d === U && sameChord(c, home)) val += 0.5 * lastBarW; // bölüm sonu: ev akoru (son ölçünün ağırlığıyla)
           const dt = sty && sty.durTerm ? sty.durTerm(sec, d / per) : null;
           if (dt != null) val += dt;
@@ -1204,7 +1264,7 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
       if (prevChord) f += 0.04 * Wbar * commonTones(prevChord, cands[b]);
       if (si === 0 && sameChord(cands[b], home)) f += 0.15 * Wbar;
       first[b] = f;
-      for (let a = 0; a < nC; a++) trans[a][b] = sty ? sty.score(cands[a], null, cands[b], sec).value : 0;
+      for (let a = 0; a < nC; a++) trans[a][b] = (sty ? sty.score(cands[a], null, cands[b], sec).value : 0) + (ctx && ctx.trans.has(`${degK[a]}>${degK[b]}`) ? TRANS_W * Wbar : 0);
     }
     // list Viterbi: durum (bitiş u, akor c) → en iyi K düğüm
     const table = Array.from({ length: U + 1 }, () => new Map());
@@ -1315,11 +1375,14 @@ function buildChordsViterbi(notes, sections, g, o, locks = []) {
           reason: locked ? 'kilitli' : `süreli Viterbi: ${chordName(c, flats)} ${(segNode.e - segNode.s) / per} ölçü${alts.length > 1 ? ` · alternatif ${choice + 1}/${alts.length}` : ''}`,
           flats, candidates: scored.slice(0, 3).map((x) => ({ chord: { root: x.chord.root, q: x.chord.q }, score: x.total, melody: x.melody, style: x.style, styleTrans: x.styleTrans, styleColor: x.styleColor, pct: x.W > 0 ? Math.round((100 * x.total) / x.W) : 0, roles: x.roles, friction: x.friction })),
           roles: curEval.roles, score: curEval.score, W: curEval.W, notes: sn.map((x) => ({ id: x.n.id, pc: x.pc, w: x.w })), suggest: null,
-          rhythm: null, segBars: (segNode.e - segNode.s) / per, engine: 'viterbi',
+          rhythm: null, segBars: (segNode.e - segNode.s) / per, engine: 'viterbi', picked: !!pickU[bi * per + a] && sameLock(pickU[bi * per + a], c),
+          context: !lockU[bi * per + a] && !pickU[bi * per + a] && sibU[bi * per + a] && sibU[bi * per + a].deg === degK[us[a]] ? sibU[bi * per + a] : null,
           segDurTerm: (seg(segNode.s, segNode.e - segNode.s, segNode.ci) || {}).dt ?? null,
         };
         if (slot.chord.bass == null) delete slot.chord.bass;
-        if (!locked && slot.chord.q === '' && sn.some((x) => x.w >= 0.5 && mod12(x.pc - slot.chord.root) === 11)) { slot.chord.q = 'maj7'; slot.reason += ' · melodi maj7 → maj7'; }
+        if (slot.picked) slot.reason = 'elle konuldu (kilitsiz) — çevresi buna göre';
+        else if (slot.context) slot.reason += ` · bağlam: ${slot.context.from} ölçü ${slot.context.bar}'de ${slot.context.name} seçtin`;
+        if (!locked && !slot.picked && slot.chord.q === '' && sn.some((x) => x.w >= 0.5 && mod12(x.pc - slot.chord.root) === 11)) { slot.chord.q = 'maj7'; slot.reason += ' · melodi maj7 → maj7'; }
         if (slot.chord.q === 'm' && sn.filter((x) => x.w >= 2).some((x) => mod12(x.pc - slot.chord.root) === 2)) slot.suggest = { root: slot.chord.root, q: 'sus2' };
         slots.push(slot);
         if (!sameChord(prevC, c)) prevC = c;
@@ -1730,7 +1793,7 @@ function newProject() {
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
-    chordLocks: [], chordPins: [], changeMarks: [],
+    chordLocks: [], chordPicks: [], chordPins: [], changeMarks: [], seq: 0,
     mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
     drums: { on: false, loop: 'auto' },
     quant: { grid: '1/8', strength: 100 }, taps: [],
@@ -1843,37 +1906,62 @@ function derive(proj, st) {
   // Kullanıcı kilitleri + "kilit sonrası sabit tutulan" akorlar (pins). Bir akor kilitlenince diğer akorlar
   // olduğu gibi kalır; motorun aksi yöndeki tercihi yalnızca öneri (pinSuggest) olarak, gerekçesiyle gösterilir.
   const covers = (l, bar, half) => l.bar === bar && (l.half == null || half == null || l.half === half);
-  // ✂ işaretleri kilitlerden önceliklidir (proje kilitleri değişmez, yalnızca bu hesapta):
-  //  · işaret tam ölçülük bir kilidin ortasına düşerse kilit işaretin önünde (1. yarı) kalır, sonrası serbest;
-  //  · işaretin iki yanında aynı akor kilitliyse işaretten sonraki kilit yok sayılır (yoksa orada değişim olamaz).
+  // ÖNCELİK: kilit, elle konan akor ve ✂ / = işaretleri arasında sabit bir hiyerarşi yok — çakışırlarsa EN SON yapılan
+  // kazanır, en eskisi bu hesapta geri çekilir (proje verisi değişmez; sonradakini kaldırınca eskisi geri gelir).
+  // Eşit/eski (zaman damgasız) veride işaret kazanır.
+  const same = (a, b) => sameChord(a, b) && (a.bass ?? null) === (b.bass ?? null);
+  const tOf = (x) => x.t || 0;
   const lockOverrides = [];
-  const underMarks = (list, report) => {
-    let L = list.map((l) => Object.assign({}, l));
-    const changes = (proj.changeMarks || []).filter((m) => m.kind === 'change');
-    if (g.split) for (const l of L) if (l.half == null && changes.some((m) => m.bar === l.bar && (m.half || 0) === 1)) {
-      l.half = 0;
-      if (report) lockOverrides.push({ kind: 'cut', bar: l.bar, chord: l.chord });
+  let P = [...(proj.chordLocks || []).map((l) => Object.assign({ kind: 'lock' }, l)), ...(proj.chordPicks || []).map((l) => Object.assign({ kind: 'pick' }, l))];
+  const M = (proj.changeMarks || []).map((m) => Object.assign({}, m));
+  // 1) ölçü ortasındaki ✂, tam ölçülük kilidin / konan akorun içinde
+  if (g.split) for (const m of M) {
+    if (m.kind !== 'change' || (m.half || 0) !== 1) continue;
+    for (const l of P) {
+      if (m.off || l.half != null || l.bar !== m.bar) continue;
+      if (tOf(m) >= tOf(l)) { l.half = 0; lockOverrides.push({ kind: 'cut', bar: l.bar, chord: l.chord, pick: l.kind === 'pick' }); }
+      else { m.off = true; lockOverrides.push({ kind: 'markOff', bar: m.bar, half: 1, mark: m.kind, chord: l.chord, pick: l.kind === 'pick' }); }
     }
-    const same = (a, b) => sameChord(a, b) && (a.bass ?? null) === (b.bass ?? null);
+  }
+  // 2) işaretin iki yanı: ✂ ama iki yanda aynı akor / = ama iki yanda farklı akor → üçünden en eskisi geri çekilir
+  for (const m of M) {
+    if (m.off) continue;
+    const h = g.split ? m.half || 0 : 0;
+    const lb = P.find((l) => (h === 1 ? covers(l, m.bar, 0) : covers(l, m.bar - 1, g.split ? 1 : null)));
+    const la = P.find((l) => covers(l, m.bar, g.split ? h : null));
+    if (!lb || !la || lb === la) continue;
+    if (m.kind === 'change' ? !same(lb.chord, la.chord) : sameChord(lb.chord, la.chord)) continue;
+    const oldest = [la, lb, m].reduce((a, b) => (tOf(b) < tOf(a) ? b : a));
+    if (oldest === m) { m.off = true; lockOverrides.push({ kind: 'markOff', bar: m.bar, half: h, mark: m.kind, chord: la.chord, pick: la.kind === 'pick' }); }
+    else { P = P.filter((x) => x !== oldest); lockOverrides.push({ kind: 'drop', bar: oldest.bar, half: oldest.half ?? null, chord: oldest.chord, markBar: m.bar, markHalf: h, mark: m.kind, pick: oldest.kind === 'pick' }); }
+  }
+  chordOpts.marks = M.filter((m) => !m.off);
+  const userLocks = P.filter((l) => l.kind === 'lock');
+  const picks = P.filter((l) => l.kind === 'pick' && !userLocks.some((u) => covers(u, l.bar, l.half)));
+  chordOpts.picks = picks;
+  // şarkı bağlamı: seçimlerin şarkının kalanına bilgi verir (6. adımdaki kutuyla kapatılır)
+  chordOpts.songCtx = proj.chordOpts.songContext === false ? null : songContext([...userLocks, ...picks], sections, g);
+  // sabitler (motorun kendi akorları, kullanıcı eylemi değil): işaretler her zaman kazanır
+  const pinsUnder = (list) => {
+    let L = list.map((l) => Object.assign({}, l));
+    const changes = chordOpts.marks.filter((m) => m.kind === 'change');
+    if (g.split) for (const l of L) if (l.half == null && changes.some((m) => m.bar === l.bar && (m.half || 0) === 1)) l.half = 0;
     for (const m of changes) {
       const h = g.split ? m.half || 0 : 0;
-      const lb = L.find((l) => (h === 1 ? covers(l, m.bar, 0) : covers(l, m.bar - 1, g.split ? 1 : null)));
+      const lb = [...userLocks, ...picks, ...L].find((l) => (h === 1 ? covers(l, m.bar, 0) : covers(l, m.bar - 1, g.split ? 1 : null)));
       const la = L.find((l) => covers(l, m.bar, g.split ? h : null));
-      if (lb && la && lb !== la && same(lb.chord, la.chord)) {
-        L = L.filter((x) => x !== la);
-        if (report) lockOverrides.push({ kind: 'drop', bar: la.bar, half: la.half ?? null, chord: la.chord, markBar: m.bar, markHalf: h });
-      }
+      if (lb && la && lb !== la && same(lb.chord, la.chord)) L = L.filter((x) => x !== la);
     }
     return L;
   };
-  const userLocks = underMarks(proj.chordLocks || [], true);
-  const pins = underMarks((proj.chordPins || []).filter((p) => !userLocks.some((l) => covers(l, p.bar, p.half))), false);
+  const pins = pinsUnder((proj.chordPins || []).filter((p) => ![...userLocks, ...picks].some((l) => covers(l, p.bar, p.half))));
   const chords = buildChords(notes, sections, g, chordOpts, [...userLocks, ...pins]);
   for (const sl of chords) {
     const ul = userLocks.find((l) => covers(l, sl.bar, sl.half));
     sl.locked = !!ul;
     sl.lockSrc = ul ? ul.src || 'user' : null;
-    sl.pinned = !sl.locked && pins.some((p) => covers(p, sl.bar, sl.half));
+    sl.picked = !sl.locked && picks.some((p) => covers(p, sl.bar, sl.half) && sameChord(p.chord, sl.chord));
+    sl.pinned = !sl.locked && !sl.picked && pins.some((p) => covers(p, sl.bar, sl.half));
     if (sl.pinned) sl.reason = 'sabit: bir akoru kilitlediğinde diğerleri değişmez';
   }
   // 8) voicing
@@ -2138,7 +2226,7 @@ const Core = {
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
   nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
-  diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, vocalEntries, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
+  diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, vocalEntries, songContext, sectionFamily, degreeKey, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
   bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,

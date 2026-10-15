@@ -515,6 +515,7 @@ try {
     const cy = tl.y + 22 + 26 + 18;
     const mid = (bar) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === ${bar}); return 46 + ((s.q0 + s.q1) / 2) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
     const names = () => S(() => window.__daw.d.chords.map((c) => window.__dawAPI.C.chordName(Object.assign({}, c.chord, { bass: c.chord.bass ?? (c.inversion ? c.voicing.bassPc : null) }))));
+    await page.uncheck('#inAdaptAfter'); // eski davranış: düzenlenen yer dışında hiçbir akor değişmez
     const n0 = await names();
     await page.mouse.click(tl.x + (await mid(2)), cy);
     await page.fill('#chInput', 'A'); await page.click('#inspector button[data-act=manualChord]');
@@ -539,7 +540,38 @@ try {
     n1.forEach((x, i) => { if (i > 1) assert.equal(n2[i], x); });
     await page.click('#btnUnlockAll');
     assert.deepEqual(await names(), n0);
+    await page.check('#inAdaptAfter');
     return `kilit sonrası değişen yok · ölçü 1 önerisi: "${insp.match(/Motor burada[^.]*/)[0].slice(0, 80)}" · uygula → yalnızca ölçü 1 değişti · tüm kilitleri kaldır → başlangıç`;
+  });
+
+  await step('Kilitsiz "Koy": akor yerine gelir (✎), önceki akorlar sabit, sonrakiler seçime göre yeniden önerilir; Kilitle / Kaldır; elle yazıp yerine koy', async () => {
+    const tl = await page.locator('#tl').boundingBox();
+    const cy = tl.y + 22 + 26 + 18;
+    const mid = (bar) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === ${bar}); return 46 + ((s.q0 + s.q1) / 2) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
+    const names = () => S(() => window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`));
+    assert.ok(await page.isChecked('#inAdaptAfter'));
+    const n0 = await names();
+    await page.mouse.click(tl.x + (await mid(3)), cy);
+    await page.locator('#inspector tbody button[data-act=placeChord]').nth(1).click();
+    const st3 = await S(() => { const s = window.__daw.d.chords.find((c) => c.bar === 3); return { picked: s.picked, locked: s.locked }; });
+    assert.deepEqual(st3, { picked: true, locked: false });
+    const n1 = await names();
+    n0.filter((x) => +x.split(/[.:]/)[0] < 3).forEach((x) => assert.ok(n1.includes(x), 'öncesi değişmemeli: ' + x));
+    const pins = await S(() => (window.__daw.proj.chordPins || []).map((p) => p.bar));
+    assert.ok(pins.every((b) => b < 3), 'yalnızca öncesi sabit: ' + pins);
+    assert.match(await page.textContent('#inspector'), /Bu akoru sen koydun \(kilitsiz\)/);
+    // kilitle → kilitli; kaldır → otomatik
+    await page.click('#inspector button[data-act=lockPicked]');
+    assert.equal(await S(() => window.__daw.d.chords.find((c) => c.bar === 3).locked), true);
+    await page.click('#inspector button[data-act=unlockChord]');
+    assert.equal(await S(() => (window.__daw.proj.chordLocks.length + window.__daw.proj.chordPicks.length)), 0);
+    // elle yaz → yerine koy (kilitsiz)
+    await page.mouse.click(tl.x + (await mid(2)), cy);
+    await page.fill('#chInput', 'Bm7'); await page.click('#inspector button[data-act=manualPlace]');
+    const s2 = await S(() => { const s = window.__daw.d.chords.find((c) => c.bar === 2); return [window.__dawAPI.C.chordName(s.chord), s.picked, s.locked]; });
+    assert.deepEqual(s2, ['Bm7', true, false]);
+    await page.click('#btnUnlockAll');
+    return `Koy → ölçü 3 ✎ (kilitsiz), öncesi aynı, sabitler yalnızca öncesinde · Kilitle/Kaldır · "Bm7" yerine koy → ${s2[0]} ✎`;
   });
 
   await step('Kendi akor şablonun: yaz / .txt yükle → melodinin üzerinde kilitli çalar; hata satırıyla; diğer akorlar değişmez; kaldır', async () => {
@@ -593,7 +625,8 @@ try {
     const bandY = tl.y + 22 + 26 + 5;
     const bx = (bar, half) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); return 46 + ((${bar} - 1) * d.g.barQ + ${half} * d.g.split) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
     const chords = () => S(() => window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`));
-    const marks = () => S(() => JSON.stringify(window.__daw.proj.changeMarks));
+    const marks = () => S(() => JSON.stringify((window.__daw.proj.changeMarks || []).map(({ t, ...m }) => m)));
+    await page.uncheck('#inAdaptAfter'); // bu adım: işaret konunca başka hiçbir akor değişmez (eski davranış)
     const n0 = await chords();
     // ölçü 6 ortası (Eadd9 tam ölçü) → ✂
     await page.mouse.click(tl.x + (await bx(6, 1)), bandY);
@@ -626,6 +659,7 @@ try {
     await page.uncheck('#inOnlyMarked');
     await page.click('#btnClearMarks');
     assert.equal(await marks(), '[]');
+    await page.check('#inAdaptAfter');
     return `✂ 6½ → ${n1.filter((x) => x.startsWith('6')).join(' ')}, diğerleri aynı · tekrar tık → = → yok · akor gövdesi seçer · panel "✂ Ölçünün ortasında değiştir" → ${n2.filter((x) => x.startsWith('2')).join(' ')} · yalnızca işaretli → verse ${runs.join(' → ')}`;
   });
 

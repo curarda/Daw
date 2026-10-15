@@ -580,6 +580,58 @@ await step('Vokal girişi: akor sayacı girişte yeniden başlar (intro ayrı sa
   return `intro 2 ölçü + vokal ölçü 3 → segmentler ${segs.map((x) => x.bars).join('+')} (sınır ölçü 3'te) · öncü 2½ → giriş 3 · sessizlik sonrası yeni giriş 5`;
 });
 
+await step('Öncelik: kilit / konan akor / işaret çakışırsa en son yapılan kazanır; kilitsiz "koy"; seçimler şarkının kalanına bağlam (aynı adlı bölüm)', () => {
+  const p = JSON.parse(JSON.stringify(proj));
+  p.chordPins = []; p.noteEdits = []; p.chordPicks = [];
+  p.sections = [{ id: 'all', name: 'Tümü', startBar: 1, endBar: 8, tonic: 1, mode: 'phrygian' }];
+  const at = (dd, bar, half) => dd.chords.find((c) => { const q = (bar - 1) * g.barQ + half * g.split + 0.01; return q >= c.q0 && q < c.q1; });
+  const X = at(Core.derive(Object.assign({}, p, { chordLocks: [], changeMarks: [] }), st), 6, 0).chord;
+  const lockX = (t) => ({ bar: 6, half: null, chord: { root: X.root, q: X.q, bass: null }, t });
+  // ✂ kilitten sonra → kilit 1. yarıda kalır
+  p.chordLocks = [lockX(1)]; p.changeMarks = [{ bar: 6, half: 1, kind: 'change', t: 2 }];
+  let dd = Core.derive(p, st);
+  assert.ok(at(dd, 6, 0).locked && !at(dd, 6, 1).locked && at(dd, 6, 1).chord.root !== X.root);
+  assert.deepEqual(dd.chords.lockOverrides.map((x) => x.kind), ['cut']);
+  // kilit ✂'ten sonra → işaret yok sayılır, ölçü 6 tamamen kilitli
+  p.chordLocks = [lockX(3)];
+  dd = Core.derive(p, st);
+  assert.ok(at(dd, 6, 0).locked && at(dd, 6, 1).locked && Core.sameChord(at(dd, 6, 1).chord, X));
+  assert.deepEqual(dd.chords.lockOverrides.map((x) => x.kind), ['markOff']);
+  // = işareti iki farklı kilidin arasında: üçünden en eskisi geri çekilir
+  p.changeMarks = [{ bar: 6, half: 0, kind: 'hold', t: 2 }];
+  p.chordLocks = [{ bar: 5, half: null, chord: { root: 11, q: 'm', bass: null }, t: 1 }, lockX(3)];
+  dd = Core.derive(p, st);
+  assert.deepEqual(dd.chords.lockOverrides.map((x) => [x.kind, x.bar]), [['drop', 5]], 'en eski: ölçü 5 kilidi');
+  assert.ok(Core.sameChord(at(dd, 5, 1).chord, X), '= : ölçü 5 sonu ölçü 6 ile aynı akor');
+  p.changeMarks[0].t = 0;
+  assert.deepEqual(Core.derive(p, st).chords.lockOverrides.map((x) => x.kind), ['markOff'], 'işaret en eskiyse yok sayılır');
+  // kilitsiz "koy": akor oraya gelir ama kilit değildir; daha yeni ✂ onu böler
+  p.chordLocks = []; p.changeMarks = [];
+  p.chordPicks = [{ bar: 2, half: null, chord: { root: 11, q: 'm7', bass: null }, t: 5 }];
+  dd = Core.derive(p, st);
+  assert.ok(at(dd, 2, 0).picked && !at(dd, 2, 0).locked && Core.chordName(at(dd, 2, 0).chord) === 'Bm7');
+  p.changeMarks = [{ bar: 2, half: 1, kind: 'change', t: 6 }];
+  dd = Core.derive(p, st);
+  assert.ok(at(dd, 2, 0).picked && !at(dd, 2, 1).picked);
+  // bağlam: Verse 1'e konan akorlar Verse 2'de aynı yerde tercih edilir
+  const q = JSON.parse(JSON.stringify(proj));
+  q.chordLocks = []; q.chordPins = []; q.noteEdits = []; q.changeMarks = [];
+  q.sections = [{ id: 'v1', name: 'Verse 1', startBar: 1, endBar: 4, tonic: 1, mode: 'phrygian' }, { id: 'v2', name: 'Verse 2', startBar: 5, endBar: 8, tonic: 1, mode: 'phrygian' }];
+  const d0 = Core.derive(q, st);
+  q.chordPicks = [5, 6, 7, 8].map((b) => ({ bar: b - 4, half: null, chord: Object.assign({}, d0.chords.find((c) => c.bar === b).candidates[1].chord), t: 1 }));
+  const want = q.chordPicks.map((x) => Core.chordName(x.chord));
+  const v2 = (dd2) => [5, 6, 7, 8].map((b) => Core.chordName(dd2.chords.find((c) => c.bar === b).chord));
+  const withCtx = Core.derive(q, st);
+  assert.deepEqual(v2(withCtx), want, 'Verse 2 = Verse 1 seçimleri');
+  assert.ok(withCtx.chords.find((c) => c.bar === 6).context, 'bağlam gerekçesi');
+  q.chordOpts = Object.assign({}, q.chordOpts, { songContext: false });
+  const noCtx = v2(Core.derive(q, st));
+  assert.notDeepEqual(noCtx, want);
+  assert.equal(Core.sectionFamily({ name: 'Verse 2' }), Core.sectionFamily({ name: 'Verse 1' }));
+  assert.equal(Core.sectionFamily({ name: 'Nakarat (2)' }), 'nakarat');
+  return `✂ sonra → kilit böldü · kilit sonra → ✂ yok sayıldı · = en eski kilidi çekti · Bm7 kilitsiz kondu · Verse 1: ${want.join(' ')} → Verse 2 bağlamla ${v2(withCtx).join(' ')} (bağlamsız ${noCtx.join(' ')})`;
+});
+
 await step('Değişim işaretleri: ✂ noktada akor değişir, = noktada değişmez, "yalnızca işaretli" modda başka yerde değişmez (rastgele işaretlerle)', () => {
   const p8 = JSON.parse(JSON.stringify(proj));
   p8.chordLocks = []; p8.chordPins = []; p8.noteEdits = [];
