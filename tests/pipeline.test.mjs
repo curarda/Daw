@@ -186,42 +186,79 @@ await step('6) Akor bulma (varsayılan motor: süreli Viterbi): verse C#m / Dmaj
   const byBar = {};
   for (const c of dv.chords) (byBar[c.bar] ||= []).push(Core.chordName(c.chord, c.flats));
   const bars = Object.values(byBar).map((cs) => cs.join(' '));
-  assert.deepEqual(bars.slice(0, 4), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7 C#m']);
+  // ev akoru "her M ölçüde" kuralı kaldırıldı: verse'te Dmaj7 melodiyle sürtünmediği için 2–4. ölçüde sürer, bölüm C#m ile biter
+  assert.deepEqual(bars.slice(0, 4), ['C#m', 'Dmaj7', 'Dmaj7', 'Dmaj7 C#m']);
   assert.equal(bars[7], 'Bm');
   assert.equal(Object.keys(dv.chords.alternatives).length, 2);
   return bars.map((b, i) => `${i + 1}:${b}`).join(' | ');
 });
 
-await step('6) Akor bulma (ölçü ölçü motor, kurallar): ev akoru her 2 ölçüde; M=0 ve renk cezası', () => {
+await step('6) Akor bulma (ölçü ölçü motor, kurallar): ev akoru M kuralı yok; renk cezası; kilit', () => {
   proj.chordOpts = Object.assign({}, proj.chordOpts, { engine: 'greedy' });
-  d = Core.derive(proj, st);
-  const chart = (dd) => {
-    const byBar = {};
-    for (const c of dd.chords) (byBar[c.bar] ||= []).push(Core.chordName(c.chord, c.flats));
-    return Object.values(byBar).map((cs) => cs.join(' '));
-  };
-  const bars = chart(d);
-  const txt = bars.map((b, i) => `${i + 1}:${b}`).join(' | ');
-  assert.deepEqual(bars.slice(0, 4), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7 C#m'], 'verse: ' + txt);
-  assert.match(d.chords.find((c) => c.bar === 3).reason, /\(d\) ev akoru 2 ölçüdür/);
-  assert.equal(bars[7], 'Bm', 'nakarat sonu: ' + txt);
-  // ev akoru kuralı kapalıyken (M=0) renk akoru Dmaj7 cezasız devam eder
-  const off = chart(Core.derive(Object.assign({}, proj, { chordOpts: Object.assign({}, proj.chordOpts, { homeEvery: 0 }) }), st));
-  assert.equal(off[2], 'Dmaj7', 'M=0: ' + off.join(' | '));
-  // renk notası cezası parametresi (0.1) eski sürümün sonucunu verir
-  const pen = chart(Core.derive(Object.assign({}, proj, { chordOpts: Object.assign({}, proj.chordOpts, { homeEvery: 0, colorPenalty: 0.1 }) }), st));
-  assert.equal(pen[2], 'C#m', 'ceza 0.1: ' + pen.join(' | '));
-  assert.equal(Core.CHORD_DEFAULTS.colorPenalty, 0);
-  // Frig ev akoru asla majör değil
-  assert.ok(!Core.diatonicChords(1, 'phrygian').some((c) => c.root === 1 && Core.CHORD_Q[c.q].includes(4)));
-  // kilit korunur
-  proj.chordLocks = [{ bar: 1, half: null, chord: { root: 9, q: '' } }];
-  const d3 = Core.derive(proj, st);
-  assert.equal(Core.chordName(d3.chords[0].chord), 'A');
-  assert.ok(d3.chords[0].locked);
-  proj.chordLocks = [];
-  proj.chordOpts = Object.assign({}, proj.chordOpts, { engine: 'viterbi' });
-  return `${txt}\n    M=0: ${off.join(' | ')}\n    M=0 + renk cezası 0.1: ${pen.join(' | ')}`;
+  try {
+    const d = Core.derive(proj, st);
+    const chart = (dd) => {
+      const byBar = {};
+      for (const c of dd.chords) (byBar[c.bar] ||= []).push(Core.chordName(c.chord, c.flats));
+      return Object.values(byBar).map((cs) => cs.join(' '));
+    };
+    const bars = chart(d);
+    const txt = bars.map((b, i) => `${i + 1}:${b}`).join(' | ');
+    assert.deepEqual(bars.slice(0, 4), ['C#m', 'Dmaj7', 'Dmaj7', 'Dmaj7 C#m'], 'verse: ' + txt);
+    assert.ok(!d.chords.some((c) => /ev akoru \d+ ölçüdür/.test(c.reason || '')), 'M kuralı kaldırıldı');
+    assert.equal(bars[7], 'Bm', 'nakarat sonu: ' + txt);
+    assert.ok(!('homeEvery' in Core.CHORD_DEFAULTS));
+    // renk notası cezası (0.1): Dmaj7'nin maj7'si cezalanır → 3. ölçü C#m
+    const pen = chart(Core.derive(Object.assign({}, proj, { chordOpts: Object.assign({}, proj.chordOpts, { colorPenalty: 0.1 }) }), st));
+    assert.equal(pen[2], 'C#m', 'ceza 0.1: ' + pen.join(' | '));
+    assert.equal(Core.CHORD_DEFAULTS.colorPenalty, 0);
+    // Frig ev akoru asla majör değil
+    assert.ok(!Core.diatonicChords(1, 'phrygian').some((c) => c.root === 1 && Core.CHORD_Q[c.q].includes(4)));
+    // kilit korunur
+    proj.chordLocks = [{ bar: 1, half: null, chord: { root: 9, q: '' } }];
+    const d3 = Core.derive(proj, st);
+    assert.equal(Core.chordName(d3.chords[0].chord), 'A');
+    assert.ok(d3.chords[0].locked);
+    return `${txt}\n    renk cezası 0.1: ${pen.join(' | ')}`;
+  } finally {
+    proj.chordLocks = [];
+    proj.chordOpts = Object.assign({}, proj.chordOpts, { engine: 'viterbi' });
+  }
+});
+
+await step('Aynı akor en fazla "A–B ölçü" aralığı: B\'den uzun akor yok (iki motor), A\'dan kısa zorlama yok; ✂ / = işaretleri ve kilitler öncelikli', () => {
+  const p11 = JSON.parse(JSON.stringify(proj));
+  p11.chordLocks = []; p11.chordPins = []; p11.noteEdits = []; p11.changeMarks = [];
+  p11.sections.forEach((x) => { x.tonic = null; x.mode = null; });
+  // tek akorlu, durağan bir melodi gibi: 8 ölçülük tek bölüm (test melodisi)
+  p11.sections = [{ id: 'all', name: 'Tümü', startBar: 1, endBar: 8, tonic: 1, mode: 'phrygian' }];
+  const runs = (dd) => { const out = []; for (const c of dd.chords) { const len = (c.q1 - c.q0) / g.barQ; const last = out[out.length - 1]; if (last && Core.sameChord(last.c, c.chord)) last.len += len; else out.push({ c: c.chord, len }); } return out; };
+  const out = [];
+  for (const engine of ['viterbi', 'greedy']) for (const [lo, hi] of [[1, 1], [1, 2], [2, 3], [6, 8]]) {
+    p11.chordOpts = Object.assign({}, p11.chordOpts, { engine, maxBarsMin: lo, maxBars: hi });
+    const r = runs(Core.derive(p11, st));
+    assert.ok(r.every((x) => x.len <= hi + 1e-9), `${engine} ${lo}–${hi}: ${r.map((x) => Core.chordName(x.c) + '(' + x.len + ')').join(' ')}`);
+    out.push(`${engine[0]} ${lo}–${hi}: ${r.map((x) => x.len).join('+')}`);
+  }
+  // = işareti üst sınırdan öncelikli: üst sınır 1 ölçü ama "3. ölçü başında değişme" → 2–3. ölçü aynı akor
+  p11.chordOpts = Object.assign({}, p11.chordOpts, { engine: 'viterbi', maxBarsMin: 1, maxBars: 1 });
+  p11.changeMarks = [{ bar: 3, half: 0, kind: 'hold' }];
+  const dh = Core.derive(p11, st);
+  assert.ok(!dh.chords.some((c) => /Viterbi bu kilitlerle/.test(c.reason || '')), 'Viterbi yolu bulmalı');
+  const a2 = dh.chords.find((c) => c.bar === 2 && c.half !== 1), a3 = dh.chords.find((c) => c.bar === 3 && c.half !== 1);
+  assert.ok(Core.sameChord(a2.chord, a3.chord), '= işareti: 2 ve 3. ölçü aynı akor');
+  // ✂ işareti: aralığın içinde bile senin noktan uygulanır
+  p11.chordOpts = Object.assign({}, p11.chordOpts, { maxBarsMin: 6, maxBars: 8 });
+  p11.changeMarks = [{ bar: 2, half: 0, kind: 'change' }];
+  const dc = Core.derive(p11, st);
+  const c1 = dc.chords.find((c) => c.bar === 1), c2 = dc.chords.find((c) => c.bar === 2 && c.half !== 1);
+  assert.notEqual(c1.chord.root, c2.chord.root, '✂ 2. ölçü başında değişir');
+  // kilit: 10 ölçü... bölüm 8 ölçü; 1–6. ölçüleri aynı akora kilitle, üst sınır 4 → kilit kazanır
+  p11.changeMarks = []; p11.chordOpts = Object.assign({}, p11.chordOpts, { maxBarsMin: 2, maxBars: 4 });
+  p11.chordLocks = [1, 2, 3, 4, 5, 6].map((b) => ({ bar: b, half: null, chord: { root: 1, q: 'm', bass: null } }));
+  const dl = Core.derive(p11, st);
+  assert.ok(dl.chords.filter((c) => c.bar <= 6).every((c) => c.locked && Core.chordName(c.chord) === 'C#m'));
+  return out.join(' · ') + ' · = işareti ve ✂ işareti öncelikli · 6 ölçülük kilit 4 ölçü sınırını geçer';
 });
 
 await step('1) Gecikme kalibrasyonu: 8 click, alkış ofsetlerinin medyanı', () => {
@@ -509,6 +546,92 @@ A:1.5 E:0.5 N.C. F#m7/A:2`, '4/4');
   return `${ok.cells.length} hücre · uyarılar: ${ok.warnings.length} (atlanan akor, N.C.) · hata satır numarasıyla · dışa aktarılan şema geri yüklenince ${back.cells.length} akor aynen · uygulanınca ölçü 6 (boş) otomatik: ${Core.chordName(d7.chords.find((c) => c.bar === 6).chord)}`;
 });
 
+await step('Vokal girişi: akor sayacı girişte yeniden başlar (intro ayrı sayılır); öncü nota bir sonraki ölçüye; elle seçilen giriş; baştaki boş ölçüler', () => {
+  const p = JSON.parse(JSON.stringify(proj));
+  p.chordLocks = []; p.chordPins = []; p.noteEdits = []; p.changeMarks = [];
+  p.audio.offsetSec = proj.audio.offsetSec - 2 * g.barSec; // vokal 3. ölçüde giriyor (2 ölçü intro)
+  p.sections = [{ id: 'all', name: 'Tümü', startBar: 1, endBar: 10, tonic: 1, mode: 'phrygian' }];
+  p.chordOpts = Object.assign({}, p.chordOpts, { engine: 'viterbi', maxBarsMin: 4, maxBars: 4, phraseEntries: true });
+  const bounds = (dd) => { const out = []; let acc = 0; for (const x of dd.chords.alternatives.all.find((a) => a.chosen).segments) { acc += x.bars; out.push(acc); } return out; };
+  const d1 = Core.derive(p, st);
+  const sec = d1.sections[0];
+  assert.equal(sec.entries[0], 3, 'ilk giriş ölçü 3: ' + sec.entries);
+  assert.ok(bounds(d1).includes(2), 'intro (ölçü 1–2) ayrı segment: ' + bounds(d1));
+  // girişten sonraki ilk segment en fazla 4 ölçü ve sayım girişten başlar
+  const segs = d1.chords.alternatives.all.find((a) => a.chosen).segments;
+  assert.ok(segs.every((x) => x.bars <= 4));
+  // kapalıyken giriş yok
+  p.chordOpts.phraseEntries = false;
+  const d0 = Core.derive(p, st);
+  assert.deepEqual(d0.sections[0].entries, []);
+  // elle seçilen giriş
+  p.chordOpts.phraseEntries = true; p.entryOverrides = { all: 4 };
+  assert.equal(Core.derive(p, st).sections[0].entries[0], 4);
+  p.entryOverrides = { all: 0 };
+  assert.deepEqual(Core.derive(p, st).sections[0].entries, []);
+  // öncü: 2. ölçünün 3. vuruşunda başlayan nota → giriş ölçü 3; 1 ölçülük sessizlikten sonraki nota yeni giriş
+  const n = (q0, q1) => ({ q0, q1 });
+  const s1 = { startBar: 1, endBar: 8 };
+  assert.deepEqual(Core.vocalEntries([n(6, 7), n(8, 10), n(10, 12), n(17, 18)], s1, g), [3, 5]);
+  // greedy motor da girişte sayacı yeniler (çökmeden)
+  p.entryOverrides = {}; p.chordOpts.engine = 'greedy';
+  const dg = Core.derive(p, st);
+  assert.ok(dg.chords.length > 0);
+  return `intro 2 ölçü + vokal ölçü 3 → segmentler ${segs.map((x) => x.bars).join('+')} (sınır ölçü 3'te) · öncü 2½ → giriş 3 · sessizlik sonrası yeni giriş 5`;
+});
+
+await step('Öncelik: kilit / konan akor / işaret çakışırsa en son yapılan kazanır; kilitsiz "koy"; seçimler şarkının kalanına bağlam (aynı adlı bölüm)', () => {
+  const p = JSON.parse(JSON.stringify(proj));
+  p.chordPins = []; p.noteEdits = []; p.chordPicks = [];
+  p.sections = [{ id: 'all', name: 'Tümü', startBar: 1, endBar: 8, tonic: 1, mode: 'phrygian' }];
+  const at = (dd, bar, half) => dd.chords.find((c) => { const q = (bar - 1) * g.barQ + half * g.split + 0.01; return q >= c.q0 && q < c.q1; });
+  const X = at(Core.derive(Object.assign({}, p, { chordLocks: [], changeMarks: [] }), st), 6, 0).chord;
+  const lockX = (t) => ({ bar: 6, half: null, chord: { root: X.root, q: X.q, bass: null }, t });
+  // ✂ kilitten sonra → kilit 1. yarıda kalır
+  p.chordLocks = [lockX(1)]; p.changeMarks = [{ bar: 6, half: 1, kind: 'change', t: 2 }];
+  let dd = Core.derive(p, st);
+  assert.ok(at(dd, 6, 0).locked && !at(dd, 6, 1).locked && at(dd, 6, 1).chord.root !== X.root);
+  assert.deepEqual(dd.chords.lockOverrides.map((x) => x.kind), ['cut']);
+  // kilit ✂'ten sonra → işaret yok sayılır, ölçü 6 tamamen kilitli
+  p.chordLocks = [lockX(3)];
+  dd = Core.derive(p, st);
+  assert.ok(at(dd, 6, 0).locked && at(dd, 6, 1).locked && Core.sameChord(at(dd, 6, 1).chord, X));
+  assert.deepEqual(dd.chords.lockOverrides.map((x) => x.kind), ['markOff']);
+  // = işareti iki farklı kilidin arasında: üçünden en eskisi geri çekilir
+  p.changeMarks = [{ bar: 6, half: 0, kind: 'hold', t: 2 }];
+  p.chordLocks = [{ bar: 5, half: null, chord: { root: 11, q: 'm', bass: null }, t: 1 }, lockX(3)];
+  dd = Core.derive(p, st);
+  assert.deepEqual(dd.chords.lockOverrides.map((x) => [x.kind, x.bar]), [['drop', 5]], 'en eski: ölçü 5 kilidi');
+  assert.ok(Core.sameChord(at(dd, 5, 1).chord, X), '= : ölçü 5 sonu ölçü 6 ile aynı akor');
+  p.changeMarks[0].t = 0;
+  assert.deepEqual(Core.derive(p, st).chords.lockOverrides.map((x) => x.kind), ['markOff'], 'işaret en eskiyse yok sayılır');
+  // kilitsiz "koy": akor oraya gelir ama kilit değildir; daha yeni ✂ onu böler
+  p.chordLocks = []; p.changeMarks = [];
+  p.chordPicks = [{ bar: 2, half: null, chord: { root: 11, q: 'm7', bass: null }, t: 5 }];
+  dd = Core.derive(p, st);
+  assert.ok(at(dd, 2, 0).picked && !at(dd, 2, 0).locked && Core.chordName(at(dd, 2, 0).chord) === 'Bm7');
+  p.changeMarks = [{ bar: 2, half: 1, kind: 'change', t: 6 }];
+  dd = Core.derive(p, st);
+  assert.ok(at(dd, 2, 0).picked && !at(dd, 2, 1).picked);
+  // bağlam: Verse 1'e konan akorlar Verse 2'de aynı yerde tercih edilir
+  const q = JSON.parse(JSON.stringify(proj));
+  q.chordLocks = []; q.chordPins = []; q.noteEdits = []; q.changeMarks = [];
+  q.sections = [{ id: 'v1', name: 'Verse 1', startBar: 1, endBar: 4, tonic: 1, mode: 'phrygian' }, { id: 'v2', name: 'Verse 2', startBar: 5, endBar: 8, tonic: 1, mode: 'phrygian' }];
+  const d0 = Core.derive(q, st);
+  q.chordPicks = [5, 6, 7, 8].map((b) => ({ bar: b - 4, half: null, chord: Object.assign({}, d0.chords.find((c) => c.bar === b).candidates[1].chord), t: 1 }));
+  const want = q.chordPicks.map((x) => Core.chordName(x.chord));
+  const v2 = (dd2) => [5, 6, 7, 8].map((b) => Core.chordName(dd2.chords.find((c) => c.bar === b).chord));
+  const withCtx = Core.derive(q, st);
+  assert.deepEqual(v2(withCtx), want, 'Verse 2 = Verse 1 seçimleri');
+  assert.ok(withCtx.chords.find((c) => c.bar === 6).context, 'bağlam gerekçesi');
+  q.chordOpts = Object.assign({}, q.chordOpts, { songContext: false });
+  const noCtx = v2(Core.derive(q, st));
+  assert.notDeepEqual(noCtx, want);
+  assert.equal(Core.sectionFamily({ name: 'Verse 2' }), Core.sectionFamily({ name: 'Verse 1' }));
+  assert.equal(Core.sectionFamily({ name: 'Nakarat (2)' }), 'nakarat');
+  return `✂ sonra → kilit böldü · kilit sonra → ✂ yok sayıldı · = en eski kilidi çekti · Bm7 kilitsiz kondu · Verse 1: ${want.join(' ')} → Verse 2 bağlamla ${v2(withCtx).join(' ')} (bağlamsız ${noCtx.join(' ')})`;
+});
+
 await step('Değişim işaretleri: ✂ noktada akor değişir, = noktada değişmez, "yalnızca işaretli" modda başka yerde değişmez (rastgele işaretlerle)', () => {
   const p8 = JSON.parse(JSON.stringify(proj));
   p8.chordLocks = []; p8.chordPins = []; p8.noteEdits = [];
@@ -545,6 +668,38 @@ await step('Değişim işaretleri: ✂ noktada akor değişir, = noktada değiş
     }
   }
   return `✂ 6½ → ölçü 6: ${ex1} · = 2 ve 4½ değişmedi · yalnızca ✂3 → verse yalnızca ölçü 3'te değişti · 25 rastgele işaret setinde hepsi uygulandı`;
+});
+
+await step('✂ kilitten önceliklidir: kilitli ölçünün ortasına ✂ → kilit 1. yarıda kalır, 2. yarı değişir; işaretin iki yanında aynı kilit → sonraki yok sayılır', () => {
+  const p = JSON.parse(JSON.stringify(proj));
+  p.chordPins = []; p.noteEdits = []; p.changeMarks = [];
+  p.sections.forEach((x) => { x.tonic = null; x.mode = null; });
+  const base = Core.derive(p, st);
+  const at = (dd, bar, half) => dd.chords.find((c) => { const q = (bar - 1) * g.barQ + half * g.split + 0.01; return q >= c.q0 && q < c.q1; });
+  const X = at(base, 6, 0).chord;
+  // ölçü 6'yı tamamen X'e kilitle, sonra ölçü 6 ortasına ✂
+  p.chordLocks = [{ bar: 6, half: null, chord: { root: X.root, q: X.q, bass: null } }];
+  p.changeMarks = [{ bar: 6, half: 1, kind: 'change' }];
+  const dd = Core.derive(p, st);
+  const a = at(dd, 6, 0), b = at(dd, 6, 1);
+  assert.ok(Core.sameChord(a.chord, X) && a.locked, '1. yarı kilitli X');
+  assert.ok(!b.locked && b.chord.root !== X.root, `2. yarı değişmeli (${Core.chordName(b.chord)})`);
+  assert.ok(!dd.chords.markConflict);
+  assert.deepEqual(dd.chords.lockOverrides.map((x) => x.kind), ['cut']);
+  assert.equal(p.chordLocks[0].half, null, 'proje kilidi değişmez (işaret kalkınca tam ölçü)');
+  // işaret kalkınca kilit yine tam ölçü
+  p.changeMarks = [];
+  const d0 = Core.derive(p, st);
+  assert.ok(at(d0, 6, 1).locked && Core.sameChord(at(d0, 6, 1).chord, X));
+  // ölçü 5 ve 6 aynı akora kilitli, ✂ ölçü 6 başında → ölçü 6 kilidi yok sayılır, 6'da akor değişir
+  p.chordLocks = [{ bar: 5, half: null, chord: { root: X.root, q: X.q, bass: null } }, { bar: 6, half: null, chord: { root: X.root, q: X.q, bass: null } }];
+  p.changeMarks = [{ bar: 6, half: 0, kind: 'change' }];
+  const d2 = Core.derive(p, st);
+  assert.ok(!d2.chords.markConflict, 'çelişki yok');
+  assert.ok(at(d2, 5, 1).locked && Core.sameChord(at(d2, 5, 1).chord, X));
+  assert.ok(at(d2, 6, 0).chord.root !== X.root, 'ölçü 6 başında değişim');
+  assert.deepEqual(d2.chords.lockOverrides.map((x) => [x.kind, x.bar]), [['drop', 6]]);
+  return `ölçü 6 = ${Core.chordName(X)} kilitli + ✂ 6½ → ${Core.chordName(a.chord)} | ${Core.chordName(b.chord)} · 5 ve 6 aynı kilit + ✂6 → 6: ${Core.chordName(at(d2, 6, 0).chord)}`;
 });
 
 await step('"Akorlar yalnızca 1. vuruşta değişsin": ölçü ortası değişimi yok (iki motorda); ✂ ile işaretlenen ölçü ortası hariç', () => {
@@ -642,6 +797,35 @@ await step('Davul 2b: 16\'lık senkoplu hızlı melodi (kullanıcının 156 BPM 
   const cs = Core.loopsFor('4/4').filter((l) => l.spb === 4).map((l) => [l.id, corr(prof, Array.from(Core.loopProfile(l)))]).sort((a, b) => b[1] - a[1]);
   assert.equal(cs[0][0], 'push332');
   return `156 BPM z=${e.gridZ.toFixed(1)} (yanlış BPM'ler uyarılı) · seçilen: ${sug.best.loop.name} (vurgu ${sug.best.accent.toFixed(2)}) · istek profiliyle örtüşme ${cs[0][1].toFixed(2)} (eski en iyi ${cs[1][0]} ${cs[1][1].toFixed(2)})`;
+});
+
+await step('Davul 2c: ölçü kesin — tahmin farklı olsa da proje ölçüsü kalır; loop, öncü ve tap bu ölçüyle', () => {
+  const mel = (bpm, bars, bar, bpb, shift = 0) => { const P = 60 / bpm, o = []; for (let b = 0; b < bars; b++) for (const [pos, d, p] of bar) { const t = (b * bpb + pos) * P + shift; o.push({ t0: t, t1: t + d * P * 0.95, pitch: p + (b % 2) }); } return o; };
+  // melodi 6/8 gibi vurgulu (üçleme), kullanıcı "bu şarkı kesinlikle 4/4" diyor
+  const m68 = [[0, 1, 67], [1, 1 / 3, 65], [4 / 3, 1 / 3, 64], [5 / 3, 1 / 3, 62]];
+  const ns = mel(60, 8, m68, 2);
+  const free = Core.estimateMeter(ns, 60);
+  assert.equal(free.meter, '6/8', 'kilitsiz tahmin 6/8');
+  const lk = Core.estimateMeter(ns, 60, { meter: '4/4' });
+  assert.deepEqual([lk.ok, lk.locked, lk.meter, lk.bpm, lk.guess.meter], [true, true, '4/4', 60, '6/8']);
+  const set = { meter: '4/4', bpm: 60 };
+  const unl = Core.suggestDrumLoop(ns, set, free);
+  assert.ok(unl.reasons.some((x) => /6\/8 ölçüsüne daha çok benziyor/.test(x)), 'kilitsiz: ölçü uyarısı');
+  const sug = Core.suggestDrumLoop(ns, Object.assign({ meterLocked: true }, set), lk);
+  assert.ok(!sug.reasons.some((x) => /ölçüsüne daha çok benziyor|bu ölçü için loop yok/.test(x)), sug.reasons.join(' '));
+  assert.ok(sug.ranked.length === Core.loopsFor('4/4').length && sug.ranked.every((r) => r.loop.meter === '4/4'));
+  assert.match(sug.request, /Ölçü kesin/);
+  // öncü kilitliyken de bulunur (4/4, vokal 3. vuruşta)
+  const m44 = [[0, 1.5, 64], [1.5, 0.5, 62], [2, 1, 64], [3, 0.5, 60], [3.5, 0.5, 62]];
+  const pk = [[2, 0.5, 60], [2.5, 0.5, 62], [3, 1, 64]].map(([p, d, q]) => ({ t0: (p - 2) * 0.5, t1: (p - 2 + d * 0.95) * 0.5, pitch: q }));
+  const ep = Core.estimateMeter([...pk, ...mel(120, 8, m44, 4, 1.0)], 120, { meter: '4/4' });
+  assert.equal(ep.firstBeat, 3);
+  // tap: 2 s'de bir değişim (6/8, 60 BPM gibi) ama ölçü kesin 4/4 → yalnızca 4/4 okumaları
+  const taps = [0, 2, 4, 6, 8, 10];
+  const tf = Core.estimateFromTaps(taps, ns, { bpm: 60, meter: '4/4' });
+  const tl = Core.estimateFromTaps(taps, ns, { bpm: 60, meter: '4/4', lockMeter: '4/4' });
+  assert.ok(tl.ok && tl.meter === '4/4' && tl.hypotheses.every((h) => h.meter === '4/4'), JSON.stringify(tl.hypotheses));
+  return `vurgular 6/8 diyor (güven %${Math.round(free.confidence * 100)}); kesin 4/4 → tahmin 4/4, uyarı yok, ${sug.ranked.length} loop (en iyi ${sug.best.loop.name}) · öncü 3. vuruş · tap: kilitsiz ${tf.meter} ${tf.bpm} BPM → kesin ${tl.meter} ${tl.bpm} BPM`;
 });
 
 await step('Davul 3: vuruşlar, ses ve MIDI davul kanalı', () => {

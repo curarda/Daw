@@ -22,6 +22,30 @@ const ds = Style.newDataset();
 const L = (k, mode) => Style.coreLabel(k, mode);
 const confirmAll = (song) => song.sections.forEach((s) => { s.confirmed = true; });
 
+await step('İçe aktarma: Claude yanıtı ```json kod bloğunda / önünde açıklamayla gelse de okunur; "pre_chorus" ön nakarat sayılır', () => {
+  const body = JSON.stringify({ schema_version: 1, artist: 'Keane', title: 'Somewhere Only We Know', source_notes: { capo: null, tuning: null, other: null }, warnings: [],
+    sections: [
+      { label: 'Pre-Chorus', type: 'pre_chorus', chords: ['F#m', 'C#m', 'D', 'E'], bars: null, key_proposals: [{ tonic: 'A', mode: 'major', confidence: 0.75, reason: 'r' }],
+        degrees_preview: ['vi', 'iii', 'IV', 'V'].map((c) => ({ core: c, color: null, bass: null })) },
+      { label: 'Outro', type: 'outro', chords: ['E', 'D#', 'D', 'A/C#'], bars: null, key_proposals: [{ tonic: 'A', mode: 'major', confidence: 0.85, reason: 'r' }],
+        degrees_preview: [{ core: 'V', color: null, bass: null }, { core: '♯IV', color: null, bass: null }, { core: 'IV', color: null, bass: null }, { core: 'I', color: null, bass: 'III' }] }] }, null, 2);
+  const variants = { duz: body, blok: '```json\n' + body + '\n```', aciklamali: 'İşte JSON:\n\n```json\n' + body + '\n```\nUmarım işe yarar.', blokSiz: 'Dönüştürdüm:\n' + body };
+  for (const [k, txt] of Object.entries(variants)) {
+    assert.ok(Style.looksLikeJson(txt), k + ' JSON sanılmalı');
+    const r = Style.parseImportJson(txt);
+    assert.deepEqual(r.errors, [], k);
+    assert.equal(r.songs[0].sections.length, 2);
+  }
+  const song = Style.parseImportJson(variants.aciklamali).songs[0];
+  assert.equal(Core.normSectionType(song.sections[0].type), 'prechorus');
+  for (const sec of song.sections) {
+    const cmp = Style.comparePreview(song, sec, sec.proposals[0]);
+    assert.ok(cmp.valid && cmp.mismatches.length === 0, sec.name + ': ' + JSON.stringify(cmp.mismatches));
+  }
+  assert.ok(!Style.looksLikeJson('[Verse: C# phrygian] C#m D'), 'düz metin şema JSON sanılmamalı');
+  return '4 biçim (düz, ```json bloğu, açıklamalı, bloksuz) hatasız · pre_chorus → ön nakarat · ♯IV (D#) ve I/III önizlemesi uyuşuyor';
+});
+
 await step('a) içe aktarma + onaysız bölüm istatistiğe girmez', () => {
   const r = Style.parseImportJson(JSON.stringify(TEST_JSON));
   assert.deepEqual(r.errors, []);
@@ -153,7 +177,7 @@ await step('Harmonik ritim: "bars" kaydedilir; yoksa süre istatistiğine girmez
   assert.deepEqual([...ph.rate].map(([k, e]) => [k, e.songs.size]), [[2, 2]]);
   // şema: uzunluk uyuşmazlığı ve geçersiz süre
   const bad = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'a', title: 'b', sections: [{ name: 'x', chords: ['C', 'F'], bars: [1, 0, 2] }] }));
-  assert.deepEqual(bad.errors, ['sections[0].bars: chords ile aynı uzunlukta olmalı (3 ≠ 2)', 'sections[0].bars[1]: pozitif sayı olmalı (0)']);
+  assert.deepEqual(bad.errors, ['sections[0].bars: chords ile aynı uzunlukta olmalı (3 ≠ 2)', 'sections[0].bars[1]: pozitif sayı ya da null olmalı (0)']);
   // düz metin: ölçü çizgileri ve "akor:süre"
   const tx = Style.parseImportText('Sanatçı: M\nŞarkı: N\n[Verse] C# Frig — ölçü 1–4\n| C#m | % | Dmaj7 C#m |\n[B: B dorian] Bm:4 E:2 A:2\n[C: B dorian] Bm E', {}).songs[0];
   assert.deepEqual(tx.sections.map((x) => x.bars), [[1, 1, 0.5, 0.5], [4, 2, 2], null]);
@@ -313,11 +337,62 @@ await step('Sohbet JSON biçimi: label, type, source_notes, bars (dizi/null), de
   assert.deepEqual(bad.mismatches.map((m) => [m.index, m.layers.join('+')]), [[0, 'color'], [1, 'bass']]);
   const e = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'a', title: 'b', source_notes: { capo: [1] }, sections: [{ type: 3, chords: ['C'], degrees_preview: [5] }] })).errors;
   assert.deepEqual(e, ['source_notes.capo: sayı, metin ya da null olmalı', 'sections[0].label: boş olmayan metin olmalı', 'sections[0].type: metin ya da null olmalı', 'sections[0].degrees_preview[0]: {core, color, bass} nesnesi olmalı']);
+  // istem "süre yoksa null yaz" der: öğe öğe null (hepsi ya da bir kısmı) kabul edilir, bölüm süre istatistiğine girmez
+  const nb = Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'N', title: 'Null süre', sections: [
+    { label: 'Verse 1', type: 'verse', chords: ['C', 'G', 'Am'], bars: [null, null, null] },
+    { label: 'Solo', type: 'instrumental', chords: ['F', 'Fm6', 'C'], bars: [0.5, 0.5, 1] },
+    { label: 'Outro', type: 'outro', chords: ['F', 'C'], bars: [1, null] }] }));
+  assert.deepEqual(nb.errors, []);
+  assert.deepEqual(nb.songs[0].sections.map((x) => x.bars), [null, [0.5, 0.5, 1], null]);
+  assert.match(nb.songs[0].sections[2].warnings.join(' '), /yalnızca bazı akorlarda/);
+  assert.deepEqual(Style.parseImportJson(JSON.stringify({ schema_version: 1, artist: 'N', title: 'x', sections: [{ label: 'A', chords: ['C'], bars: [0] }] })).errors, ['sections[0].bars[0]: pozitif sayı ya da null olmalı (0)']);
   confirmAll(song);
   const st = Style.buildStats({ songs: [song] }).byMode.get('major');
   assert.equal(st.durSongs.size, 1); // chorus bars null → süreye girmez, değişime girer
   assert.equal(st.trans.get('0M>5M').songs.size, 1);
   return `katmanlı önizleme: ${bad.mismatches.map((m) => `#${m.index + 1} ${m.chord}: ${m.layers.join('+')} (önizleme "${m.preview}", hesaplanan ${m.expected})`).join(' · ')}`;
+});
+
+await step('Kaynak notları: key / bpm / time_signature; bölüm tonu kaynakla denetlenir; adsız şarkılar kopya sayılmaz', () => {
+  const mk = (artist, title, sn) => Style.parseImportJson(JSON.stringify({ schema_version: 1, artist, title, source_notes: sn, sections: [
+    { label: 'Verse', chords: ['A', 'Bm', 'E'], key_proposals: [{ tonic: 'A', mode: 'major' }], warnings: ['Verse: sıra söz hizasından'] },
+    { label: 'Pre', chords: ['F#m', 'C#m', 'D', 'E'], key_proposals: [{ tonic: 'F#', mode: 'minor' }] },
+    { label: 'Bridge', chords: ['C', 'G'], key_proposals: [{ tonic: 'C', mode: 'major' }] }] }));
+  const r = mk('Keane', 'Somewhere', { capo: null, tuning: 'E A D G B E', key: 'A', bpm: 86, time_signature: '4/4', other: null });
+  assert.deepEqual(r.errors, []);
+  const song = r.songs[0];
+  assert.deepEqual([song.sourceNotes.key, song.sourceNotes.bpm, song.sourceNotes.timeSignature], ['A', 86, '4/4']);
+  assert.deepEqual(song.sections[0].warnings, ['Verse: sıra söz hizasından']);
+  assert.deepEqual(song.sections.map((x) => Style.checkSourceKey(song, x).verdict), ['agree', 'relative', 'differ']);
+  assert.equal(Style.checkSourceKey(mk('a', 'b', null).songs[0], song.sections[0]).verdict, 'none');
+  const e = mk('a', 'b', { key: 'H dur', bpm: -3, time_signature: 'dört' }).errors;
+  assert.deepEqual(e, ['source_notes.key: tanınmayan ton "H dur" (ör. "A", "F#m", "C# phrygian")', 'source_notes.bpm: pozitif sayı ya da null olmalı', 'source_notes.time_signature: "4/4" biçiminde olmalı']);
+  // "Bilinmiyor" adlı iki şarkı birbirinin kopyası değil; adı olanlar kopya
+  const u1 = mk('Bilinmiyor', 'Bilinmiyor', null).songs[0], u2 = mk('Bilinmiyor', 'Bilinmiyor', null).songs[0];
+  assert.ok(Style.hasUnknownName(u1));
+  assert.equal(Style.findDuplicate({ songs: [u1] }, u2), null);
+  const k2 = mk('KEANE', 'somewhere', null).songs[0];
+  assert.ok(Style.findDuplicate({ songs: [song] }, k2));
+  return `kaynak "A, 86 BPM, 4/4" → Verse A majör ✓ · Pre F# minör: aynı notalar (uyarı) · Bridge C majör: farklı (uyarı) · adsız iki şarkı kopya değil`;
+});
+
+await step('Tab yazımları: F(b5) = majör üçlü + ♭5, C4 = Csus4, m(b5) = dim', () => {
+  const P = (x) => { const r = Style.parseSymbol(x); return r.ok ? `${r.tq}:${r.color}` : 'yok'; };
+  assert.deepEqual(['F(b5)', 'F(♭5)', 'Fb5', 'C4', 'Am(b5)', 'G7-5'].map(P), ['M:b5', 'M:b5', 'x:5', 'x:sus4', 'd:', 'M:7b5']);
+  return 'F(b5) → majör + ♭5 (parantezsiz Fb5 = F♭ power chord) · C4 → sus4 · Am(b5) → dim · G7-5 → 7♭5';
+});
+
+await step('Tablo dışı ekler parça parça okunur (Bbadd#11, D6sus2, Cmaj7#11b9 …); anlamsız ek reddedilir', () => {
+  const P = (x) => { const r = Style.parseSymbol(x); return r.ok ? `${r.tq}:${r.color}` : 'yok'; };
+  const got = ['Bbadd#11', 'D6sus2', 'Cmaj7#11b9', 'Am9b5', 'E7sus4b9', 'Gm6add9', 'Cmmaj9', 'F#m11b5', 'Cxyz', 'C#q', 'Cadd', 'Gsus9b'].map(P);
+  assert.deepEqual(got, ['M:add#11', 'x:6sus2', 'M:maj7#11b9', 'd:ø9', 'x:7sus4b9', 'm:6add9', 'm:maj9', 'd:ø11', 'yok', 'yok', 'yok', 'yok']);
+  assert.deepEqual(Style.colorTones('6sus2').sort((a, b) => a - b), [2, 9]);
+  assert.deepEqual(Style.colorTones('add#11'), [6]);
+  // D6sus2: çekirdek sesleri sus2'ye göre (sus4 sanılmaz)
+  const sec = { chords: ['D6sus2'], bars: null };
+  const it = Style.analyzeSection({ fixes: {} }, sec, { tonic: 2, mode: 'major' }).items[0];
+  assert.equal(it.sus, true);
+  return got.slice(0, 8).map((g, i) => `${['Bbadd#11', 'D6sus2', 'Cmaj7#11b9', 'Am9b5', 'E7sus4b9', 'Gm6add9', 'Cmmaj9', 'F#m11b5'][i]} → ${g}`).join(' · ');
 });
 
 await step('sus = belirsiz nitelik; aynı kökte (Csus4 → C, C → Cmaj7) süre birleşir; bas hareketi ayrı sayılır', () => {
@@ -476,6 +551,7 @@ await step('Süreli Viterbi: kısıtlar, 3 farklı alternatif, doğrulama setind
 
 await step('Bölüm tipi normalizasyonu + mod × tip × havuz hiyerarşik havuzlama', () => {
   const T = Core.normSectionType;
+  assert.deepEqual(['pre_chorus', 'post_chorus', 'Pre.Chorus'].map(T), ['prechorus', 'postchorus', 'prechorus'], 'alt çizgili / noktalı yazım');
   assert.deepEqual(['Verse 2', 'Kıta', 'Nakarat', 'Refrain', 'Pre-Chorus', 'Ön Nakarat', 'Post-Chorus', 'Köprü', 'Middle 8', 'Intro', 'Outro', 'Solo', 'Ara', 'xyz'].map(T),
     ['verse', 'verse', 'chorus', 'chorus', 'prechorus', 'prechorus', 'postchorus', 'bridge', 'bridge', 'intro', 'outro', 'instrumental', 'instrumental', 'other']);
   // 10 majör şarkı: verse'lerde I→IV, nakaratlarda I→V

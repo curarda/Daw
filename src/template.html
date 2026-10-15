@@ -43,7 +43,8 @@
       <summary><b>1</b> Proje ayarı</summary>
       <div class="grid2">
         <label>BPM <small id="bpmUnit">(♩ = çeyrek nota)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
-        <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
+        <label>Ölçü<select id="inMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
+        <label class="chk" title="İşaretliyken davul ve tap tahmini ölçüyü değiştirmez/önermez; loop ve quantize bu ölçüyle çalışır"><input type="checkbox" id="inMeterLock" class="meter-lock"> Ölçü kesin (tahmin etme)</label>
         <label title="Yalnızca 4/4'te: yarım zaman hissinde trampet 3. vuruştadır">Click deseni<select id="inClickFeel"><option value="normal">1. vuruş vurgulu</option><option value="halftime">3. vuruş vurgulu — yarım zaman (tık tık tıss tık)</option></select></label>
         <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
         <div class="row" style="margin:0">
@@ -81,6 +82,14 @@
         <label>Kayıt ofseti (ms)<input type="number" id="inOffset" step="1" value="0"></label>
         <div id="audioInfo" class="hint"></div>
       </div>
+      <fieldset>
+        <legend>Başlangıç ölçüsü</legend>
+        <div id="leadInfo" class="hint"></div>
+        <div class="row"><button id="btnTrimLead">Baştaki boş ölçüleri sil</button>
+          <label>1. ölçü şu olsun<input type="number" id="inFirstBar" min="1" step="1" value="1" style="width:64px"></label><button id="btnFirstBar">Uygula</button>
+          <button id="btnAddBar" title="Şarkının başına 1 boş ölçü ekler (ör. akor girişi için)">Başa 1 ölçü ekle</button></div>
+        <p class="hint">Ses kesilmez; ölçü çizgileri kayar. Bölümler, kilitler, ✂ işaretleri ve quantize konumları müzikle birlikte taşınır.</p>
+      </fieldset>
     </details>
 
     <details class="step" open>
@@ -138,6 +147,7 @@
           <label>Kapsam<select id="inQuantScope"><option value="all">Tüm şarkı</option><option value="section">Seçili bölüm</option><option value="note">Seçili nota</option></select></label>
         </div>
         <label title="%100 = tam ızgaraya; daha az = yalnızca yaklaştırır (doğal his kalır)">Güç <output id="outQuantStrength">%100</output><input type="range" id="inQuantStrength" min="0" max="100" step="5" value="100"></label>
+        <div class="row meter-row"><label>Ölçü<select id="inQuantMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label><label class="chk"><input type="checkbox" id="inQuantMeterLock" class="meter-lock"> kesin</label><span class="hint meter-info"></span></div>
         <div class="row"><button id="btnQuantize" class="accent">Quantize uygula</button><button id="btnQuantClear">Zamanlamayı sıfırla</button></div>
       </fieldset>
       <fieldset>
@@ -167,12 +177,15 @@
       <p class="hint">Akorlar <b>4. adımdaki ton</b> ve <b>5. adımdaki düzeltmelerden sonra duyduğun notalara</b> göre bulunur: notayı başka sese çektiysen (sürükle / ↑↓ / autotune'un scale'e çekmesi) yeni nota, zamanını kaydırdıysan (quantize / sağa-sola) yeni yeri kullanılır.</p>
       <label title="Süreli Viterbi bütün bölümü birlikte arar ve en iyi 3 alternatifi verir; ölçü ölçü motor her ölçüde yerel karar verir">Motor
         <select id="inEngine"><option value="viterbi">süreli Viterbi (bölüm boyunca, 3 alternatif)</option><option value="greedy">ölçü ölçü (eski)</option></select></label>
-      <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
+      <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm kilitli / elle konan akorları kaldır <span id="lockCount"></span></button>
         <button id="btnApplySug" title="Kilitlerin dışındaki akorları motorun şimdiki önerisine göre yeniden hesaplar">Motorun önerilerini uygula <span id="sugCount"></span></button></div>
       <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Bir akoru kilitlediğinde <b>diğer akorlar değişmez</b>; motor başka bir şey önerirse akorun altında turuncu <b>→</b> ile gösterilir, nedeni sağdaki panelde yazar. Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
       <div class="sub marks">
         <b>✂ Akor değişim noktaları</b>
         <p class="hint">Akor satırının <b>üst kenarındaki küçük noktalara</b> tıkla (dolu = ölçü başı, içi boş = ölçü ortası; kesikli çizgi yarım ölçüyü gösterir): <b>✂</b> burada akor değişsin → <b>=</b> burada değişmesin → işaret yok. Hangi akorun geleceğini motor seçer; işaret koyunca diğer akorlar değişmez. Akora tıklayınca sağdaki panelde de "✂ Tam burada değiştir / Ölçünün ortasında değiştir" var.</p>
+        <div class="row"><label class="chk" title="Açık: bir akoru koyduğunda/kilitlediğinde ondan ÖNCEKİ akorlar aynı kalır, SONRAKİLER seçimine göre yeniden önerilir. Kapalı: düzenlediğin yer dışındaki hiçbir akor değişmez."><input type="checkbox" id="inAdaptAfter" checked> Seçiminden <b>sonraki</b> akorlar seçimine göre yeniden önerilsin <small class="hint">(öncekiler sabit kalır)</small></label></div>
+        <div class="row"><label class="chk" title="Koyduğun ve kilitlediğin akorlar: aynı adlı bölümde (Verse 1 → Verse 2) aynı yerde aynı derece, seçtiğin geçişler ve akor paletin şarkının kalanında tercih edilir (süreli Viterbi)."><input type="checkbox" id="inSongContext" checked> Seçimlerim şarkının kalanına <b>bağlam</b> olsun <small class="hint">(aynı adlı bölümler, geçişler, akor paleti)</small></label></div>
+        <div class="row"><label class="chk" title="Vokal girişi = bölümdeki ilk nota ya da ≥1 ölçü sessizlikten sonraki ilk nota (öncü notalar bir sonraki ölçüye sayılır). Bölüm panelinden elle seçilebilir."><input type="checkbox" id="inPhraseEntries" checked> Akor sayacı <b>vokal girişinde</b> (cümle başında) yeniden başlasın <small class="hint">(girişte akor değişebilir ya da sürebilir; intro ayrı sayılır)</small></label></div>
         <div class="row"><label class="chk"><input type="checkbox" id="inDownbeatOnly"> Akorlar yalnızca <b>ölçü başında (1. vuruşta)</b> değişsin <small class="hint">(ölçü ortası değişimi yok; ✂ ile işaretlediğin ölçü ortaları hariç)</small></label></div>
         <div class="row"><label class="chk"><input type="checkbox" id="inOnlyMarked"> Akor <b>yalnızca</b> ✂ işaretli noktalarda değişsin <small class="hint">(işaret konan bölümlerde)</small></label>
           <button id="btnClearMarks" class="danger">✕ İşaretleri temizle <span id="markCount"></span></button></div>
@@ -202,8 +215,8 @@
       <div id="altBox"></div>
       <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
       <div class="grid2">
-        <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
-        <label title="Bu kadar ölçüde bir ev akoru duyulmalı; dolunca ev akoru %X şartı olmadan aday olur. 0 = kapalı">Ev akoru her M ölçüde<input type="number" id="inHomeEvery" min="0" max="16" value="2"></label>
+        <label title="Aynı akor en az A ölçüye kadar serbestçe sürebilir; A ile B arasında nerede değişeceğine motor melodiye göre karar verir; B'den uzun sürmez. Tek sayı için iki kutuya aynı değeri yaz. ✂ işaretlerin ve kilitlerin her zaman önceliklidir.">Aynı akor en fazla (ölçü)
+          <span class="range2"><input type="number" id="inMaxBarsMin" min="1" max="32" value="4" aria-label="aralığın alt sınırı"> – <input type="number" id="inMaxBars" min="1" max="32" value="4" aria-label="aralığın üst sınırı"></span></label>
       </div>
       <label title="7, 9/2, 11/4, 6 renk notalarının kök/3/5'e göre eksik puanı. 0 = ceza yok">Renk notası cezası <output id="outColorPen">0</output><input type="range" id="inColorPen" min="0" max="0.5" step="0.05" value="0"></label>
       <p class="hint">Akora tıklayın: en iyi 3 aday, melodi notalarının akordaki rolü, elle yazma ve kilitleme.</p>
@@ -247,7 +260,8 @@
 
     <details class="step" open>
       <summary><b>8b</b> Davul (basit loop)</summary>
-      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü her zaman 1. adımdan kendin de seçebilirsin; loop proje ölçüsüne göre seçilir.</p>
+      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü biliyorsan seç ve <b>kesin</b>'i işaretle: tahmin artık yalnızca bilgi olur, loop listesi o ölçünün loop'larıdır ve istediğini seçebilirsin.</p>
+      <div class="row meter-row"><label>Ölçü<select id="inDrumMeter" class="meter-sel"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label><label class="chk"><input type="checkbox" id="inDrumMeterLock" class="meter-lock"> kesin</label><span class="hint meter-info"></span></div>
       <div id="meterEst"></div>
       <label class="chk"><input type="checkbox" id="inDrumsOn"> Oynatırken davul çalsın</label>
       <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>

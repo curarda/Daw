@@ -29,6 +29,7 @@ window.__dawCal = () => Cal.last;
 window.__dawAPI = {
   S, C, status, esc, getCtx, notePreview: () => NotePreview, player: () => Player,
   refresh: () => refresh(),
+  select: (sel) => select(sel),
   preview: (chords, tonic, mode, durs) => Player.previewChords(chords, tonic, mode, durs),
   // doğrulama öğesi için mevcut analiz: kastedilen notalar + tonu belli bölümler
   snapshot() {
@@ -65,7 +66,7 @@ window.__dawAPI = {
     for (let i = 0; i < nBars; i++) {
       const bar = startBar + i, h0 = cells[2 * i], h1 = cells[2 * i + 1];
       S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar !== bar);
-      const lk = (ch, half) => S.proj.chordLocks.push({ bar, half, chord: { root: ch.root, q: ch.q, bass: null } });
+      const lk = (ch, half) => S.proj.chordLocks.push({ bar, half, chord: { root: ch.root, q: ch.q, bass: null }, t: stamp() });
       if (C.sameChord(h0, h1) || !g.split) lk(h0, null); else { lk(h0, 0); lk(h1, 1); }
     }
     refresh();
@@ -156,13 +157,22 @@ function refresh() {
   const style = window.StyleUI ? window.StyleUI.scorer() : null;
   S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0, style, engineOverride: S.drag ? 'greedy' : null });
   S.d.styleActive = !!style;
-  const nl = S.proj.chordLocks.length;
+  const nl = S.proj.chordLocks.length + (S.proj.chordPicks || []).length;
   $('#lockCount').textContent = nl ? `(${nl})` : ''; $('#btnUnlockAll').disabled = !nl;
   const nmk = (S.proj.changeMarks || []).length;
   $('#markCount').textContent = nmk ? `(${nmk})` : ''; $('#btnClearMarks').disabled = !nmk;
   const conf = S.d.chords.markConflict ? S.d.sections.filter((x) => S.d.chords.markConflict[x.id]).map((x) => x.name) : [];
   $('#markInfo').innerHTML = (nmk && S.proj.chordOpts.engine === 'greedy' ? '<div class="st-warn">⚠ Değişim işaretleri süreli Viterbi motorunda uygulanır; ölçü ölçü motor bunları yok sayar.</div>' : '')
-    + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor (ör. ✂ noktasının iki yanında aynı akor kilitli); bu bölüm işaretler olmadan dolduruldu.</div>` : '');
+    + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor; bu bölüm işaretler olmadan dolduruldu.</div>` : '')
+    + (S.d.chords.lockOverrides || []).map((x) => {
+      const what = x.pick ? 'koyduğun' : 'kilitli';
+      const sym = x.mark === 'hold' ? '=' : '✂';
+      return `<div class="hint">⏱ Son yapılan öncelikli: ${x.kind === 'cut'
+        ? `ölçü ${x.bar}'deki ${what} ${esc(C.chordName(x.chord))} ölçünün 1. yarısında kaldı (ortadaki ✂ daha sonra konuldu).`
+        : x.kind === 'markOff'
+          ? `ölçü ${x.bar}${x.half ? ' ortasındaki' : ' başındaki'} ${sym} işareti, ondan sonra ${x.pick ? 'koyduğun' : 'kilitlediğin'} ${esc(C.chordName(x.chord))} ile çelişiyor → işaret bu hesapta yok sayıldı.`
+          : `ölçü ${x.markBar}${x.markHalf ? ' ortasındaki' : ' başındaki'} ${sym} işareti daha yeni → ölçü ${x.bar}'deki ${what} ${esc(C.chordName(x.chord))} bu hesapta yok sayıldı.`}</div>`;
+    }).join('');
   const nch = S.proj.chordLocks.filter((l) => l.src === 'chart').length;
   $('#chartCount').textContent = nch ? `(${nch})` : ''; $('#btnChartRemove').disabled = !nch;
   const ns = S.d.chords.filter((c) => c.pinSuggest).length;
@@ -171,6 +181,7 @@ function refresh() {
   renderSections();
   renderInspector();
   renderInfo();
+  renderLead();
   renderDrums();
   renderTaps();
   layoutTimeline();
@@ -324,7 +335,7 @@ function addTap() {
 function tapEstimate() {
   if (!S.d || !S.proj.taps || S.proj.taps.length < 3) return null;
   const notes = S.d.notes.map((n) => ({ t0: n.tl0 + S.d.off, t1: n.tl1 + S.d.off }));
-  return C.estimateFromTaps(S.proj.taps, notes, { bpm: S.proj.settings.bpm, meter: S.proj.settings.meter });
+  return C.estimateFromTaps(S.proj.taps, notes, { bpm: S.proj.settings.bpm, meter: S.proj.settings.meter, lockMeter: S.proj.settings.meterLocked ? S.proj.settings.meter : null });
 }
 function renderTaps() {
   const box = $('#tapInfo');
@@ -382,7 +393,8 @@ function analyzeDrums() {
   const ns = drumNotes();
   // click'le kaydedildiyse ya da test melodisiyse ızgara zaten doğru: vuruş fazını tahmin etme
   const fixedPhase = S.proj.audio.source === 'test' || (S.proj.audio.source === 'record' && S.proj.audio.alignMode === 'none');
-  S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase }) : null;
+  const meter = S.proj.settings.meterLocked ? S.proj.settings.meter : null; // kesin ölçü: tahmin bu ölçüye göre ölçü başı / öncü bulur
+  S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase, meter }) : null;
   S.drumSug = C.suggestDrumLoop(ns, S.proj.settings, S.meterEst);
 }
 function currentLoop() {
@@ -397,7 +409,14 @@ function renderDrums() {
   let mh = '';
   if (!est) mh = '<p class="hint">Ölçü tahmini için önce kayıt / analiz.</p>';
   else if (!est.ok) mh = `<div class="st-warn">⚠ ${esc(est.reasons.join(' '))}</div>`;
-  else {
+  else if (est.locked) {
+    const shifted = Math.abs(est.shiftSec) > 0.03, gu = est.guess;
+    mh = `<div class="adv-opt"><b>Ölçü: ${esc(set.meter)}, ${set.bpm} BPM — kesin (senin seçimin)</b> · his: ${est.feel === 'triple' ? 'üçleme (shuffle / 6/8)' : "düz (8'lik)"}
+      <div class="hint">Vokal ${est.firstBeat === 1 ? 'ölçü başında (1. vuruşta)' : `${String(est.firstBeat).replace('.5', '. vuruşun ve\'sinde').replace(/^(\d)$/, '$1. vuruşta')} (öncü)`} başlıyor${shifted ? ` — ölçü çizgileri şu an ${Math.abs(est.shiftSec).toFixed(2)} s kayık görünüyor` : ''}.</div>
+      ${gu && gu.meter !== set.meter ? `<div class="hint">ℹ Melodinin vurgularından tahmin ${esc(gu.meter)}${gu.bpm !== set.bpm ? ` (${gu.bpm} BPM)` : ''} olurdu (güven %${Math.round(gu.confidence * 100)}) — ölçü kesin olduğu için yok sayıldı.</div>` : ''}
+      ${est.reasons.map((r) => `<div class="hint">${esc(r)}</div>`).join('')}
+      ${shifted ? `<div class="row"><button class="accent" id="btnMeterApply">Ölçü çizgilerini hizala (${esc(set.meter)} kalır)</button></div>` : ''}</div>`;
+  } else {
     const differs = est.meter !== set.meter || (est.bpm && est.bpm !== set.bpm);
     const shifted = Math.abs(est.shiftSec) > 0.03;
     const others = est.candidates.slice(1).map((c) => `${c.meter}${c.bpm !== set.bpm ? ` (${c.bpm} BPM)` : ''}`).join(', ');
@@ -437,7 +456,7 @@ $('#meterEst').addEventListener('click', (e) => {
   if (!e.target.closest('#btnMeterApply') || !S.meterEst) return;
   const est = S.meterEst, set = S.proj.settings;
   const before = `${set.meter}, ${set.bpm} BPM`;
-  set.meter = est.meter; if (est.bpm) set.bpm = est.bpm;
+  if (!est.locked) { set.meter = est.meter; if (est.bpm) set.bpm = est.bpm; } // kesin ölçüde yalnızca ölçü çizgileri hizalanır
   if (Math.abs(est.shiftSec) > 0.03) {
     S.proj.audio.offsetSec += est.shiftSec;
     S.proj.audio.alignMode = 'none';
@@ -849,6 +868,38 @@ function applyAlign() {
   S.proj.audio.offsetSec = mode === 'bar1' ? S.onset : S.onset - Math.round(S.onset / g.pulseSec) * g.pulseSec;
 }
 
+// ---------------------------------------------------------------- başlangıç ölçüsü: ölçü çizgilerini k ölçü kaydır
+// k > 0: baştaki k ölçü silinir (k+1. ölçü 1. ölçü olur); k < 0: başa |k| boş ölçü eklenir. Ses kesilmez.
+function shiftBars(k) {
+  if (!S.d || !k) return;
+  const g = S.d.g, a = S.proj.audio, p = S.proj, mv = (b) => b - k;
+  a.offsetSec += k * g.barSec; a.alignMode = 'none';
+  if (a.source === 'record') a.recOffsetSec = a.offsetSec;
+  // başa ölçü eklenince 1. ölçüden başlayan bölüm yeni ölçüleri de kapsar (intro akorları; vokal girişi onu ayrı sayar)
+  p.sections = p.sections.map((s) => Object.assign({}, s, { startBar: k < 0 && s.startBar === 1 ? 1 : Math.max(1, mv(s.startBar)), endBar: mv(s.endBar) })).filter((s) => s.endBar >= 1);
+  p.chordLocks = p.chordLocks.map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar >= 1);
+  p.chordPins = (p.chordPins || []).map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar >= 1);
+  p.changeMarks = (p.changeMarks || []).map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar > 1 || (x.bar === 1 && x.half));
+  for (const e of p.noteEdits) if (e.q0to != null) e.q0to -= k * g.barQ;
+  if (p.entryOverrides) for (const id of Object.keys(p.entryOverrides)) { const v = p.entryOverrides[id]; if (v > 0) { if (mv(v) >= 1) p.entryOverrides[id] = mv(v); else delete p.entryOverrides[id]; } }
+  p.chordPinsSig = null;
+  syncInputs(); refresh(); scheduleRender(true);
+}
+function leadBars() {
+  if (!S.d || !S.d.notes.length) return null;
+  const q = Math.min(...S.d.notes.map((n) => n.q0));
+  return { empty: Math.max(0, Math.floor(q / S.d.g.barQ + 1e-6)), firstBar: Math.floor(q / S.d.g.barQ + 1e-6) + 1 };
+}
+function renderLead() {
+  const L = leadBars();
+  $('#leadInfo').textContent = !L ? 'Önce kayıt / analiz.' : L.empty ? `Vokal ${L.firstBar}. ölçüde başlıyor; önünde ${L.empty} boş ölçü var.` : 'Vokal 1. ölçüde başlıyor (başta boş ölçü yok).';
+  $('#btnTrimLead').disabled = !L || !L.empty;
+  $('#btnTrimLead').textContent = L && L.empty ? `Baştaki ${L.empty} boş ölçüyü sil` : 'Baştaki boş ölçüleri sil';
+}
+$('#btnTrimLead').onclick = () => { const L = leadBars(); if (L && L.empty) { shiftBars(L.empty); status(`Baştaki ${L.empty} boş ölçü silindi: vokal artık 1. ölçüde.`); } };
+$('#btnFirstBar').onclick = () => { const b = Math.round(+$('#inFirstBar').value || 1); if (b > 1) { shiftBars(b - 1); $('#inFirstBar').value = 1; status(`Ölçü ${b} artık 1. ölçü (önceki ${b - 1} ölçü silindi).`); } };
+$('#btnAddBar').onclick = () => { shiftBars(-1); status('Başa 1 boş ölçü eklendi.'); };
+
 // ---------------------------------------------------------------- zaman çizelgesi
 const TL = { KW: 46, RULER: 22, SEC: 26, CHORD: 36 };
 TL.TOP = TL.RULER + TL.SEC + TL.CHORD;
@@ -934,6 +985,12 @@ function draw() {
     if (x < TL.KW - 1) continue;
     c.fillStyle = '#9aa2b4'; c.fillText(String(b + 1), x + 4, TL.RULER / 2);
   }
+  // vokal girişleri (akor sayacının yeniden başladığı ölçüler): cetvelde yeşil ▶
+  if (d) for (const s of d.sections) for (const b of s.entries || []) {
+    const x = Math.round(qToX((b - 1) * barQ)) + 0.5;
+    if (x < TL.KW || x > W) continue;
+    c.fillStyle = '#5fd08a'; c.beginPath(); c.moveTo(x + 14, 4); c.lineTo(x + 22, TL.RULER / 2); c.lineTo(x + 14, TL.RULER - 4); c.fill();
+  }
   // akor değişim noktaları (tap): cetvelde ◆, akor satırında ince çizgi
   if (d && S.proj.taps && S.proj.taps.length) {
     for (const t of S.proj.taps) {
@@ -977,21 +1034,21 @@ function draw() {
       const x0 = qToX(s.q0), x1 = qToX(s.q1);
       if (x1 < TL.KW || x0 > W) continue;
       const sel = S.sel && S.sel.type === 'chord' && S.sel.q >= s.q0 - 1e-6 && S.sel.q < s.q1 - 1e-6;
-      c.fillStyle = sel ? '#2b3a57' : s.locked ? '#2f2a18' : '#1f2430';
+      c.fillStyle = sel ? '#2b3a57' : s.locked ? '#2f2a18' : s.picked ? '#1b2a40' : '#1f2430';
       roundRect(c, x0 + 1, chY + 3, x1 - x0 - 2, TL.CHORD - 6, 5); c.fill();
-      c.strokeStyle = sel ? '#6aa7ff' : s.locked ? '#f4d35e' : '#323746';
+      c.strokeStyle = sel ? '#6aa7ff' : s.locked ? '#f4d35e' : s.picked ? '#8fb8ff' : s.context ? '#3f7a58' : '#323746';
       roundRect(c, x0 + 1.5, chY + 3.5, x1 - x0 - 3, TL.CHORD - 7, 5); c.stroke();
       c.save(); c.beginPath(); c.rect(Math.max(TL.KW, x0), chY, x1 - Math.max(TL.KW, x0) - 3, TL.CHORD); c.clip();
       const disp = Object.assign({}, s.chord, { bass: s.chord.bass ?? (s.inversion ? s.voicing.bassPc : null) });
       c.fillStyle = '#fff'; c.font = '600 14px system-ui, sans-serif';
       const warnLock = s.locked && s.lockAdvice && s.lockAdvice.some((a) => a.important);
-      c.fillText((s.locked ? (s.lockSrc === 'chart' ? '📄 ' : '🔒 ') : '') + (warnLock ? '⚠ ' : '') + C.chordName(disp, s.flats), Math.max(TL.KW, x0) + 7, chY + TL.CHORD / 2);
+      c.fillText((s.locked ? (s.lockSrc === 'chart' ? '📄 ' : '🔒 ') : s.picked ? '✎ ' : '') + (warnLock ? '⚠ ' : '') + C.chordName(disp, s.flats), Math.max(TL.KW, x0) + 7, chY + TL.CHORD / 2);
       if (s.pinSuggest) { // motorun önerisi (uygulanmadı): turuncu "→ akor"
         c.font = '600 10px system-ui, sans-serif'; c.fillStyle = s.pinSuggest.important ? '#ff8a8f' : '#ffb454';
         c.fillText((s.pinSuggest.important ? '⚠→' : '→') + C.chordName(s.pinSuggest.chord, s.flats), Math.max(TL.KW, x0) + 7, chY + TL.CHORD - 7);
       } else if (s.suggest) { c.font = '10px system-ui, sans-serif'; c.fillStyle = '#ffb454'; c.fillText(C.chordName(s.suggest, s.flats) + '?', x1 - 44, chY + TL.CHORD - 9); }
       c.restore();
-      if (s.locked && x1 - x0 > 30) { // kilidi kaldırma düğmesi
+      if ((s.locked || s.picked) && x1 - x0 > 30) { // kilidi / elle konan akoru kaldırma düğmesi
         c.fillStyle = '#d9545b'; roundRect(c, x1 - 24, chY + 7, 19, 19, 4); c.fill();
         c.fillStyle = '#fff'; c.font = '700 13px system-ui, sans-serif'; c.fillText('✕', x1 - 19, chY + 17);
       }
@@ -1206,7 +1263,7 @@ cv.addEventListener('pointerdown', (e) => {
     const slot = S.d && S.d.chords.find((s) => q >= s.q0 && q < s.q1);
     if (!slot) return;
     // kilitli akorun sağ üstündeki ✕: kilidi doğrudan kaldır
-    if (slot.locked && x >= qToX(slot.q1) - 26 && x <= qToX(slot.q1) - 6) { unlockSlot(slot); return; }
+    if ((slot.locked || slot.picked) && x >= qToX(slot.q1) - 26 && x <= qToX(slot.q1) - 6) { unlockSlot(slot); return; }
     select({ type: 'chord', q: (slot.q0 + slot.q1) / 2 });
     Player.audition(slot.chord, slot.section, slot.q0, slot.q1); // tıklayınca duyulur
     return;
@@ -1471,6 +1528,17 @@ function renderInspector() {
       <span>Ağırlıklı histogram</span><span>${hist || '—'}</span>
       <span>Son ağırlıklı nota</span><span>${ki && ki.last ? esc(ki.last.name) : '—'}</span>
       <span>Akorlar</span><span>${esc(chords)}</span></div>
+      ${(() => {
+        const auto = s.entriesAuto || [], ov = s.entryOverride, on = S.proj.chordOpts.phraseEntries !== false;
+        const opts = [`<option value=""${ov == null ? ' selected' : ''}>Otomatik${auto.length ? ` (ölçü ${auto.join(', ')})` : ' (nota yok)'}</option>`]
+          .concat(Array.from({ length: s.endBar - s.startBar + 1 }, (_, i) => s.startBar + i).map((b) => `<option value="${b}"${ov === b ? ' selected' : ''}>ölçü ${b}</option>`))
+          .concat(`<option value="0"${ov === 0 ? ' selected' : ''}>Yok — sayaç bölüm başından</option>`).join('');
+        const first = (s.entries || [])[0];
+        const pre = first != null && first > s.startBar ? first - s.startBar : 0;
+        return `<div class="row"><label>Vokal girişi <select data-act="secEntry" style="width:auto">${opts}</select></label></div>
+          <p class="hint">${on ? `Akor sayacı (aynı akor A–B ölçü) ${s.entries && s.entries.length ? `ölçü ${s.entries.join(', ')}'de` : 'bölüm başında'} yeniden başlar; girişte akor değişebilir ya da sürebilir.${pre ? ` Girişten önceki ${pre} ölçü (intro) ayrı sayılır.` : ''}` : 'Vokal girişi kapalı (6. adımdaki kutu): sayaç yalnızca bölüm başında başlar.'}</p>
+          ${pre && !s.implicit ? `<div class="row"><button data-act="secStartAtEntry">Bölümü vokal girişinden başlat (ölçü ${first})</button><span class="hint">önceki ${pre} ölçü bölümden çıkar</span></div>` : ''}`;
+      })()}
       <p class="hint">Ton/mod seçimini soldaki 4. adımdan yapın. Son karar her zaman sizde.</p>
       ${s.implicit ? '' : `<div class="row"><button data-act="secQuant">Bu bölümü quantize et (${esc(quantGridLabel())}, %${S.proj.quant.strength})</button><button data-act="secQuantClear">Bölümün zamanlamasını sıfırla</button></div>`}`;
   }
@@ -1560,6 +1628,16 @@ $('#inspector').addEventListener('click', (e) => {
   if (!b || !S.sel) return;
   const act = b.dataset.act;
   if (act === 'secDelete' && S.sel.type === 'section') { deleteSection(S.sel.id); return; }
+  if (act === 'secStartAtEntry' && S.sel.type === 'section') {
+    const s = S.proj.sections.find((x) => x.id === S.sel.id), ds = S.d.sections.find((x) => x.id === S.sel.id);
+    const first = ds && (ds.entries || [])[0];
+    if (!s || !first || first <= s.startBar) return;
+    const from = s.startBar; s.startBar = first;
+    if (S.proj.entryOverrides) delete S.proj.entryOverrides[s.id];
+    refresh();
+    status(`${s.name}: ölçü ${from}–${first - 1} bölümden çıkarıldı; bölüm vokal girişinden (ölçü ${first}) başlıyor.`);
+    return;
+  }
   if ((act === 'secQuant' || act === 'secQuantClear') && S.sel.type === 'section') {
     const sid = S.sel.id, sc = { f: (n) => n.section === sid, name: (S.d.sections.find((x) => x.id === sid) || {}).name };
     if (act === 'secQuant') applyQuantize(sc); else clearTiming(sc);
@@ -1601,6 +1679,13 @@ $('#inspector').addEventListener('click', (e) => {
     const half = scope === 'slot' ? slot.half : scope === 'bar' ? null : +scope;
     const bOf = () => (b.dataset.b != null && b.dataset.b !== '' ? +b.dataset.b : null);
     if (act === 'pickChord') { setLock(slot.bar, half, { root: +b.dataset.r, q: b.dataset.q, bass: bOf() }); }
+    if (act === 'placeChord') { setPick(slot.bar, half, { root: +b.dataset.r, q: b.dataset.q, bass: bOf() }); }
+    if (act === 'lockPicked') { setLock(slot.bar, slot.half, Object.assign({}, slot.chord)); }
+    if (act === 'manualPlace') {
+      const ch = C.parseChord($('#chInput').value);
+      if (!ch) { status('Akor anlaşılamadı. Örnek: C#m, Dmaj7, F#m7/A, Bsus2, Eadd9', 'err'); return; }
+      setPick(slot.bar, half, ch);
+    }
     if (act === 'applyPinSug' && slot.pinSuggest) {
       const ps = slot.pinSuggest.chord;
       S.proj.chordPins = (S.proj.chordPins || []).filter((p) => !(p.bar === slot.bar && (slot.half == null || p.half == null || p.half === slot.half)));
@@ -1629,14 +1714,23 @@ $('#inspector').addEventListener('click', (e) => {
 });
 $('#inspector').addEventListener('change', (e) => {
   const t = e.target;
+  if (t.dataset.act === 'secEntry' && S.sel && S.sel.type === 'section') {
+    const eo = S.proj.entryOverrides || (S.proj.entryOverrides = {});
+    if (t.value === '') delete eo[S.sel.id]; else eo[S.sel.id] = +t.value;
+    refresh();
+    status(t.value === '' ? 'Vokal girişi otomatik.' : t.value === '0' ? 'Bu bölümde vokal girişi ayrımı yok: akor sayacı bölüm başından.' : `Vokal girişi: ölçü ${t.value} — akor sayacı burada yeniden başlar.`);
+    return;
+  }
   if (t.dataset.act === 'lock' && S.sel && S.sel.type === 'note') {
     const n = S.d.notes.find((x) => x.id === S.sel.id);
     const ed = editFor(n, true); ed.locked = t.checked; cleanupEdits(); refresh();
   }
 });
-$('#inspector').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'chInput') $('#inspector button[data-act=manualChord]').click(); });
+$('#inspector').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'chInput') $('#inspector button[data-act=manualPlace]').click(); });
 function unlockSlot(slot) {
-  S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === slot.bar && (slot.half == null || l.half == null || l.half === slot.half)));
+  const at = (l) => l.bar === slot.bar && (slot.half == null || l.half == null || l.half === slot.half);
+  S.proj.chordLocks = S.proj.chordLocks.filter((l) => !at(l));
+  S.proj.chordPicks = (S.proj.chordPicks || []).filter((l) => !at(l));
   refresh();
   status(`Ölçü ${slot.bar}${slot.half != null ? ` (${slot.half + 1}. yarı)` : ''}: kilit kaldırıldı, akor otomatiğe döndü.`);
 }
@@ -1686,20 +1780,28 @@ function setMark(bar, half, kind) {
     S.proj.chordPins = out;
   }
   S.proj.changeMarks = (S.proj.changeMarks || []).filter((m) => !(m.bar === bar && (m.half || 0) === half));
-  if (kind) S.proj.changeMarks.push({ bar, half, kind });
+  if (kind) S.proj.changeMarks.push({ bar, half, kind, t: stamp() });
   refresh();
   const where = `ölçü ${bar}${half ? ' ortası' : ' başı'}`;
   status(kind === 'change' ? `✂ ${where}: akor burada değişecek (diğer akorlar aynı).` : kind === 'hold' ? `= ${where}: akor burada değişmeyecek.` : `${where}: işaret kaldırıldı.`);
 }
 // covers(bar, half): yeni kilitlerin (bar, yarım) konumunu kapsayıp kapsamadığı; half null = tüm ölçü
+// Seçiminden sonraki akorlar (chordOpts.adaptAfter, varsayılan açık): yalnızca düzenlenen noktadan ÖNCEKİ akorlar sabitlenir;
+// sonrakiler seçimine göre yeniden önerilir (eski sabitleri de bırakılır). Kapalıysa düzenlenen yer dışındaki her şey sabit.
 function pinOthers(covers) {
   if (!S.d) return;
   if (S.proj.chordPinsSig !== pinSig()) S.proj.chordPins = [];
+  const split = !!S.d.g.split, g = S.d.g;
+  const qOf = (bar, half) => (bar - 1) * g.barQ + (half ? g.split : 0);
+  let fromQ = Infinity;
+  for (const sl of S.d.chords) for (const h of sl.half != null ? [sl.half] : split ? [0, 1] : [null]) if (covers(sl.bar, h)) fromQ = Math.min(fromQ, qOf(sl.bar, h));
+  const adapt = S.proj.chordOpts.adaptAfter !== false && fromQ < Infinity;
+  if (adapt) S.proj.chordPins = (S.proj.chordPins || []).filter((p) => qOf(p.bar, p.half) < fromQ - 1e-6);
   const pins = S.proj.chordPins || (S.proj.chordPins = []);
-  const split = !!S.d.g.split;
   const has = (bar, half) => pins.some((p) => p.bar === bar && (p.half == null || half == null || p.half === half));
   for (const sl of S.d.chords) {
-    if (sl.locked) continue;
+    if (sl.locked || sl.picked) continue;
+    if (adapt && sl.q0 >= fromQ - 1e-6) continue;
     const ch = { root: sl.chord.root, q: sl.chord.q, bass: sl.chord.bass ?? (sl.inversion ? sl.voicing.bassPc : null) };
     const halves = sl.half != null ? [sl.half] : split ? [0, 1] : [null];
     const free = halves.filter((h) => !covers(sl.bar, h));
@@ -1710,14 +1812,25 @@ function pinOthers(covers) {
   }
   S.proj.chordPinsSig = pinSig();
 }
-function setLock(bar, half, chord) {
+// her kullanıcı eylemine sıra numarası: kilit / elle konan akor / ✂ = işaretleri çakışırsa en son yapılan kazanır
+const stamp = () => (S.proj.seq = (S.proj.seq || 0) + 1);
+// kilit (kesin) ya da elle konan akor (kilitsiz: motor çevresini ona göre kurar) — aynı yerdeki eskisinin yerine geçer
+function placeChord(bar, half, chord, lock) {
+  const P = S.proj, at = (l) => l.bar === bar && (half == null || l.half == null || l.half === half);
+  P.chordPicks = P.chordPicks || [];
+  // tam ölçülük kilidin/akorun yalnızca bir yarısı değişiyorsa diğer yarı eskisiyle kalsın (1 ölçüde 2 akor)
+  for (const list of [P.chordLocks, P.chordPicks]) { const full = half != null ? list.find((l) => l.bar === bar && l.half == null) : null; if (full) full.half = 1 - half; }
   pinOthers((b, h) => b === bar && (half == null || h == null || h === half));
-  S.proj.chordPins = (S.proj.chordPins || []).filter((p) => !(p.bar === bar && (half == null || p.half == null || p.half === half)));
-  S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === bar && (half == null || l.half == null || l.half === half)));
-  S.proj.chordLocks.push({ bar, half, chord: { root: chord.root, q: chord.q, bass: chord.bass ?? null } });
+  P.chordPins = (P.chordPins || []).filter((p) => !at(p));
+  P.chordLocks = P.chordLocks.filter((l) => !at(l));
+  P.chordPicks = P.chordPicks.filter((l) => !at(l));
+  (lock ? P.chordLocks : P.chordPicks).push({ bar, half, chord: { root: chord.root, q: chord.q, bass: chord.bass ?? null }, t: stamp() });
   refresh();
-  status(`Ölçü ${bar}${half != null ? ` (${half + 1}. yarı)` : ''}: ${C.chordName(chord)} kilitlendi.`);
+  const after = P.chordOpts.adaptAfter !== false ? ' Sonraki akorlar bu seçime göre yeniden önerildi; öncekiler aynı.' : '';
+  status(`Ölçü ${bar}${half != null ? ` (${half + 1}. yarı)` : ''}: ${C.chordName(chord)} ${lock ? 'kilitlendi' : 'konuldu (kilitsiz)'}.${after}`);
 }
+function setLock(bar, half, chord) { placeChord(bar, half, chord, true); }
+function setPick(bar, half, chord) { placeChord(bar, half, chord, false); }
 function renderChordInspector(box, slot) {
   if (!slot) { box.innerHTML = '<p class="hint">Bu konumda akor yok. Bölümün tonu belirlenmemiş olabilir (4. adım); başka bir akora tıklayın.</p>'; return; }
   const g = S.d.g, sec = S.d.sections.find((s) => s.id === slot.section);
@@ -1726,14 +1839,14 @@ function renderChordInspector(box, slot) {
   const sty = !!S.d.styleActive;
   const fx = (v) => (v >= 0 ? '+' : '') + v.toFixed(2);
   const rows = slot.candidates.map((c) => `<tr><td><b>${esc(nm(c.chord))}</b>${C.sameChord(c.chord, slot.chord) ? ' ✓' : ''}</td><td>${sty ? `<span title="toplam">${c.score.toFixed(2)}</span> = <span title="melodi uyumu">${fx(c.melody)}</span> <span class="hint">melodi</span> ${fx(c.style)} <span class="hint" title="stil: geçiş ${fx(c.styleTrans)}, renk ${fx(c.styleColor)}">stil</span>` : c.pct}</td><td>${roleChips(c.roles)}</td>
-      <td><button data-act="hearChord" data-r="${c.chord.root}" data-q="${c.chord.q}" title="dinle (kilitlemez)">▶</button> <button data-act="pickChord" data-r="${c.chord.root}" data-q="${c.chord.q}">Seç + kilitle</button></td></tr>`).join('');
-  const sug = slot.suggest ? `<tr><td><b>${esc(nm(slot.suggest))}</b></td><td>öneri</td><td class="hint">Minör akorda melodi 2'liye basıyor → sus2 varyantı</td><td><button data-act="hearChord" data-r="${slot.suggest.root}" data-q="${slot.suggest.q}" title="dinle (kilitlemez)">▶</button> <button data-act="pickChord" data-r="${slot.suggest.root}" data-q="${slot.suggest.q}">Seç + kilitle</button></td></tr>` : '';
+      <td><button data-act="hearChord" data-r="${c.chord.root}" data-q="${c.chord.q}" title="dinle (kilitlemez)">▶</button> <button data-act="placeChord" data-r="${c.chord.root}" data-q="${c.chord.q}" title="buraya koy — kilitlemeden; sonraki akorlar buna göre önerilir">Koy</button> <button data-act="pickChord" data-r="${c.chord.root}" data-q="${c.chord.q}" title="buraya koy ve kilitle">🔒</button></td></tr>`).join('');
+  const sug = slot.suggest ? `<tr><td><b>${esc(nm(slot.suggest))}</b></td><td>öneri</td><td class="hint">Minör akorda melodi 2'liye basıyor → sus2 varyantı</td><td><button data-act="hearChord" data-r="${slot.suggest.root}" data-q="${slot.suggest.q}" title="dinle (kilitlemez)">▶</button> <button data-act="placeChord" data-r="${slot.suggest.root}" data-q="${slot.suggest.q}">Koy</button> <button data-act="pickChord" data-r="${slot.suggest.root}" data-q="${slot.suggest.q}" title="buraya koy ve kilitle">🔒</button></td></tr>` : '';
   const halfTxt = slot.half == null ? 'tüm ölçü' : `${slot.half + 1}. yarı`;
   const scopeSel = g.split ? `<select id="chScope" aria-label="kapsam" style="width:auto"><option value="slot">bu slot (${halfTxt})</option>${slot.half != null ? '<option value="bar">tüm ölçü</option>' : ''}<option value="0">1. yarı</option><option value="1">2. yarı</option></select>` : '';
   const disp = Object.assign({}, slot.chord, { bass: slot.chord.bass ?? (slot.inversion ? slot.voicing.bassPc : null) });
   // ---- öneriler ve "neden"ler: hiçbiri kendiliğinden uygulanmaz
   const bAttr = (ch) => `data-r="${ch.root}" data-q="${ch.q}" data-b="${ch.bass ?? ''}"`;
-  const chBtns = (ch, pickTxt = 'Seç + kilitle') => `<button data-act="hearChord" ${bAttr(ch)} title="dinle (kilitlemez)">▶ ${esc(nm(ch))}</button><button data-act="pickChord" ${bAttr(ch)}>${esc(pickTxt)}</button>`;
+  const chBtns = (ch, pickTxt = 'Kilitle') => `<button data-act="hearChord" ${bAttr(ch)} title="dinle (kilitlemez)">▶ ${esc(nm(ch))}</button><button data-act="placeChord" ${bAttr(ch)}>Koy</button><button data-act="pickChord" ${bAttr(ch)}>${esc(pickTxt)}</button>`;
   const box2 = (important, html) => `<div class="${important ? 'st-warn adv-imp' : 'adv-opt'}">${important ? '⚠ ' : 'ℹ '}${html}</div>`;
   const adv = [];
   const bassLine = (a) => `${a.prevBassPc != null ? `önceki bas ${esc(pn(a.prevBassPc))} → ${esc(pn(a.bassPc))}: ${a.leap} yarım ses` : ''}; kök konumda bas ${a.rootLeap} yarım ses atlıyor`;
@@ -1747,7 +1860,7 @@ function renderChordInspector(box, slot) {
     adv.push(`<div class="adv-opt">📌 Sabit: başka bir akoru kilitlediğin için bu akor değiştirilmedi.</div>`);
     if (slot.pinSuggest) {
       const ps = slot.pinSuggest;
-      adv.push(box2(ps.important, `Motor burada <b>${esc(nm(ps.chord))}</b> önerir — ${esc(ps.reasons.join('; '))}. <div class="row"><button data-act="hearChord" ${bAttr(ps.chord)}>▶ ${esc(nm(ps.chord))}</button><button data-act="applyPinSug" class="accent">Öneriyi uygula</button><button data-act="pickChord" ${bAttr(ps.chord)}>Seç + kilitle</button></div>`));
+      adv.push(box2(ps.important, `Motor burada <b>${esc(nm(ps.chord))}</b> önerir — ${esc(ps.reasons.join('; '))}. <div class="row"><button data-act="hearChord" ${bAttr(ps.chord)}>▶ ${esc(nm(ps.chord))}</button><button data-act="applyPinSug" class="accent">Öneriyi uygula</button><button data-act="placeChord" ${bAttr(ps.chord)}>Koy</button><button data-act="pickChord" ${bAttr(ps.chord)}>Kilitle</button></div>`));
     }
   } else if (slot.invWhy) {
     const root = Object.assign({}, slot.chord, { bass: slot.chord.root });
@@ -1776,9 +1889,10 @@ function renderChordInspector(box, slot) {
   const markHtml = markRow.length ? `<div class="row mark-row"><span class="hint">Akor değişimi:</span> ${markRow.join(' ')}</div>` : '';
   box.innerHTML = `<h3>Ölçü ${slot.bar} · ${halfTxt} · ${esc(sec ? sec.name : '')}${sec && sec.tonic != null ? ' (' + esc(C.keyName(sec.tonic, sec.mode)) + ')' : ''}</h3>
     ${slot.locked ? rmBar([{ text: slot.lockSrc === 'chart' ? `📄 Bu akor senin şablonundan: <b>${esc(C.chordName(disp, slot.flats))}</b>` : `🔒 Bu akor elle seçildi / kilitlendi: <b>${esc(C.chordName(disp, slot.flats))}</b>`, act: 'unlockChord', btn: 'Kilidi kaldır (otomatiğe dön)' }]) : ''}
+    ${slot.picked ? rmBar([{ text: `✎ Bu akoru sen koydun (kilitsiz): <b>${esc(C.chordName(disp, slot.flats))}</b> <span class="hint">— motor çevresini buna göre kuruyor; sonradan koyduğun bir işaret ya da kilit çakışırsa o kazanır</span>`, act: 'unlockChord', btn: 'Kaldır (otomatiğe dön)' }]) + '<div class="row"><button data-act="lockPicked">🔒 Kilitle</button></div>' : ''}
     ${adv.join('')}
     ${markHtml}
-    <div class="kv"><span>Akor</span><span><button data-act="hearChord" data-cur="1" title="dinle">▶</button> <b style="font-size:16px">${esc(C.chordName(disp, slot.flats))}</b> ${slot.locked ? '<span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : slot.pinned ? '<span class="tag">📌 sabit</span>' : '<span class="tag">otomatik</span>'}</span>
+    <div class="kv"><span>Akor</span><span><button data-act="hearChord" data-cur="1" title="dinle">▶</button> <b style="font-size:16px">${esc(C.chordName(disp, slot.flats))}</b> ${slot.locked ? '<span class="tag" style="color:var(--lock);border-color:var(--lock)">🔒 kilitli</span>' : slot.picked ? '<span class="tag" style="color:#8fb8ff;border-color:#8fb8ff">✎ elle konuldu</span>' : slot.pinned ? '<span class="tag">📌 sabit</span>' : slot.context ? '<span class="tag" style="color:#5fd08a;border-color:#5fd08a">bağlam</span>' : '<span class="tag">otomatik</span>'}</span>
       <span>Neden</span><span>${esc(slot.reason || '')}</span>
       <span>Melodi notalarının rolü</span><span>${roleChips(slot.roles)}</span>
       ${slot.engine === 'viterbi' ? `<span>Değiş mi kal mı</span><span>süreli model: bu akor ${slot.segBars} ölçü sürüyor${slot.segDurTerm != null ? ` — harmonik ritim payı ${slot.segDurTerm >= 0 ? '+' : ''}${slot.segDurTerm.toFixed(2)} (λ_ritim·log(P(süre)·5))` : ' — harmonik ritim verisi yok, süre karara katılmıyor'}</span>` : ''}
@@ -1788,7 +1902,7 @@ function renderChordInspector(box, slot) {
     ${sec && sec.tonic != null && window.StyleUI ? `<div class="row" style="margin-top:6px"><span class="hint">Bu akor seçimi (önceki akordan geçiş) — kişisel geri bildirim:</span>
       <button data-act="fbChord" data-v="1" title="beğen">👍</button><button data-act="fbChord" data-v="-1" title="beğenme">👎</button></div>` : ''}
     <div class="row" style="margin-top:8px">Elle yaz: <input type="text" id="chInput" placeholder="ör. Dmaj7, C#m, F#m7/A" style="width:170px"> ${scopeSel}
-      <button data-act="manualChord" class="accent">Uygula + kilitle</button></div>`;
+      <button data-act="manualPlace" class="accent" title="kilitlemeden koy; sonraki akorlar buna göre önerilir">Yerine koy</button><button data-act="manualChord" title="koy ve kilitle">🔒 Kilitle</button></div>`;
 }
 
 // ---------------------------------------------------------------- bilgi satırları
@@ -1837,11 +1951,17 @@ $('#altBox').addEventListener('change', (e) => {
 // ---------------------------------------------------------------- giriş alanları
 function syncInputs() {
   const p = S.proj;
-  $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
+  $('#inBpm').value = p.settings.bpm; $('#inLatency').value = p.settings.latencyMs;
+  $$('.meter-sel').forEach((el) => { el.value = p.settings.meter; });
+  $$('.meter-lock').forEach((el) => { el.checked = !!p.settings.meterLocked; });
+  $$('.meter-info').forEach((el) => { el.textContent = `${p.settings.bpm} BPM · ${p.settings.meterLocked ? 'kesin (tahmin değiştirmez)' : 'tahmin önerebilir'}`; });
   const gq = C.makeGrid(p.settings);
   $('#inClickFeel').value = p.settings.clickFeel || 'normal';
   $('#inOnlyMarked').checked = !!p.chordOpts.onlyMarked;
   $('#inDownbeatOnly').checked = !!p.chordOpts.downbeatOnly;
+  $('#inPhraseEntries').checked = p.chordOpts.phraseEntries !== false;
+  $('#inAdaptAfter').checked = p.chordOpts.adaptAfter !== false;
+  $('#inSongContext').checked = p.chordOpts.songContext !== false;
   $('#inClickFeel').disabled = p.settings.meter !== '4/4';
   $('#bpmUnit').textContent = p.settings.meter === '6/8' ? `(♩. = noktalı çeyrek; ♩ = ${Math.round(gq.quarterBpm)})` : '(♩ = çeyrek nota)';
   $('#inOffset').value = Math.round(p.audio.offsetSec * 1000);
@@ -1861,9 +1981,9 @@ function syncInputs() {
   document.querySelectorAll('input[name=atTarget]').forEach((r) => { r.checked = r.value === (p.autotune.target || 'semitone'); });
   $('#scaleWarn').hidden = p.autotune.target !== 'scale';
   $('#inSkipChrom').disabled = p.autotune.target !== 'scale';
-  $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
+  $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars; $('#inMaxBarsMin').value = p.chordOpts.maxBarsMin ?? p.chordOpts.maxBars;
   $('#inEngine').value = p.chordOpts.engine || 'greedy';
-  $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
+  $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
   $('#inPedal').checked = p.mixer.pedal; $('#inPlayClick').checked = p.mixer.click;
   p.quant = p.quant || { grid: '1/8', strength: 100 };
   $('#inQuantGrid').value = p.quant.grid; $('#inQuantStrength').value = p.quant.strength; $('#outQuantStrength').textContent = '%' + p.quant.strength;
@@ -1876,7 +1996,16 @@ function syncInputs() {
 }
 const onNum = (id, fn) => $(id).addEventListener('change', (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) fn(v); });
 onNum('#inBpm', (v) => { S.proj.settings.bpm = C.clamp(v, 30, 300); applyAlign(); syncInputs(); refresh(); });
-$('#inMeter').addEventListener('change', (e) => { /* BPM birimi syncInputs'ta güncellenir */ S.proj.settings.meter = e.target.value; S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[e.target.value].split); applyAlign(); syncInputs(); refresh(); });
+// ölçü: 1. adım, quantize ve davul panelindeki seçiciler aynı ayarı değiştirir; elle seçmek ölçüyü kesinleştirir
+function setMeter(m, lock = true) {
+  const set = S.proj.settings, before = set.meter;
+  set.meter = m; if (lock) set.meterLocked = true;
+  S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[m].split);
+  applyAlign(); syncInputs(); refresh(); /* BPM birimi syncInputs'ta güncellenir */
+  if (before !== m || lock) status(`Ölçü ${m}${set.meterLocked ? ' (kesin: tahmin bunu değiştirmez; davul loop\'ları ve quantize bu ölçüyle)' : ''}.`);
+}
+$$('.meter-sel').forEach((el) => el.addEventListener('change', (e) => setMeter(e.target.value)));
+$$('.meter-lock').forEach((el) => el.addEventListener('change', (e) => { S.proj.settings.meterLocked = e.target.checked; syncInputs(); refresh(); status(e.target.checked ? `Ölçü ${S.proj.settings.meter} kesin — tahmin yalnızca bilgi olarak gösterilir.` : 'Ölçü kesin değil — davul paneli melodiden ölçü tahmin edip önerecek.'); }));
 onNum('#inLatency', (v) => { S.proj.settings.latencyMs = v; refresh(); });
 onNum('#inOffset', (v) => { S.proj.audio.offsetSec = v / 1000; S.proj.audio.alignMode = 'none'; $('#inAlign').value = 'none'; refresh(); });
 $('#inPickupBeat').addEventListener('change', (e) => { S.proj.audio.pickupBeat = +e.target.value; S.proj.audio.alignMode = 'pickup'; applyAlign(); syncInputs(); refresh(); });
@@ -1937,7 +2066,9 @@ function applyChart(text) {
   pinOthers(cov);
   S.proj.chordPins = (S.proj.chordPins || []).filter((p) => !cov(p.bar, p.half));
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => !cov(l.bar, l.half));
-  for (const c of cells) S.proj.chordLocks.push({ bar: c.bar, half: c.half, chord: { root: c.chord.root, q: c.chord.q, bass: c.chord.bass ?? null }, src: 'chart' });
+  const tt = stamp();
+  S.proj.chordPicks = (S.proj.chordPicks || []).filter((l) => !cov(l.bar, l.half));
+  for (const c of cells) S.proj.chordLocks.push({ bar: c.bar, half: c.half, chord: { root: c.chord.root, q: c.chord.q, bass: c.chord.bass ?? null }, src: 'chart', t: tt });
   refresh();
   const bars = new Set(cells.map((c) => c.bar)).size;
   msg.innerHTML = `<div class="adv-opt">✓ ${cells.length} akor ${bars} ölçüye kilitli olarak yerleşti${created ? `, ${created} bölüm oluşturuldu` : ''}. ▶ Oynat ile melodinin üzerinde dinle. Boş bıraktığın ölçüler otomatik.</div>${notes.length ? `<div class="st-warn">⚠ Notlar:<ul>${notes.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}`;
@@ -1962,6 +2093,9 @@ $('#btnChartRemove').onclick = () => {
 };
 $('#inOnlyMarked').addEventListener('change', (e) => { S.proj.chordOpts.onlyMarked = e.target.checked; refresh(); });
 $('#inDownbeatOnly').addEventListener('change', (e) => { S.proj.chordOpts.downbeatOnly = e.target.checked; refresh(); });
+$('#inPhraseEntries').addEventListener('change', (e) => { S.proj.chordOpts.phraseEntries = e.target.checked; refresh(); });
+$('#inAdaptAfter').addEventListener('change', (e) => { S.proj.chordOpts.adaptAfter = e.target.checked; });
+$('#inSongContext').addEventListener('change', (e) => { S.proj.chordOpts.songContext = e.target.checked; refresh(); });
 $('#btnClearMarks').onclick = () => { const n = (S.proj.changeMarks || []).length; S.proj.changeMarks = []; refresh(); status(`${n} değişim işareti kaldırıldı (akorlar yerinde kaldı).`); };
 $('#btnApplySug').onclick = () => {
   const n = S.d.chords.filter((c) => c.pinSuggest).length;
@@ -1969,10 +2103,10 @@ $('#btnApplySug').onclick = () => {
   status(`Motorun ${n} önerisi uygulandı: kilitlerin dışındaki akorlar yeniden hesaplandı.`);
 };
 $('#btnUnlockAll').onclick = () => {
-  const n = S.proj.chordLocks.length;
+  const n = S.proj.chordLocks.length + (S.proj.chordPicks || []).length;
   if (!n) return;
-  S.proj.chordLocks = []; S.proj.chordPins = []; refresh();
-  status(`${n} akor kilidi kaldırıldı; bütün akorlar otomatiğe döndü.`);
+  S.proj.chordLocks = []; S.proj.chordPicks = []; S.proj.chordPins = []; refresh();
+  status(`${n} kilitli / elle konan akor kaldırıldı; bütün akorlar otomatiğe döndü.`);
 };
 const isMoveEdit = (e) => e.target != null && e.label != null && e.label === Math.round(e.target);
 function clearEdits(kind) {
@@ -1990,13 +2124,14 @@ $('#btnClearManual').onclick = () => { clearEdits('move'); clearEdits('fine'); }
 $('#editSummary').addEventListener('click', (e) => { const b = e.target.closest('button[data-clear]'); if (b) { clearEdits(b.dataset.clear); status('Kaldırıldı: ' + b.dataset.what + '.'); } });
 $('#btnClearLabels').onclick = () => { S.proj.noteEdits.forEach((e) => { e.label = null; }); cleanupEdits(); refresh(); };
 $('#inPct').addEventListener('input', (e) => { S.proj.chordOpts.changePct = +e.target.value; $('#outPct').textContent = '%' + e.target.value; refresh(); });
-onNum('#inMaxBars', (v) => { S.proj.chordOpts.maxBars = Math.max(1, Math.round(v)); refresh(); });
-onNum('#inHomeEvery', (v) => { S.proj.chordOpts.homeEvery = Math.max(0, Math.round(v)); refresh(); });
+// "aynı akor en fazla A–B ölçü": iki kutu birbirini geçemez (A > B yazılırsa diğeri onu izler)
+onNum('#inMaxBars', (v) => { const o = S.proj.chordOpts; o.maxBars = C.clamp(Math.round(v), 1, 32); if ((o.maxBarsMin ?? o.maxBars) > o.maxBars) o.maxBarsMin = o.maxBars; syncInputs(); refresh(); });
+onNum('#inMaxBarsMin', (v) => { const o = S.proj.chordOpts; o.maxBarsMin = C.clamp(Math.round(v), 1, 32); if (o.maxBarsMin > o.maxBars) o.maxBars = o.maxBarsMin; syncInputs(); refresh(); });
 $('#inEngine').addEventListener('change', (e) => { S.proj.chordOpts.engine = e.target.value; refresh(); });
 $('#inColorPen').addEventListener('input', (e) => { S.proj.chordOpts.colorPenalty = +e.target.value; $('#outColorPen').textContent = e.target.value; refresh(); });
 $('#btnModeLabel').onclick = () => setEditMode('label');
 $('#btnLatencyCal').onclick = () => Cal.run();
-$('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; refresh(); };
+$('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; S.proj.chordPicks = []; refresh(); };
 $('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
 $('#inClickFeel').addEventListener('change', (e) => { S.proj.settings.clickFeel = e.target.value; });
 $('#inPlayClick').addEventListener('change', (e) => { S.proj.mixer.click = e.target.checked; });
@@ -2049,7 +2184,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (S.sel.type === 'chord' && (e.key === 'Delete' || e.key === 'Backspace')) {
     const slot = S.d.chords.find((x) => S.sel.q >= x.q0 && S.sel.q < x.q1);
-    if (slot && slot.locked) { e.preventDefault(); unlockSlot(slot); }
+    if (slot && (slot.locked || slot.picked)) { e.preventDefault(); unlockSlot(slot); }
     return;
   }
   if (S.sel.type === 'section' && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); deleteSection(S.sel.id); return; }

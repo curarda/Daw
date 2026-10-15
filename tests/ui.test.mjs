@@ -126,7 +126,7 @@ try {
     const names = () => S(() => window.__daw.d.chords.map((c) => window.Core.chordName(c.chord, c.flats)));
     assert.equal(await page.inputValue('#inEngine'), 'viterbi');
     const v = await names();
-    assert.deepEqual(v.slice(0, 5), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7', 'C#m']);
+    assert.deepEqual(v.slice(0, 5), ['C#m', 'Dmaj7', 'Dmaj7', 'Dmaj7', 'C#m']); // ev akoru M kuralı yok: Dmaj7 sürer
     assert.equal(v[v.length - 1], 'Bm');
     const radios = page.locator('#altBox input[type=radio]');
     assert.equal(await radios.count(), 6);
@@ -139,23 +139,32 @@ try {
     return `${v.join(' · ')} · verse alternatif 2: ${alt.slice(0, 5).join(' · ')} · ${texts[0].replace(/\s+/g, ' ').trim()}`;
   });
 
-  await step('6) akorlar (ölçü ölçü motor): verse C#m | Dmaj7 | C#m | Dmaj7 C#m, nakarat sonu Bm; M ve renk cezası ayarları', async () => {
+  await step('6) akorlar (ölçü ölçü motor) + "aynı akor en fazla A–B ölçü" aralığı; M kutusu yok; renk cezası', async () => {
     await page.selectOption('#inEngine', 'greedy');
     const names = () => S(() => window.__daw.d.chords.map((c) => window.Core.chordName(c.chord, c.flats)));
     const ch = await names();
-    assert.deepEqual(ch.slice(0, 5), ['C#m', 'Dmaj7', 'C#m', 'Dmaj7', 'C#m']);
+    assert.deepEqual(ch.slice(0, 5), ['C#m', 'Dmaj7', 'Dmaj7', 'Dmaj7', 'C#m']);
     assert.equal(ch[ch.length - 1], 'Bm');
-    await page.fill('#inHomeEvery', '0'); await page.dispatchEvent('#inHomeEvery', 'change');
-    const off = await names();
-    assert.equal(off[2], 'Dmaj7');
+    assert.equal(await page.locator('#inHomeEvery').count(), 0, 'ev akoru M kutusu kaldırıldı');
+    // aralık 1–1: her ölçüde akor değişir (Dmaj7 tek ölçüden uzun süremez)
+    await page.fill('#inMaxBars', '1'); await page.dispatchEvent('#inMaxBars', 'change');
+    assert.equal(await page.inputValue('#inMaxBarsMin'), '1', 'alt sınır üst sınırı geçemez');
+    const one = await names();
+    assert.equal(one[2], 'C#m', '1–1: ' + one.join(' '));
+    // 6–8: alt sınır yazılınca üst sınır onu izler
+    await page.fill('#inMaxBarsMin', '6'); await page.dispatchEvent('#inMaxBarsMin', 'change');
+    assert.equal(await page.inputValue('#inMaxBars'), '6');
+    await page.fill('#inMaxBars', '8'); await page.dispatchEvent('#inMaxBars', 'change');
+    assert.equal(await S(() => `${window.__daw.proj.chordOpts.maxBarsMin}-${window.__daw.proj.chordOpts.maxBars}`), '6-8');
     await page.locator('#inColorPen').fill('0.1');
     const pen = await names();
     assert.equal(pen[2], 'C#m');
     await page.locator('#inColorPen').fill('0');
-    await page.fill('#inHomeEvery', '2'); await page.dispatchEvent('#inHomeEvery', 'change');
+    await page.fill('#inMaxBarsMin', '4'); await page.dispatchEvent('#inMaxBarsMin', 'change');
+    await page.fill('#inMaxBars', '4'); await page.dispatchEvent('#inMaxBars', 'change');
     assert.deepEqual(await names(), ch);
     await page.selectOption('#inEngine', 'viterbi');
-    return `${ch.join(' · ')} | M=0: ${off.slice(0, 4).join(' · ')} | +ceza 0.1: ${pen.slice(0, 4).join(' · ')}`;
+    return `${ch.join(' · ')} | aralık 1–1: ${one.slice(0, 4).join(' · ')} | 6–8 kaydedildi | +ceza 0.1: ${pen.slice(0, 4).join(' · ')}`;
   });
 
   const box = await page.locator('#tl').boundingBox();
@@ -506,13 +515,14 @@ try {
     const cy = tl.y + 22 + 26 + 18;
     const mid = (bar) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === ${bar}); return 46 + ((s.q0 + s.q1) / 2) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
     const names = () => S(() => window.__daw.d.chords.map((c) => window.__dawAPI.C.chordName(Object.assign({}, c.chord, { bass: c.chord.bass ?? (c.inversion ? c.voicing.bassPc : null) }))));
+    await page.uncheck('#inAdaptAfter'); // eski davranış: düzenlenen yer dışında hiçbir akor değişmez
     const n0 = await names();
     await page.mouse.click(tl.x + (await mid(2)), cy);
     await page.fill('#chInput', 'A'); await page.click('#inspector button[data-act=manualChord]');
     const n1 = await names();
     n0.forEach((x, i) => { if (i !== 1) assert.equal(n1[i], x, 'akor ' + i + ' değişti'); });
     assert.equal(n1[1], 'A');
-    assert.match(await page.textContent('#btnApplySug'), /\(1\)/);
+    assert.match(await page.textContent('#btnApplySug'), /\([1-9]\d*\)/);
     // bar 1: sabit + öneri ve neden
     await page.mouse.click(tl.x + (await mid(1)), cy);
     const insp = await page.textContent('#inspector');
@@ -530,7 +540,38 @@ try {
     n1.forEach((x, i) => { if (i > 1) assert.equal(n2[i], x); });
     await page.click('#btnUnlockAll');
     assert.deepEqual(await names(), n0);
+    await page.check('#inAdaptAfter');
     return `kilit sonrası değişen yok · ölçü 1 önerisi: "${insp.match(/Motor burada[^.]*/)[0].slice(0, 80)}" · uygula → yalnızca ölçü 1 değişti · tüm kilitleri kaldır → başlangıç`;
+  });
+
+  await step('Kilitsiz "Koy": akor yerine gelir (✎), önceki akorlar sabit, sonrakiler seçime göre yeniden önerilir; Kilitle / Kaldır; elle yazıp yerine koy', async () => {
+    const tl = await page.locator('#tl').boundingBox();
+    const cy = tl.y + 22 + 26 + 18;
+    const mid = (bar) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); const s = d.chords.find((c) => c.bar === ${bar}); return 46 + ((s.q0 + s.q1) / 2) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
+    const names = () => S(() => window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`));
+    assert.ok(await page.isChecked('#inAdaptAfter'));
+    const n0 = await names();
+    await page.mouse.click(tl.x + (await mid(3)), cy);
+    await page.locator('#inspector tbody button[data-act=placeChord]').nth(1).click();
+    const st3 = await S(() => { const s = window.__daw.d.chords.find((c) => c.bar === 3); return { picked: s.picked, locked: s.locked }; });
+    assert.deepEqual(st3, { picked: true, locked: false });
+    const n1 = await names();
+    n0.filter((x) => +x.split(/[.:]/)[0] < 3).forEach((x) => assert.ok(n1.includes(x), 'öncesi değişmemeli: ' + x));
+    const pins = await S(() => (window.__daw.proj.chordPins || []).map((p) => p.bar));
+    assert.ok(pins.every((b) => b < 3), 'yalnızca öncesi sabit: ' + pins);
+    assert.match(await page.textContent('#inspector'), /Bu akoru sen koydun \(kilitsiz\)/);
+    // kilitle → kilitli; kaldır → otomatik
+    await page.click('#inspector button[data-act=lockPicked]');
+    assert.equal(await S(() => window.__daw.d.chords.find((c) => c.bar === 3).locked), true);
+    await page.click('#inspector button[data-act=unlockChord]');
+    assert.equal(await S(() => (window.__daw.proj.chordLocks.length + window.__daw.proj.chordPicks.length)), 0);
+    // elle yaz → yerine koy (kilitsiz)
+    await page.mouse.click(tl.x + (await mid(2)), cy);
+    await page.fill('#chInput', 'Bm7'); await page.click('#inspector button[data-act=manualPlace]');
+    const s2 = await S(() => { const s = window.__daw.d.chords.find((c) => c.bar === 2); return [window.__dawAPI.C.chordName(s.chord), s.picked, s.locked]; });
+    assert.deepEqual(s2, ['Bm7', true, false]);
+    await page.click('#btnUnlockAll');
+    return `Koy → ölçü 3 ✎ (kilitsiz), öncesi aynı, sabitler yalnızca öncesinde · Kilitle/Kaldır · "Bm7" yerine koy → ${s2[0]} ✎`;
   });
 
   await step('Kendi akor şablonun: yaz / .txt yükle → melodinin üzerinde kilitli çalar; hata satırıyla; diğer akorlar değişmez; kaldır', async () => {
@@ -584,7 +625,8 @@ try {
     const bandY = tl.y + 22 + 26 + 5;
     const bx = (bar, half) => S(`(() => { const d = window.__daw.d, sc = document.querySelector('#tlScroll'); return 46 + ((${bar} - 1) * d.g.barQ + ${half} * d.g.split) * window.__daw.view.pxPerQ - sc.scrollLeft; })()`);
     const chords = () => S(() => window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`));
-    const marks = () => S(() => JSON.stringify(window.__daw.proj.changeMarks));
+    const marks = () => S(() => JSON.stringify((window.__daw.proj.changeMarks || []).map(({ t, ...m }) => m)));
+    await page.uncheck('#inAdaptAfter'); // bu adım: işaret konunca başka hiçbir akor değişmez (eski davranış)
     const n0 = await chords();
     // ölçü 6 ortası (Eadd9 tam ölçü) → ✂
     await page.mouse.click(tl.x + (await bx(6, 1)), bandY);
@@ -617,22 +659,73 @@ try {
     await page.uncheck('#inOnlyMarked');
     await page.click('#btnClearMarks');
     assert.equal(await marks(), '[]');
+    await page.check('#inAdaptAfter');
     return `✂ 6½ → ${n1.filter((x) => x.startsWith('6')).join(' ')}, diğerleri aynı · tekrar tık → = → yok · akor gövdesi seçer · panel "✂ Ölçünün ortasında değiştir" → ${n2.filter((x) => x.startsWith('2')).join(' ')} · yalnızca işaretli → verse ${runs.join(' → ')}`;
+  });
+
+  await step('Başlangıç ölçüsü: başa ölçü ekle / baştaki boş ölçüleri sil (bölümler müzikle taşınır); bölüm panelinde vokal girişi; cetvelde ▶', async () => {
+    page.once('dialog', (d) => d.accept());
+    await page.click('#btnTest');
+    await waitStatus(/Test melodisi hazır/);
+    assert.match(await page.textContent('#leadInfo'), /1\. ölçüde başlıyor/);
+    const secs0 = await S(() => window.__dawAPI.S.proj.sections.map((x) => [x.startBar, x.endBar]));
+    await page.click('#btnAddBar'); await page.click('#btnAddBar');
+    assert.match(await page.textContent('#leadInfo'), /3\. ölçüde başlıyor; önünde 2 boş ölçü/);
+    const secs2 = await S(() => window.__dawAPI.S.proj.sections.map((x) => [x.startBar, x.endBar]));
+    assert.deepEqual(secs2, secs0.map(([a, b]) => [a === 1 ? 1 : a + 2, b + 2]), 'bölümler müzikle kaydı; ilk bölüm yeni ölçüleri kapsar');
+    assert.deepEqual(await S(() => window.__dawAPI.S.d.sections[0].entries.slice(0, 1)), [3], 'vokal girişi 3. ölçüde');
+    const intro = await S(() => window.__dawAPI.S.d.chords.filter((c) => c.bar <= 2).length);
+    assert.ok(intro > 0, 'eklenen ölçülerde de akor var');
+    assert.match(await page.textContent('#btnTrimLead'), /Baştaki 2 boş ölçüyü sil/);
+    await page.click('#btnTrimLead');
+    assert.match(await page.textContent('#leadInfo'), /1\. ölçüde başlıyor/);
+    assert.deepEqual(await S(() => window.__dawAPI.S.proj.sections.map((x) => [x.startBar, x.endBar])), secs0);
+    // bölüm paneli: vokal girişi seçimi
+    await page.click('#btnAddBar');
+    const sid = await S(() => window.__dawAPI.S.d.sections[0].id);
+    await page.evaluate((id) => window.__dawAPI.select({ type: 'section', id }), sid);
+    await page.waitForSelector('#inspector select[data-act=secEntry]');
+    assert.match(await page.textContent('#inspector'), /Vokal girişi/);
+    const auto = await page.locator('#inspector select[data-act=secEntry] option').first().textContent();
+    assert.match(auto, /Otomatik \(ölçü 2/);
+    assert.match(await page.textContent('#inspector'), /Girişten önceki 1 ölçü \(intro\) ayrı sayılır/);
+    await page.selectOption('#inspector select[data-act=secEntry]', '0');
+    assert.deepEqual(await S(() => window.__dawAPI.S.d.sections[0].entries), []);
+    await page.selectOption('#inspector select[data-act=secEntry]', '');
+    assert.deepEqual(await S(() => window.__dawAPI.S.d.sections[0].entries.slice(0, 1)), [2]);
+    await page.click('#btnTrimLead');
+    return `2 ölçü eklendi → bölümler +2 → "Baştaki 2 boş ölçüyü sil" → geri · bölüm panelinde ${auto.trim()}`;
   });
 
   await step('Davul: ölçü tahmini paneli + Uygula; vurgulara göre loop; oynatmada davul; uymayınca "bulamadım" + tarif', async () => {
     page.once('dialog', (d) => d.accept());
     await page.click('#btnTest');
     await waitStatus(/Test melodisi hazır/);
+    await page.uncheck('#inMeterLock'); // 1. adımda elle seçilen ölçü kesinleşmişti
     assert.match(await page.textContent('#meterEst'), /Ölçü tahmini: 4\/4/);
     assert.match(await page.textContent('#meterEst'), /Proje ölçüsüyle uyumlu/);
-    // proje ölçüsünü yanlış seç (3/4) → tahmin uyarır, Uygula ile 4/4'e döner
+    // ölçüyü elle seç (3/4) → kesin olur: tahmin (4/4) yalnızca bilgi, Uygula yok; üç seçici de aynı
     await page.selectOption('#inMeter', '3/4');
-    assert.match(await page.textContent('#meterEst'), /Uygula: 4\/4/);
+    assert.ok(await page.isChecked('#inMeterLock') && await page.isChecked('#inDrumMeterLock') && await page.isChecked('#inQuantMeterLock'));
+    assert.deepEqual([await page.inputValue('#inDrumMeter'), await page.inputValue('#inQuantMeter')], ['3/4', '3/4']);
+    let me = await page.textContent('#meterEst');
+    assert.match(me, /Ölçü: 3\/4, 120 BPM — kesin/); assert.match(me, /tahmin 4\/4 olurdu .* yok sayıldı/); assert.doesNotMatch(me, /Uygula: 4\/4/);
     const loops34 = await page.locator('#inDrumLoop option').allTextContents();
     assert.ok(loops34.some((x) => /Vals/.test(x)) && !loops34.some((x) => /Rock/.test(x)), 'loop listesi proje ölçüsüne göre');
+    await page.selectOption('#inDrumLoop', 'ballad34');
+    assert.match(await page.textContent('#drumInfo'), /3\/4 balad/);
+    assert.doesNotMatch(await page.textContent('#drumInfo'), /ölçüsüne daha çok benziyor/);
+    assert.equal(await page.inputValue('#inDrumLoop'), 'ballad34');
+    // kesin'i kaldır → tahmin yine önerir; Uygula ile 4/4'e döner
+    await page.uncheck('#inDrumMeterLock');
+    assert.ok(!(await page.isChecked('#inMeterLock')));
+    assert.match(await page.textContent('#meterEst'), /Uygula: 4\/4/);
     await page.click('#btnMeterApply');
     assert.equal(await page.inputValue('#inMeter'), '4/4');
+    // davul panelinden seç → kesin; quantize panelinde de görünür
+    await page.selectOption('#inDrumMeter', '4/4');
+    assert.ok(await page.isChecked('#inQuantMeterLock'));
+    assert.match(await page.textContent('fieldset:has(#inQuantMeter) .meter-info'), /120 BPM · kesin/);
     const auto = await page.textContent('#inDrumLoop option[value=auto]');
     assert.match(auto, /Otomatik \(öneri: .+\)/);
     assert.match(await page.textContent('#drumGrid'), /Kick\s+\|/);
