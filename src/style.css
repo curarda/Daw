@@ -47,7 +47,22 @@ button.ab { min-width: 150px; }
 main { flex: 1; display: flex; min-height: 0; }
 #panels { width: 340px; flex: none; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 6px 10px 40px; }
 .step { border-bottom: 1px solid var(--line); padding: 6px 0 10px; }
-.step summary { cursor: pointer; font-weight: 600; padding: 4px 0; list-style: none; }
+.step summary { cursor: pointer; font-weight: 600; padding: 4px 0; list-style: none; display: flex; align-items: center; }
+.step summary::after { content: '▸'; margin-left: 8px; color: var(--muted); font-weight: 400; }
+.step[open] > summary::after { content: '▾'; }
+.chip { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; max-width: 52%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-tools { margin: 4px 0 6px; }
+.panel-tools .hint { margin: 0; flex-basis: 100%; }
+.rank { margin: 6px 0; }
+.rank-row { display: grid; grid-template-columns: auto 1fr 56px 34px auto; gap: 4px 6px; align-items: center; padding: 3px 2px; border-bottom: 1px solid var(--line); }
+.rank-row.cur { background: rgba(106,167,255,0.12); border-radius: 4px; }
+.rank-row button.small { padding: 1px 7px; }
+.rk-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; }
+.rk-bar { height: 6px; background: #111318; border-radius: 3px; }
+.rk-bar i { display: block; height: 100%; background: var(--accent2); border-radius: 3px; }
+.rk-score { font-size: 11px; color: var(--muted); text-align: right; }
+.rk-sub { grid-column: 2 / -1; margin: 0; font-size: 11px; }
+.rank-head { margin: 4px 0; }
 .step summary::-webkit-details-marker { display: none; }
 .step summary b { display: inline-grid; place-items: center; min-width: 22px; height: 20px; padding: 0 4px; border-radius: 10px; background: var(--panel2); border: 1px solid var(--line); margin-right: 6px; font-size: 11px; }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
@@ -212,7 +227,7 @@ details.sub { border: 1px solid var(--line); border-radius: 6px; padding: 6px 8p
 details.sub > summary { cursor: pointer; font-weight: 600; }
 #chartText { width: 100%; box-sizing: border-box; background: #111318; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; margin: 6px 0; }
 #chartMsg ul { margin: 4px 0 0 18px; padding: 0; }
-div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
+details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8px; margin: 8px 0; }
 .mark-row { margin: 6px 0; gap: 4px; flex-wrap: wrap; }
 /* davul */
 .drum-grid { font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; background: #111318; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; margin: 6px 0; overflow-x: auto; white-space: pre; }

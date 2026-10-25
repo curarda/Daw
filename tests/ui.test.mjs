@@ -66,6 +66,26 @@ const noteGeo = (i) => S(`(() => {
 let projFile;
 try {
   await page.goto(indexUrl);
+  await step('sol panel: yalnızca 1 ve 2 açık, diğer bölümler tıklayınca açılır; başlıkta durum rozeti; açık/kapalı durumu yenilemede hatırlanır', async () => {
+    await waitStatus(/Hazır/);
+    const open = () => page.$$eval('details.step', (ds) => ds.map((d) => [d.dataset.key, d.open]));
+    const st = await open();
+    assert.deepEqual(st.filter(([, o]) => o).map(([k]) => k), ['s1', 's2'], 'ilk açılışta yalnızca proje ayarı ve kayıt açık');
+    assert.deepEqual(st.map(([k]) => k), ['s1', 's2', 's3', 's3b', 's4', 's5', 's67', 's8', 's8b', 's8c', 's8d', 's9']);
+    assert.equal(await page.isVisible('#inBassPattern'), false, 'kapalı bölümün içeriği görünmez');
+    assert.equal((await page.textContent('#chipS1')).trim(), '4/4 · 120 BPM');
+    assert.equal((await page.textContent('#chipS8b')).trim(), 'kapalı'); assert.equal((await page.textContent('#chipS8c')).trim(), 'kapalı');
+    await page.click('details[data-key=s8c] > summary');
+    assert.equal(await page.isVisible('#inBassPattern'), true);
+    assert.equal(await page.locator('details[data-key=s8d] .strip').count(), 4, 'mikser ayrı bölümde: vokal, akor, davul, bas');
+    assert.ok(await page.locator('details[data-key=s8] #inPianoStyle').count(), 'akor sesi kendi bölümünde');
+    await page.reload(); await waitStatus(/Hazır/);
+    assert.equal(await page.isVisible('#inBassPattern'), true, 'açık bölüm yenilemede açık kalır');
+    await page.click('#btnCloseAll');
+    assert.deepEqual((await open()).filter(([, o]) => o).map(([k]) => k), ['s1', 's2']);
+    return 'ilk açılış: 1, 2 açık · rozetler · mikser / akor sesi / davul / bas ayrı · durum hatırlanır';
+  });
+  await page.evaluate(() => document.querySelectorAll('details.step, details.sub:not(#chartBox)').forEach((d) => { d.open = true; })); // diğer adımlar bütün alanlara erişir
   await step('sayfa yüklendi; hangi piyanonun çaldığı üst çubukta', async () => {
     await waitStatus(/Hazır/);
     await page.waitForFunction(() => /yedek|Salamander/.test(document.querySelector('#pianoBadge').textContent), null, { timeout: 30000 });
@@ -1121,6 +1141,67 @@ try {
     assert.equal(await S(() => window.__daw.loop.on), false);
     await page.uncheck('#inDrumsOn'); await page.uncheck('#inBassOn');
     return `verse: davul yok → sade loop + ${fills.length} vuruşluk fill · bas yarım notalar · akor sesi synth arpej · döngü ${seen.length} örnek, ${Math.min(...seen).toFixed(2)}…${Math.max(...seen).toFixed(2)} s`;
+  });
+
+  await step('Elle seçimler otomatiğin üstünde: Demo ölçü / BPM / loop / bas kalıbı / bölüm düzenlemesine dokunmaz; loop ve bas listeleri puanlı ve görünür, ▶ seçmeden dinletir, Seç elle seçtirir', async () => {
+    await resetTest();
+    // ölçüyü ve tempoyu sen seç: melodi 4/4 ama proje 3/4, 100 BPM
+    await page.selectOption('#inMeter', '3/4');
+    await page.fill('#inBpm', '100'); await page.dispatchEvent('#inBpm', 'change');
+    // elle: loop, bas kalıbı, bölüm düzenlemesi
+    await page.selectOption('#inDrumLoop', 'waltz');
+    await page.selectOption('#inBassPattern', 'walk');
+    await S(() => { const p = window.__daw.proj; p.sections[0].arr = { drums: 'off' }; window.__dawAPI.refresh(); });
+    await pause();
+    await page.click('#btnDemo');
+    await page.waitForFunction(() => /Demo hazır/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+    const r = await S(() => { const p = window.__daw.proj; return { meter: p.settings.meter, bpm: p.settings.bpm, loop: p.drums.loop, bass: p.bass.pattern, arr0: p.sections[0].arr, arr1: p.sections[1].arr || null, drums: p.drums.on, bassOn: p.bass.on }; });
+    assert.equal(r.meter, '3/4', 'Demo ölçüyü değiştirmedi'); assert.equal(r.bpm, 100);
+    assert.equal(r.loop, 'waltz'); assert.equal(r.bass, 'walk');
+    assert.deepEqual(r.arr0, { drums: 'off' }, 'elle verilen bölüm düzenlemesi korundu');
+    assert.equal(r.drums, true); assert.equal(r.bassOn, true);
+    const st = await page.textContent('#status');
+    assert.match(st, /ölçü\/tempo[^·]*3\/4, 100 BPM/); assert.match(st, /elle seçtiklerin korundu: davul loop'u, bas kalıbı/);
+    await S(() => window.__dawAPI.stop());
+    // otomatik demo (elle seçim yok): verse için otomatik düzenleme "auto" işaretli; elle değiştirince senin olur
+    await resetTest();
+    await page.click('#btnDemo');
+    await page.waitForFunction(() => /Demo hazır/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+    assert.equal(await S(() => window.__daw.proj.sections[0].arr.auto), true);
+    assert.equal(await S(() => window.__daw.proj.settings.meter), '4/4');
+    await S(() => window.__dawAPI.stop());
+    await page.click('#btnDemo'); // ikinci demo otomatik düzenlemeyi yeniler, çoğaltmaz
+    await page.waitForFunction(() => /Demo hazır/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+    await S(() => window.__dawAPI.stop());
+    // puanlı listeler görünür
+    await resetTest();
+    const nDrum = await page.locator('#drumRank .rank-row').count(), nBass = await page.locator('#bassRank .rank-row').count();
+    assert.equal(nDrum, 9, "4/4'te 9 davul loop'u puanlı listede (itmeli pop-rock dahil)"); assert.equal(nBass, 7);
+    assert.ok(await page.isVisible('#drumRank .rank-row'), 'liste açık bölümde görünür');
+    const names = await page.$$eval('#drumRank .rk-name', (e) => e.map((x) => x.textContent));
+    assert.ok(names.some((x) => /İtmeli pop-rock/.test(x)) && names.some((x) => /Sade/.test(x)), 'yeni loop\'lar listede: ' + names.join(' | '));
+    const scores = await page.$$eval('#drumRank .rk-score', (e) => e.map((x) => +x.textContent));
+    assert.ok(scores.every((v, i) => i === 0 || scores[i - 1] >= v), "loop'lar puan sırasıyla");
+    // ▶ seçmeden dinletir: ayarlar değişmez, bas / davul çalar
+    const before = await S(() => JSON.stringify({ l: window.__daw.proj.drums.loop, o: window.__daw.proj.drums.on, b: window.__daw.proj.bass.pattern }));
+    const h0 = await S(() => (window.__dawAPI.player().drumHits || 0) + (window.__dawAPI.player().bassHits || 0));
+    await page.click('#drumRank button[data-pv=drums][data-id=four]');
+    await page.waitForFunction((h) => (window.__dawAPI.player().drumHits || 0) + (window.__dawAPI.player().bassHits || 0) > h + 4, h0, { timeout: 20000 });
+    await page.waitForFunction(() => !window.__dawAPI.player().playing, null, { timeout: 15000 }); // 2 ölçü sonra kendiliğinden biter
+    assert.equal(await S(() => JSON.stringify({ l: window.__daw.proj.drums.loop, o: window.__daw.proj.drums.on, b: window.__daw.proj.bass.pattern })), before, 'önizleme ayarı değiştirmez');
+    await page.click('#bassRank button[data-pv=bass][data-id=walk]');
+    await page.waitForFunction((h) => (window.__dawAPI.player().bassHits || 0) > h, await S(() => window.__dawAPI.player().bassHits || 0), { timeout: 20000 });
+    await S(() => window.__dawAPI.stop());
+    // Seç → elle seçim: ✋ rozeti, puana bakılmadan geçerli
+    await page.click('#bassRank button[data-pick=bass][data-id=eighths]');
+    assert.equal(await S(() => window.__daw.proj.bass.pattern), 'eighths');
+    assert.match(await page.textContent('#chipS8c'), /✋/);
+    assert.match(await page.textContent('#bassRank .rank-row.cur'), /senin seçimin/);
+    await page.click('#drumRank button[data-pick=drums][data-id=boombap]');
+    assert.equal(await S(() => window.__daw.proj.drums.loop), 'boombap'); assert.match(await page.textContent('#chipS8b'), /✋/);
+    await S(() => window.__dawAPI.stop());
+    await page.selectOption('#inBassPattern', 'auto'); await page.selectOption('#inDrumLoop', 'auto');
+    return `Demo: 3/4, 100 BPM, waltz, walk, bölüm düzenlemesi korundu · listeler ${nDrum} loop / ${nBass} bas kalıbı puanlı · ▶ seçmeden çalar · Seç → ✋`;
   });
 
   await step('✨ Demo yap: ölçü + ton + akor + davul + bas tek tuşla, çalar; verse sade / nakarat dolu; tek Ctrl+Z ile geri', async () => {

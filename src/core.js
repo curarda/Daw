@@ -1771,8 +1771,8 @@ function bassKickSteps(loop, g) {
   if (!hits.length) return null;
   return hits.map((i, k) => { const nx = k + 1 < hits.length ? hits[k + 1] : n; return [(i * stepQ) / 0.5, 'R', Math.min(2, (nx - i) * stepQ) / 0.5]; });
 }
-// Otomatik bas kalıbı: davul loop'una ve ölçüye göre (neden metniyle)
-function suggestBass(loop, meter) {
+// Otomatik bas kalıbı için kural (davul loop'una ve ölçüye göre) — puanlamada "önsel" (prior) olarak kullanılır
+function bassRule(loop, meter) {
   const id = loop ? loop.id : null;
   if (meter === '3/4') return id === 'ballad34' ? { id: 'half', why: '3/4 balad: yarım notalar' } : { id: 'waltz', why: 'vals: kök – beşli – beşli' };
   if (meter === '2/4') return { id: 'rootfifth', why: 'marş / polka: kök – beşli' };
@@ -1783,6 +1783,38 @@ function suggestBass(loop, meter) {
   if (id === 'shuffle') return { id: 'rootfifth', why: 'swing: kök – beşli' };
   if (loop) return { id: 'kick', why: "davulun kick'iyle birlikte vuruyor" };
   return { id: 'half', why: 'davul yok: kök + beşli' };
+}
+// Bas kalıplarını puanla (0–1): önsel (kural, %40) + uyum (%60). Uyum = davulun kick'leriyle örtüşme (loop varsa) ·
+// tempoya uygun yoğunluk (saniyede ≤ 4 vuruş rahat) · melodinin yoğunluğu (yoğun vokal altında sade bas).
+// ctx: { loop, meter, bpm, vocalRate (vokal notası / s, yoksa null) }. Kullanıcının elle seçtiği kalıp bu puana bakılmadan geçerlidir.
+function rankBass(ctx) {
+  const meter = ctx.meter || '4/4', bpm = ctx.bpm || 100, loop = ctx.loop || null, vr = ctx.vocalRate;
+  const g = makeGrid({ bpm, meter }), rule = bassRule(loop, meter);
+  const kicks = new Set();
+  if (loop && loop.K) for (let i = 0; i < loop.K.length; i++) if (loop.K[i] !== '.') kicks.add(Math.round(((i * g.barQ) / loop.K.length) * 1000) / 1000);
+  return bassPool(meter).map((id) => {
+    const steps = id === 'kick' ? bassKickSteps(loop, g) || bassSteps('whole', g) : bassSteps(id, g);
+    const q = new Set(steps.map(([st]) => Math.round(st * 0.5 * 1000) / 1000)), perSec = steps.length / g.barSec;
+    const parts = [], why = [];
+    if (kicks.size) {
+      const m = [...kicks].filter((k) => q.has(k)).length / kicks.size;
+      parts.push([0.4, m]); why.push(`davulun kick'lerinin %${Math.round(m * 100)}'i bas vuruşuyla örtüşüyor`);
+    }
+    const tf = perSec <= 4 ? (bpm > 130 && steps.length <= 2 ? 0.7 : 1) : Math.max(0, 1 - (perSec - 4) / 4);
+    parts.push([0.3, tf]); why.push(`saniyede ${perSec.toFixed(1)} vuruş (${tf >= 0.99 ? 'tempoya uygun' : perSec > 4 ? 'tempoya göre yoğun' : 'hızlı tempoya göre seyrek'})`);
+    if (vr != null) {
+      const mf = 1 - Math.min(1, (vr / 3) * (perSec / 6));
+      parts.push([0.3, mf]); why.push(mf > 0.8 ? 'melodiyle çakışmıyor' : 'melodi yoğun: bas fazla dolu kalıyor');
+    }
+    const W = parts.reduce((a, [w]) => a + w, 0), fit = parts.reduce((a, [w, v]) => a + w * v, 0) / W;
+    const prior = id === rule.id ? 1 : 0.5;
+    if (id === rule.id) why.unshift(`kural önerisi: ${rule.why}`);
+    return { id, name: BASS_PATTERNS[id].name, score: 0.4 * prior + 0.6 * fit, fit, prior, why };
+  }).sort((a, b) => b.score - a.score);
+}
+function suggestBass(loop, meter, bpm, vocalRate) {
+  const r = rankBass({ loop, meter, bpm, vocalRate })[0];
+  return { id: r.id, why: r.why[0].replace(/^kural önerisi: /, '') || r.why.join(', '), score: r.score };
 }
 // opts: patternFor(slot) → kalıp id'si ya da null (bas yok), loopFor(ölçü) → o ölçünün davul loop'u ('kick' kalıbı için)
 function bassEvents(chords, g, opts = {}) {
@@ -2399,7 +2431,7 @@ const Core = {
   nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, renderSynth, SYNTH, synthEnv, synthPianoSample, synthTestVocal,
-  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, arrangePiano, BASS_PATTERNS, bassPool, bassSteps, suggestBass, bassEvents, renderBass, BASS, bassEnv, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
+  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, arrangePiano, BASS_PATTERNS, bassPool, bassSteps, suggestBass, rankBass, bassRule, bassEvents, renderBass, BASS, bassEnv, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
   bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
 };

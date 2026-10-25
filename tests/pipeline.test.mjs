@@ -1007,6 +1007,24 @@ await step('Düzenleme: bölüm başına davul loop\'u, geçişlerde fill, böl�
   return `fill: ${last.map((e) => e.vel.toFixed(2)).join(' → ')} · piyano ${px.filter((e) => e.inst === 'piano').length} / synth arpej ${px.filter((e) => e.inst === 'synth').length} olay`;
 });
 
+await step('Bas puanı: tüm kalıplar puan alır (sıralı), kural önsel + davul / tempo / melodi uyumu; yoğun vokal altında sade bas yükselir; ölçüye uygun havuz', () => {
+  const rock8 = Core.DRUM_LOOPS.find((l) => l.id === 'rock8'), four = Core.DRUM_LOOPS.find((l) => l.id === 'four');
+  const r = Core.rankBass({ loop: rock8, meter: '4/4', bpm: 100 });
+  assert.deepEqual(r.map((x) => x.id).sort(), Core.bassPool('4/4').slice().sort(), 'havuzdaki her kalıp puan alır');
+  assert.ok(r.every((x, i) => i === 0 || r[i - 1].score >= x.score) && r.every((x) => x.score >= 0 && x.score <= 1 && x.why.length >= 2));
+  assert.equal(r[0].id, 'kick');
+  assert.ok(r[0].why[0].startsWith('kural önerisi'), 'neden: kural + davul örtüşmesi');
+  // 160 BPM'de sekizlik (saniyede 8,5 vuruş) yoğun → puanı 100 BPM'dekinden düşük
+  const fast = Core.rankBass({ loop: four, meter: '4/4', bpm: 170 }).find((x) => x.id === 'eighths'), slow = Core.rankBass({ loop: four, meter: '4/4', bpm: 100 }).find((x) => x.id === 'eighths');
+  assert.ok(fast.fit < slow.fit, `hızlı tempoda sekizlik daha az uygun: ${fast.fit.toFixed(2)} < ${slow.fit.toFixed(2)}`);
+  // melodi yoğunsa (saniyede 4 nota) sekizlik, melodi seyrekken (0,5) olduğundan düşük uyum alır
+  const busy = Core.rankBass({ loop: four, meter: '4/4', bpm: 120, vocalRate: 4 }).find((x) => x.id === 'eighths'), calm = Core.rankBass({ loop: four, meter: '4/4', bpm: 120, vocalRate: 0.5 }).find((x) => x.id === 'eighths');
+  assert.ok(busy.fit < calm.fit, 'yoğun vokal altında dolu bas cezalı');
+  assert.ok(Core.rankBass({ loop: null, meter: '3/4' }).some((x) => x.id === 'waltz') && !Core.rankBass({ loop: null, meter: '4/4' }).some((x) => x.id === 'waltz'));
+  assert.equal(Core.suggestBass(rock8, '4/4', 100, 1.5).id, 'kick');
+  return `rock8: ${r.slice(0, 3).map((x) => `${x.id} ${x.score.toFixed(2)}`).join(' > ')} · sekizlik 100 BPM ${slow.fit.toFixed(2)} → 170 BPM ${fast.fit.toFixed(2)}`;
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nTüm adımlar geçti.');

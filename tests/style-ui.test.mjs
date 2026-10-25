@@ -55,6 +55,7 @@ const tmp = [];
 
 try {
   await page.goto(indexUrl);
+  await page.evaluate(() => document.querySelectorAll('details.step, details.sub:not(#chartBox)').forEach((d) => { d.open = true; }));
   await page.waitForFunction(() => window.StyleUI && /Hazır/.test(document.querySelector('#status').textContent));
 
   await step('görünüm: Stil verisi ve öneri', async () => {
