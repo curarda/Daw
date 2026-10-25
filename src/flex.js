@@ -115,7 +115,8 @@ function quantizeTargets(notes, g, opts = {}) {
   for (const n of ns) {
     const cur = n.q0to != null ? n.q0to : n.qOrig;
     if (!pick(n)) { prevQ = Math.max(prevQ, cur); continue; }
-    const snap = Math.round(n.qOrig / gridQ) * gridQ;
+    const sw = opts.swing, an = opts.anchor || 0.5; // swing: ızgara noktaları projenin oranına kayar (düz ızgarayı önce düzleştir, yuvarla, geri kaydır)
+    const snap = sw ? C.swingMap(Math.round(C.swingUnmap(n.qOrig, g, sw, an) / gridQ) * gridQ, g, sw, an) : Math.round(n.qOrig / gridQ) * gridQ;
     let q = n.qOrig + strength * (snap - n.qOrig);
     if (q < prevQ + minGapQ) { // iki nota aynı ızgara noktasına düşüyor: bunu taşıma
       q = n.qOrig >= prevQ + minGapQ ? n.qOrig : null;

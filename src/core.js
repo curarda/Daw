@@ -64,6 +64,32 @@ function makeGrid(settings) {
   return Object.assign({}, m, { meter: settings.meter, bpm: settings.bpm, spq, pulseSec, barSec: m.barQ * spq, quarterBpm: 60 / spq });
 }
 
+// ---------------------------------------------------------------- ALT BÖLME / SWING
+// r = vuruşun "ve"sinin (zayıf sekizliğin) vuruş içindeki yeri: 0,5 düz · 0,667 üçleme (her vuruş 3'e bölünür, 12/8 hissi) ·
+// arası swing (ör. %70 ölçülmüş shuffle). Vuruş içi konum parçalı doğrusal eşlenir: anchor (içeriğin kendi "ve" yeri; düz ızgarada 0,5,
+// üçleme ızgarasında 2/3) → r. Yalnızca çeyrek vuruşlu ölçülerde (4/4, 3/4, 2/4); 6/8'in vuruşu zaten üçe bölünür.
+// Üçleme içeriği (anchor 2/3) r < 0,55 iken (düz proje) olduğu gibi kalır: shuffle loop'u düz projede de üçleme çalar.
+function swingMap(q, g, r, anchor = 0.5) {
+  if (!r || g.pulseQ !== 1 || Math.abs(r - anchor) < 1e-9 || (anchor > 0.6 && r < 0.55)) return q;
+  const k = Math.floor(q + 1e-9), f = q - k;
+  return k + (f < anchor ? f * (r / anchor) : r + (f - anchor) * ((1 - r) / (1 - anchor)));
+}
+function swingUnmap(q, g, r, anchor = 0.5) {
+  if (!r || g.pulseQ !== 1 || Math.abs(r - anchor) < 1e-9 || (anchor > 0.6 && r < 0.55)) return q;
+  const k = Math.floor(q + 1e-9), f = q - k;
+  return k + (f < r ? f * (anchor / r) : anchor + (f - r) * ((1 - anchor) / (1 - r)));
+}
+// Melodinin swing oranı: ölçü içindeki zayıf vuruşa düşen (vuruşun %40–85'i) nota başlangıçlarının medyanı. notes: {q0}; ızgara hizalı olmalı
+function estimateSwing(notes, g) {
+  if (g.pulseQ !== 1) return null;
+  const phis = notes.map((n) => n.q0 - Math.floor(n.q0 + 1e-9));
+  const off = phis.filter((f) => f > 0.42 && f < 0.85).sort((a, b) => a - b);
+  if (phis.length < 8 || off.length < 4) return null;
+  const med = off.length % 2 ? off[(off.length - 1) / 2] : (off[off.length / 2 - 1] + off[off.length / 2]) / 2;
+  const mad = off.map((f) => Math.abs(f - med)).sort((a, b) => a - b)[Math.floor(off.length / 2)];
+  return { ratio: Math.max(0.5, med), raw: med, n: off.length, of: phis.length, spread: mad, confident: off.length >= 6 && mad < 0.06 }; // oran en az %50 (daha erken = düz)
+}
+
 // ---------------------------------------------------------------- mod / scale
 const MODES = {
   major:         { name: 'Majör (İyonyen)',      short: 'majör',        steps: [0, 2, 4, 5, 7, 9, 11], prior: 1.0,  parent: 0 },
@@ -1754,13 +1780,19 @@ const BASS_PATTERNS = {
   half: { name: 'Kök + beşli (yarım notalar)', steps: { '4/4': [[0, 'R', 4], [4, 'F', 4]], '3/4': [[0, 'R', 3], [3, 'F', 3]], '2/4': [[0, 'R', 2], [2, 'F', 2]], '6/8': [[0, 'R', 3], [3, 'F', 3]] } },
   whole: { name: 'Uzun kök (ölçü başında)', steps: null },
   walk: { name: 'Yürüyen bas (üçlü, beşli, yaklaşma)', steps: { '4/4': [[0, 'R', 2], [2, 'T', 2], [4, 'F', 2], [6, 'A', 2]], '3/4': [[0, 'R', 2], [2, 'T', 2], [4, 'A', 2]], '2/4': [[0, 'R', 2], [2, 'A', 2]], '6/8': [[0, 'R', 2], [2, 'T', 1], [3, 'F', 2], [5, 'A', 1]] } },
+  shuffle: { name: 'Shuffle — vuruşta kök, ghost (X . t)', steps: null },
   waltz: { name: 'Vals — kök, beşli, beşli', steps: { '3/4': [[0, 'R', 2], [2, 'F', 2], [4, 'F', 2]] } },
 };
-const bassPool = (meter) => ['kick', 'pop', 'rootfifth', 'eighths', 'half', 'whole', 'walk', ...(meter === '3/4' ? ['waltz'] : [])];
+const bassPool = (meter) => ['kick', 'shuffle', 'pop', 'rootfifth', 'eighths', 'half', 'whole', 'walk', ...(meter === '3/4' ? ['waltz'] : [])];
 function bassSteps(id, g) {
   const P = BASS_PATTERNS[id] || BASS_PATTERNS.whole, N = Math.round(g.barQ / 0.5);
   if (id === 'whole' || !BASS_PATTERNS[id]) return [[0, 'R', N]];
   if (id === 'eighths') return Array.from({ length: N }, (_, i) => [i, 'R', 1]);
+  if (id === 'shuffle') { // her vuruşta aynı hücre: X (kök, vuruşun 2/3'ü) + t (ghost, "let" yeri); konumlar vuruş birimiyle (6/8'de de çalışır)
+    const Pq = g.pulseQ, n = Math.round(g.barQ / Pq), out = [];
+    for (let b = 0; b < n; b++) { out.push([(b * Pq) / 0.5, 'R', ((Pq * 2) / 3) / 0.5, 100]); out.push([(b * Pq + (Pq * 2) / 3) / 0.5, 'R', (Pq / 3) / 0.5, 50]); }
+    return out;
+  }
   return (P.steps && (P.steps[g.meter] || P.steps['4/4'])) || [[0, 'R', N]];
 }
 // davulun kick'lerinden: her kick'te kök, bir sonraki kick'e (en fazla 2 çeyrek) kadar sürer
@@ -1772,8 +1804,10 @@ function bassKickSteps(loop, g) {
   return hits.map((i, k) => { const nx = k + 1 < hits.length ? hits[k + 1] : n; return [(i * stepQ) / 0.5, 'R', Math.min(2, (nx - i) * stepQ) / 0.5]; });
 }
 // Otomatik bas kalıbı için kural (davul loop'una ve ölçüye göre) — puanlamada "önsel" (prior) olarak kullanılır
-function bassRule(loop, meter) {
+function bassRule(loop, meter, swing) {
   const id = loop ? loop.id : null;
+  if (id === 'shufflecell') return { id: 'shuffle', why: 'shuffle hücresi (X . t): vuruşta kök, ghost' };
+  if (swing >= 0.6 && meter !== '3/4' && meter !== '6/8') return { id: 'shuffle', why: `swing oranın %${Math.round(swing * 100)} (üçlemeye yakın): her vuruşta kök + ghost` };
   if (meter === '3/4') return id === 'ballad34' ? { id: 'half', why: '3/4 balad: yarım notalar' } : { id: 'waltz', why: 'vals: kök – beşli – beşli' };
   if (meter === '2/4') return { id: 'rootfifth', why: 'marş / polka: kök – beşli' };
   if (meter === '6/8') return id === 'rock68' ? { id: 'pop', why: '6/8 rock: senkoplu kök' } : { id: 'half', why: '6/8 balad: yarım notalar' };
@@ -1789,7 +1823,7 @@ function bassRule(loop, meter) {
 // ctx: { loop, meter, bpm, vocalRate (vokal notası / s, yoksa null) }. Kullanıcının elle seçtiği kalıp bu puana bakılmadan geçerlidir.
 function rankBass(ctx) {
   const meter = ctx.meter || '4/4', bpm = ctx.bpm || 100, loop = ctx.loop || null, vr = ctx.vocalRate;
-  const g = makeGrid({ bpm, meter }), rule = bassRule(loop, meter);
+  const g = makeGrid({ bpm, meter }), rule = bassRule(loop, meter, ctx.swing);
   const kicks = new Set();
   if (loop && loop.K) for (let i = 0; i < loop.K.length; i++) if (loop.K[i] !== '.') kicks.add(Math.round(((i * g.barQ) / loop.K.length) * 1000) / 1000);
   return bassPool(meter).map((id) => {
@@ -1812,8 +1846,8 @@ function rankBass(ctx) {
     return { id, name: BASS_PATTERNS[id].name, score: 0.4 * prior + 0.6 * fit, fit, prior, why };
   }).sort((a, b) => b.score - a.score);
 }
-function suggestBass(loop, meter, bpm, vocalRate) {
-  const r = rankBass({ loop, meter, bpm, vocalRate })[0];
+function suggestBass(loop, meter, bpm, vocalRate, swing) {
+  const r = rankBass({ loop, meter, bpm, vocalRate, swing })[0];
   return { id: r.id, why: r.why[0].replace(/^kural önerisi: /, '') || r.why.join(', '), score: r.score };
 }
 // opts: patternFor(slot) → kalıp id'si ya da null (bas yok), loopFor(ölçü) → o ölçünün davul loop'u ('kick' kalıbı için)
@@ -1836,11 +1870,15 @@ function bassEvents(chords, g, opts = {}) {
     };
     for (let b = Math.floor(sl.q0 / g.barQ + 1e-9); b * g.barQ < sl.q1 - 1e-6; b++) {
       const steps = id === 'kick' ? bassKickSteps(loopFor(b + 1), g) || bassSteps('whole', g) : bassSteps(id, g);
-      for (const [st, deg, len] of steps) {
+      // swing: kalıbın "ve" yeri (düz 8'lik: 0,5 · üçleme / shuffle: 2/3) projenin swing oranına oturur → gitar / davulla aynı ızgara
+      const anchor = id === 'shuffle' || (id === 'kick' && loopFor(b + 1) && loopFor(b + 1).feel === 'triple') ? 2 / 3 : 0.5;
+      for (const [st, deg, len, sv] of steps) {
         const q = b * g.barQ + st * 0.5;
         if (q < sl.q0 - 1e-6 || q >= sl.q1 - 1e-6) continue;
         const lq = Math.min(len * 0.5, sl.q1 - q, (b + 1) * g.barQ - q);
-        ev.push({ t: q * g.spq, dur: lq * g.spq * 0.96, midi: pitch(deg), vel: q <= sl.q0 + 1e-6 ? 100 : 86, q0: q, q1: q + lq, bass: true });
+        const qs = swingMap(q, g, opts.swing, anchor), qe = swingMap(q + lq, g, opts.swing, anchor);
+        if (qe <= qs + 1e-6) continue;
+        ev.push({ t: qs * g.spq, dur: (qe - qs) * g.spq * (sv != null && sv < 60 ? 0.6 : 0.96), midi: pitch(deg), vel: sv != null ? sv : q <= sl.q0 + 1e-6 ? 100 : 86, q0: qs, q1: qe, bass: true });
       }
     }
   });
@@ -1874,17 +1912,18 @@ function renderBass(events, sr, length, gain = 1) {
 
 // ---------------------------------------------------------------- DAVUL DÜZENLEMESİ: bölüm başına loop + geçişlerde fill
 // plan(ölçü) → o ölçünün davul loop'u ya da null; fillAt(ölçü) → bu ölçünün sonunda bölüm geçişi fill'i var mı
-function arrangeDrums(g, bars, startBar, plan, fillAt) {
+function arrangeDrums(g, bars, startBar, plan, fillAt, swing) {
   const DE = root.Core.drumEvents, ev = [];
   for (let b = Math.max(1, startBar || 1); b <= bars; b++) {
     const L = plan(b);
     if (!L) continue;
     let be = DE(L, g, b, b);
     if (fillAt && fillAt(b)) {
-      const lastQ = b * g.barQ - g.pulseQ, n = g.meter === '6/8' ? 3 : 4;
+      const lastQ = b * g.barQ - g.pulseQ, n = g.meter === '6/8' || L.feel === 'triple' ? 3 : 4;
       be = be.filter((e) => e.q < lastQ - 1e-6);
       for (let i = 0; i < n; i++) { const q = lastQ + (i * g.pulseQ) / n; be.push({ q, t: q * g.spq, kind: 'S', vel: 0.45 + (0.5 * i) / (n - 1), fill: true }); }
     }
+    if (swing) for (const e of be) { const q = swingMap(e.q, g, swing, L.feel === 'triple' ? 2 / 3 : 0.5); e.q = q; e.t = q * g.spq; } // swing: zayıf vuruşlar projenin oranına kayar
     ev.push(...be);
   }
   return ev;
@@ -1980,6 +2019,7 @@ function newProject() {
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
     chordLocks: [], chordPins: [], changeMarks: [],
+    swing: { ratio: 0.5 }, // alt bölme: 0,5 düz · 0,667 üçleme · arası swing (ölçülen %70 → 0,70)
     chordStartBar: 1, noteSplits: [], // akorların girdiği ilk ölçü (bu ölçü akorlar için 1. ölçüdür); çift tıkla bölünen yerler (kayıttaki saniye)
     piano: Object.assign({}, PIANO_DEFAULTS),
     bass: { on: false, pattern: 'auto' }, // pattern: 'auto' (davula ve ölçüye göre) ya da BASS_PATTERNS anahtarı
@@ -2134,14 +2174,16 @@ const PIANO_STYLES = {
   'piano-arp': { inst: 'piano', pattern: 'arp', name: 'Piyano — arpej' },
   'synth-chord': { inst: 'synth', pattern: 'chord', name: 'Synth klavye — akor' },
   'synth-arp': { inst: 'synth', pattern: 'arp', name: 'Synth klavye — arpej' },
+  'piano-shuffle': { inst: 'piano', pattern: 'shuffle', name: 'Piyano — shuffle (X . t)' },
+  'synth-shuffle': { inst: 'synth', pattern: 'shuffle', name: 'Synth klavye — shuffle (X . t)' },
 };
 const ARP_RATES = { '1/4': 1, '1/8': 0.5, '1/16': 0.25 };
 const PIANO_DEFAULTS = { style: 'piano-chord', repeat: 'hold', holdBars: 2, rate: '1/8' };
 // proje ayarından (proj.piano) pianoEvents / render seçenekleri
-function pianoOpts(p) {
+function pianoOpts(p, swing) {
   const q = Object.assign({}, PIANO_DEFAULTS, p || {});
   const st = PIANO_STYLES[q.style] || PIANO_STYLES['piano-chord'];
-  return { inst: st.inst, pattern: st.pattern, repeat: ['off', 'hold', 'fade'].includes(q.repeat) ? q.repeat : 'hold', holdBars: clamp(Math.round(q.holdBars) || 2, 1, 16), rate: ARP_RATES[q.rate] ? q.rate : '1/8' };
+  return { inst: st.inst, pattern: st.pattern, repeat: ['off', 'hold', 'fade'].includes(q.repeat) ? q.repeat : 'hold', holdBars: clamp(Math.round(q.holdBars) || 2, 1, 16), rate: ARP_RATES[q.rate] ? q.rate : '1/8', swing: swing || 0.5 };
 }
 const sameVoicing = (a, b) => !!a && !!b && a.bass === b.bass && a.notes.length === b.notes.length && a.notes.every((m, i) => m === b.notes[i]);
 // Art arda gelen AYNI akor (aynı seslendirme, aynı bölüm) tek vuruşta birleşir: ilk ölçünün başında bir kez basılır,
@@ -2161,7 +2203,7 @@ function holdGroups(chords, g, o) {
 //  dur = olayın kapladığı süre (MIDI nota uzunluğu); hold = piyanoda tuşun basılı kaldığı süre; rel = bırakma süresi;
 //  fade = synth'te seviye dur boyunca söner; arp = arpej notası.
 function pianoEvents(chords, g, opts = {}) {
-  const o = Object.assign({ inst: 'piano', pattern: 'chord', repeat: 'off', holdBars: 2, rate: '1/8' }, opts);
+  const o = Object.assign({ inst: 'piano', pattern: 'chord', repeat: 'off', holdBars: 2, rate: '1/8', swing: 0.5 }, opts);
   const ev = [];
   for (const gr of holdGroups(chords, g, o)) {
     const t = gr.q0 * g.spq, dur = (gr.q1 - gr.q0) * g.spq, fade = o.repeat === 'fade' && gr.n > 1;
@@ -2174,11 +2216,23 @@ function pianoEvents(chords, g, opts = {}) {
       for (let i = k - 2; i >= 1; i--) seq.push(i);
       const stepQ = ARP_RATES[o.rate] || 0.5, steps = Math.max(1, Math.floor((gr.q1 - gr.q0) / stepQ + 1e-6));
       for (let i = 0; i < steps; i++) {
-        const q = gr.q0 + i * stepQ, idx = seq[i % seq.length];
+        const q = swingMap(gr.q0 + i * stepQ, g, o.swing, 0.5), idx = seq[i % seq.length]; // swing: zayıf sekizlikler oranına kayar
         const f = fade ? 1 - 0.65 * ((q - gr.q0) / (gr.q1 - gr.q0)) : 1; // fade: desen yavaşça kısılır
         const vel = Math.round((idx === 0 ? 74 : 60) * f);
         const d = stepQ * g.spq * (o.inst === 'piano' ? 1.8 : 0.95);
         ev.push({ t: q * g.spq, dur: d, midi: tones[idx], vel, q0: q, q1: Math.min(gr.q1, q + d / g.spq), arp: true, inst: o.inst });
+      }
+      continue;
+    }
+    if (o.pattern === 'shuffle') {
+      // her vuruşta aynı hücre: X (güçlü akor) . t (zayıf ghost akor, vuruşun 3'te 2'sinde = "let"); ghost swing oranına oturur
+      const P = g.pulseQ, nb = Math.max(1, Math.floor((gr.q1 - gr.q0) / P + 1e-6));
+      for (let j = 0; j < nb; j++) {
+        const qx = gr.q0 + j * P, qg = swingMap(qx + (P * 2) / 3, g, o.swing, 2 / 3), f = fade ? 1 - 0.65 * (j / nb) : 1;
+        const xd = (qg - qx) * g.spq * 0.95;
+        const hit = (q, d, mids, vel) => { for (const m of mids) ev.push({ t: q * g.spq, dur: d, midi: m, vel: Math.max(1, Math.round(vel * f)), q0: q, q1: q + d / g.spq, shuf: true, inst: o.inst }); };
+        hit(qx, xd, [v.bass], 80); hit(qx, xd, v.notes, 66);
+        if (qg < gr.q1 - 1e-6) hit(qg, Math.max(0.05, Math.min(qx + P, gr.q1) - qg) * g.spq * 0.6, v.notes, 30); // t: hafif ghost
       }
       continue;
     }
@@ -2341,9 +2395,9 @@ function blankChart(proj, d) {
 function exportMidi(proj, d, drums = null, bassEv = null) {
   const g = d.g;
   const vocal = d.notes.filter((n) => n.effMidi != null).map((n) => ({ q0: n.q0, q1: n.q1, midi: n.effMidi, vel: 96 }));
-  const po = pianoOpts(proj.piano);
+  const sw = proj.swing && proj.swing.ratio, po = pianoOpts(proj.piano, sw);
   const pev = proj.sections && proj.sections.some((s) => s.arr && s.arr.piano)
-    ? arrangePiano(d.chords, g, (id) => { const sc = proj.sections.find((x) => x.id === id); return pianoOpts(Object.assign({}, proj.piano, sc && sc.arr && sc.arr.piano ? { style: sc.arr.piano } : {})); })
+    ? arrangePiano(d.chords, g, (id) => { const sc = proj.sections.find((x) => x.id === id); return pianoOpts(Object.assign({}, proj.piano, sc && sc.arr && sc.arr.piano ? { style: sc.arr.piano } : {}), sw); })
     : pianoEvents(d.chords, g, po);
   const piano = pev.map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
@@ -2431,7 +2485,7 @@ const Core = {
   nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, renderSynth, SYNTH, synthEnv, synthPianoSample, synthTestVocal,
-  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, arrangePiano, BASS_PATTERNS, bassPool, bassSteps, suggestBass, rankBass, bassRule, bassEvents, renderBass, BASS, bassEnv, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
+  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, arrangePiano, BASS_PATTERNS, bassPool, bassSteps, suggestBass, rankBass, bassRule, swingMap, swingUnmap, estimateSwing, bassEvents, renderBass, BASS, bassEnv, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
   bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
 };

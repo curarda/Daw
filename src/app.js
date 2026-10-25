@@ -160,6 +160,7 @@ function refresh() {
   S.proj.audio.leadBars = S.proj.audio.leadBars || 0;
   S.proj.piano = Object.assign({}, C.PIANO_DEFAULTS, S.proj.piano || {});
   S.proj.bass = Object.assign({ on: false, pattern: 'auto' }, S.proj.bass || {});
+  S.proj.swing = Object.assign({ ratio: 0.5 }, S.proj.swing || {});
   S.proj.mixer.bass = S.proj.mixer.bass || { vol: -5, mute: false, solo: false };
   S.proj.drums.fills = S.proj.drums.fills !== false;
   S.proj.mixer.drums = S.proj.mixer.drums || { vol: -8, mute: false, solo: false };
@@ -216,7 +217,7 @@ function savePanels() {
 function renderChips() {
   const set = (id, txt) => { const el = $(id); if (el && el.textContent !== txt) el.textContent = txt; };
   const p = S.proj, d = S.d;
-  set('#chipS1', `${p.settings.meter} · ${p.settings.bpm} BPM`);
+  set('#chipS1', `${p.settings.meter} · ${p.settings.bpm} BPM${swingMode() === 'triplet' ? ' · üçleme' : swingMode() === 'swing' ? ' · swing %' + Math.round(swingR() * 100) : ''}`);
   set('#chipS2', S.audio ? `${(S.audio.data.length / S.audio.sr).toFixed(0)} s${p.audio.leadBars ? ` · ${p.audio.leadBars > 0 ? '+' : ''}${p.audio.leadBars} ölçü` : ''}` : 'ses yok');
   set('#chipS3', S.rawNotes ? `${S.rawNotes.length} nota` : '');
   set('#chipS4', d && p.sections.length ? `${p.sections.length} bölüm` : 'bölüm yok');
@@ -297,8 +298,11 @@ async function histRedo() {
 // proj.sections[i].arr = { drums: null | 'off' | loopId, bass: null | 'off' | kalıpId, piano: null | akor sesi }  (null = genel ayar)
 // ▶ önizleme: bir loop / bas kalıbı seçmeden 2 ölçü dinlenir (çalma bitince ya da durdurulunca temizlenir)
 const PREVIEW = { bass: null, drums: null };
-const bassCtx = (loop) => ({ loop, meter: S.proj.settings.meter, bpm: S.proj.settings.bpm, vocalRate: S.vocalRate ?? null });
-const suggestBassFor = (loop) => { const c = bassCtx(loop); return C.suggestBass(c.loop, c.meter, c.bpm, c.vocalRate); };
+// alt bölme / swing oranı (0,5 düz · 0,667 üçleme · arası swing): davul, bas, akor desenleri, quantize ızgarası ve cetvel buna uyar
+const swingR = () => (S.proj.swing && S.proj.swing.ratio) || 0.5;
+const swingMode = (r = swingR()) => (Math.abs(r - 0.5) < 0.005 ? 'straight' : Math.abs(r - 2 / 3) < 0.006 ? 'triplet' : 'swing');
+const bassCtx = (loop) => ({ loop, meter: S.proj.settings.meter, bpm: S.proj.settings.bpm, vocalRate: S.vocalRate ?? null, swing: swingR() });
+const suggestBassFor = (loop) => { const c = bassCtx(loop); return C.suggestBass(c.loop, c.meter, c.bpm, c.vocalRate, c.swing); };
 const secArr = (secId) => { const s = S.proj.sections.find((x) => x.id === secId); return (s && s.arr) || {}; };
 const sectionOfBar = (bar) => (S.d ? S.d.sections.find((s) => !s.implicit && bar >= s.startBar && bar <= s.endBar) || null : null);
 const loopById = (id) => C.DRUM_LOOPS.find((l) => l.id === id && l.meter === S.proj.settings.meter) || null;
@@ -317,7 +321,7 @@ function fillAt(b) {
   const a = sectionOfBar(b), n = sectionOfBar(b + 1);
   return !!a && !!n && a.id !== n.id && !!drumLoopForBar(b) && !!drumLoopForBar(b + 1);
 }
-const drumEventsAll = () => (S.d && anyDrums() ? C.arrangeDrums(S.d.g, S.d.bars, S.proj.drums.startBar || 1, drumLoopForBar, fillAt) : []);
+const drumEventsAll = () => (S.d && anyDrums() ? C.arrangeDrums(S.d.g, S.d.bars, S.proj.drums.startBar || 1, drumLoopForBar, fillAt, swingR()) : []);
 function bassPatternFor(slot) {
   if (PREVIEW.bass) return PREVIEW.bass;
   const a = secArr(slot.section).bass;
@@ -326,9 +330,9 @@ function bassPatternFor(slot) {
   if (id && id !== 'auto' && C.bassPool(S.proj.settings.meter).includes(id)) return id;
   return suggestBassFor(drumLoopForBar(slot.bar) || currentLoop()).id;
 }
-const bassEventsAll = () => (S.d && anyBass() ? C.bassEvents(S.d.chords, S.d.g, { patternFor: bassPatternFor, loopFor: (bar) => drumLoopForBar(bar) || currentLoop() }) : []);
-const pianoOptsFor = (secId) => { const a = secArr(secId).piano; return C.pianoOpts(a ? Object.assign({}, S.proj.piano, { style: a }) : S.proj.piano); };
-const pianoEventsAll = () => (anySectionArr('piano') ? C.arrangePiano(S.d.chords, S.d.g, pianoOptsFor) : C.pianoEvents(S.d.chords, S.d.g, C.pianoOpts(S.proj.piano)));
+const bassEventsAll = () => (S.d && anyBass() ? C.bassEvents(S.d.chords, S.d.g, { patternFor: bassPatternFor, loopFor: (bar) => drumLoopForBar(bar) || currentLoop(), swing: swingR() }) : []);
+const pianoOptsFor = (secId) => { const a = secArr(secId).piano; return C.pianoOpts(a ? Object.assign({}, S.proj.piano, { style: a }) : S.proj.piano, swingR()); };
+const pianoEventsAll = () => (anySectionArr('piano') ? C.arrangePiano(S.d.chords, S.d.g, pianoOptsFor) : C.pianoEvents(S.d.chords, S.d.g, C.pianoOpts(S.proj.piano, swingR())));
 
 // ---------------------------------------------------------------- düzeltilmiş vokal render (TD-PSOLA)
 let renderTimer = null;
@@ -432,6 +436,10 @@ function selectNotes(ids) {
   select(!u.length ? null : u.length === 1 ? { type: 'note', id: u[0] } : { type: 'notes', ids: u });
 }
 const quantGridQ = () => C.QUANT_GRIDS[S.proj.quant.grid] || 0.5;
+// ızgara swing'i: düz ızgaralar (1/8, 1/16) her zaman projenin oranına uyar; üçleme ızgaraları (…T) yalnızca swing ilan edilmişse (düz projede gerçek üçleme kalır)
+const gridAnchor = () => (/T$/.test(S.proj.quant.grid) ? 2 / 3 : 0.5);
+const gridSwing = () => { const r = swingR(); return gridAnchor() > 0.6 && r < 0.55 ? 0 : r; };
+const snapGrid = (q, dir = 0) => { const gq = quantGridQ(), g = grid(), r = gridSwing(), an = gridAnchor(); return C.swingMap((Math.round(C.swingUnmap(q, g, r, an) / gq) + dir) * gq, g, r, an); };
 const quantGridLabel = () => S.proj.quant.grid;
 function quantScope() {
   const sc = $('#inQuantScope').value;
@@ -442,7 +450,7 @@ function quantScope() {
 function applyQuantize(scope, strength = S.proj.quant.strength / 100) {
   if (!S.d || !S.d.notes.length) { status('Önce kayıt / analiz.', 'err'); return; }
   if (!scope) { status('Önce bir bölüm ya da nota seç (kapsam).', 'err'); return; }
-  const r = C.quantizeTargets(S.d.notes, S.d.g, { gridQ: quantGridQ(), strength, filter: scope.f });
+  const r = C.quantizeTargets(S.d.notes, S.d.g, { gridQ: quantGridQ(), strength, filter: scope.f, swing: gridSwing(), anchor: gridAnchor() });
   let n = 0;
   for (const x of r.targets) { const ed = editFor(x.note, true); ed.q0to = x.q0to; if (x.q0to != null) n++; }
   cleanupEdits(); refresh(); scheduleRender(true);
@@ -542,7 +550,7 @@ function analyzeDrums() {
   // click'le kaydedildiyse ya da test melodisiyse ızgara zaten doğru: vuruş fazını tahmin etme
   const fixedPhase = S.proj.audio.source === 'test' || (S.proj.audio.source === 'record' && S.proj.audio.alignMode === 'none');
   S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase }) : null;
-  S.drumSug = C.suggestDrumLoop(ns, S.proj.settings, S.meterEst);
+  S.drumSug = C.suggestDrumLoop(ns, Object.assign({}, S.proj.settings, { swingRatio: swingR() }), S.meterEst); // senin bildirdiğin swing oranı his tahmininin üstündedir
 }
 function currentLoop() {
   const id = S.proj.drums.loop;
@@ -609,7 +617,7 @@ function renderRank(sel, kind, rows, manualId, currentId) {
 }
 function renderBass() {
   const meter = S.proj.settings.meter, pool = C.bassPool(meter), sel = $('#inBassPattern');
-  const loop = currentLoop(), ctx = bassCtx(loop), rank = C.rankBass(ctx), sug = C.suggestBass(ctx.loop, ctx.meter, ctx.bpm, ctx.vocalRate);
+  const loop = currentLoop(), ctx = bassCtx(loop), rank = C.rankBass(ctx), sug = C.suggestBass(ctx.loop, ctx.meter, ctx.bpm, ctx.vocalRate, ctx.swing);
   const opts = `<option value="auto">Otomatik (öneri: ${esc(C.BASS_PATTERNS[sug.id].name)})</option>` + pool.map((id) => `<option value="${id}">${esc(C.BASS_PATTERNS[id].name)}</option>`).join('');
   if (sel.innerHTML !== opts) sel.innerHTML = opts;
   const want = pool.includes(S.proj.bass.pattern) ? S.proj.bass.pattern : 'auto';
@@ -740,6 +748,10 @@ function makeDemo() {
     if (est && est.ok && !est.unsupported && est.confidence >= 0.55 && (est.meter !== set.meter || (est.bpm && est.bpm !== set.bpm))) {
       did.push(`ölçü/tempo senin ayarın: ${set.meter}, ${set.bpm} BPM (melodi ${est.meter}${est.bpm && est.bpm !== set.bpm ? `, ${est.bpm} BPM` : ''} gibi görünüyor — dokunmadım; 8b'den "Uygula" diyebilirsin)`);
     } else did.push(`ölçü/tempo: ${set.meter}, ${set.bpm} BPM`);
+    { // swing: senin ayarın; melodide farklı bir oran ölçülürse yalnızca not düşer
+      const sw = C.estimateSwing(S.d.notes.map((n) => ({ q0: n.qOrig })), S.d.g);
+      if (sw && sw.confident && Math.abs(sw.ratio - swingR()) > 0.04) did.push(`alt bölme senin ayarın (${swingMode() === 'straight' ? 'düz' : '%' + Math.round(swingR() * 100)}); melodide ≈%${Math.round(sw.ratio * 100)} swing ölçüldü — dokunmadım, 1. adımdan uygulayabilirsin`);
+    }
     // 2) bölüm ve ton: bölüm yoksa tek bölüm; onaylanmamış önerilen tonlar onaylanır
     if (!S.proj.sections.length) { S.proj.sections.push({ id: uid(), name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: null, mode: null }); refresh(); }
     let keyed = 0;
@@ -1342,12 +1354,17 @@ function draw() {
   // grid çizgileri
   const barQ = g.barQ, sub = pq * g.clickQ >= 10 ? g.clickQ : g.pulseQ;
   for (let q = Math.floor(q0v / sub) * sub; q <= q1v; q += sub) {
-    const x = Math.round(qToX(q)) + 0.5;
+    const x = Math.round(qToX(C.swingMap(q, g, swingR(), 0.5))) + 0.5; // zayıf sekizlikler swing oranına kayar
     if (x < TL.KW) continue;
     const isBar = Math.abs(q / barQ - Math.round(q / barQ)) < 1e-6;
     const isPulse = Math.abs(q / g.pulseQ - Math.round(q / g.pulseQ)) < 1e-6;
     c.strokeStyle = isBar ? '#3a4152' : isPulse ? '#232834' : '#1a1e27';
     c.beginPath(); c.moveTo(x, isBar ? 0 : TL.RULER); c.lineTo(x, H); c.stroke();
+  }
+  // üçleme modu (12/8 hissi): her vuruşun üçte biri (ince çizgi); swing / üçlemede zayıf sekizlik oranına kayık
+  if (swingMode() === 'triplet' && g.pulseQ === 1 && pq >= 20) {
+    c.strokeStyle = '#1d2230';
+    for (let k = Math.max(0, Math.floor(q0v)); k <= q1v; k++) { const x = Math.round(qToX(k + 1 / 3)) + 0.5; if (x >= TL.KW) { c.beginPath(); c.moveTo(x, TL.RULER); c.lineTo(x, H); c.stroke(); } }
   }
   // cetvel
   c.fillStyle = '#181b22'; c.fillRect(TL.KW, 0, W, TL.RULER);
@@ -1770,7 +1787,7 @@ cv.addEventListener('pointermove', (e) => {
       const gq = quantGridQ();
       let q = S.drag.baseQ + dx / S.view.pxPerQ;
       const free = e.ctrlKey || e.metaKey;
-      if (!free) q = Math.round(q / gq) * gq; // ızgaraya yapış (Ctrl/⌘ ile serbest)
+      if (!free) q = snapGrid(q); // ızgaraya yapış (swing oranına uyar; Ctrl/⌘ ile serbest)
       const dq = q - S.drag.baseQ; // grupta notalar arası mesafe korunur
       each((it, k, ed) => { const qq = it.baseQ + dq; ed.q0to = Math.abs(qq - k.qOrig) < 1e-4 ? null : qq; });
       const mp = C.metricPos(q, g), ms = Math.round((q - n.qOrig) * g.spq * 1000);
@@ -1900,7 +1917,7 @@ function groupLabel(ns, dv) { groupEdit(ns, (n, ed) => { const R = n.effMidi + d
 // zaman: grup birlikte kayar (notalar arası mesafe korunur); tek nota ızgaraya yapışarak
 function groupNudge(ns, dir) {
   const gq = quantGridQ(), one = ns.length === 1;
-  groupEdit(ns, (n, ed) => { const q = one ? Math.round(n.q0 / gq) * gq + gq * dir : n.q0 + gq * dir; ed.q0to = Math.abs(q - n.qOrig) < 1e-4 ? null : q; });
+  groupEdit(ns, (n, ed) => { const q = one ? snapGrid(n.q0, dir) : n.q0 + gq * dir; ed.q0to = Math.abs(q - n.qOrig) < 1e-4 ? null : q; });
   status(`${ns.length > 1 ? ns.length + ' nota' : 'Nota'} ${quantGridLabel()} ${dir > 0 ? 'sağa' : 'sola'} kaydırıldı.`);
 }
 function groupResetAll(ns) {
@@ -2267,7 +2284,7 @@ $('#inspector').addEventListener('click', (e) => {
     if (act === 'timeReset') { const ed = editFor(n); if (ed) ed.q0to = null; cleanupEdits(); refresh(); scheduleRender(true); }
     if (act === 'timeSnap' || act === 'timeNudge') {
       const gq = quantGridQ(), ed = editFor(n, true);
-      const q = act === 'timeSnap' ? Math.round(n.qOrig / gq) * gq : Math.round(n.q0 / gq) * gq + gq * +b.dataset.v;
+      const q = act === 'timeSnap' ? snapGrid(n.qOrig) : snapGrid(n.q0, +b.dataset.v);
       ed.q0to = Math.abs(q - n.qOrig) < 1e-4 ? null : q;
       cleanupEdits(); refresh(); scheduleRender(true);
     }
@@ -2551,6 +2568,7 @@ function syncInputs() {
   $('#inBpm').value = p.settings.bpm; $('#inMeter').value = p.settings.meter; $('#inLatency').value = p.settings.latencyMs;
   const gq = C.makeGrid(p.settings);
   $('#inClickFeel').value = p.settings.clickFeel || 'normal';
+  { const r = (p.swing && p.swing.ratio) || 0.5, m = swingMode(r); $('#inSubdiv').value = m; $('#swingWrap').hidden = m === 'straight'; if (document.activeElement !== $('#inSwing')) $('#inSwing').value = Math.round(r * 100); }
   $('#inOnlyMarked').checked = !!p.chordOpts.onlyMarked;
   $('#inDownbeatOnly').checked = !!p.chordOpts.downbeatOnly;
   $('#inClickFeel').disabled = p.settings.meter !== '4/4';
@@ -2742,6 +2760,28 @@ $('#btnLatencyCal').onclick = () => Cal.run();
 $('#btnUnlockChords').onclick = () => { S.proj.chordLocks = []; refresh(); };
 $('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
 $('#inClickFeel').addEventListener('change', (e) => { S.proj.settings.clickFeel = e.target.value; });
+// alt bölme / swing
+function setSwing(r, why) {
+  S.proj.swing.ratio = Math.round(C.clamp(r, 0.5, 0.75) * 1000) / 1000;
+  syncInputs(); refresh();
+  const m = swingMode();
+  status(`Alt bölme: ${m === 'straight' ? 'düz (%50)' : m === 'triplet' ? "üçleme (%67): her vuruş 3'e bölünür, 12/8 hissi" : `swing %${Math.round(swingR() * 100)}`}${why ? ' — ' + why : ''}. Davul, bas, akor desenleri, quantize ızgarası ve cetvel buna uydu.`);
+  if (Player.playing) Player.play();
+}
+$('#inSubdiv').addEventListener('change', (e) => {
+  const v = e.target.value;
+  if (v === 'straight') setSwing(0.5); else if (v === 'triplet') setSwing(2 / 3); else setSwing(swingMode() === 'swing' ? swingR() : S.swingEst && S.swingEst.ratio > 0.52 ? S.swingEst.ratio : 0.62);
+});
+onNum('#inSwing', (v) => setSwing(v / 100));
+$('#btnSwingMeasure').onclick = () => {
+  if (!S.d || !S.d.notes.length) { status('Önce kayıt / analiz.', 'err'); return; }
+  const est = C.estimateSwing(S.d.notes.map((n) => ({ q0: n.qOrig })), S.d.g);
+  S.swingEst = est;
+  const box = $('#swingInfo');
+  if (!est) box.textContent = S.d.g.pulseQ !== 1 ? '6/8 ölçüsünde vuruş zaten üçe bölünür; swing ölçülmez.' : 'Ölçülemedi: zayıf vuruşa düşen en az 4 nota (ve ≥ 8 nota) gerekir. Ölçü çizgileri / BPM kayıksa önce onları düzelt.';
+  else box.innerHTML = `Bu kayıtta zayıf vuruşlar vuruşun <b>%${Math.round(est.ratio * 100)}</b>'inde (${est.n}/${est.of} nota, sapma ±%${Math.round(est.spread * 100)}${est.confident ? '' : ' — az güvenilir'}). <span class="hint">%50 düz, %67 saf üçleme.</span> <button id="btnSwingApply" class="small">%${Math.round(est.ratio * 100)} uygula</button>`;
+};
+$('#swingInfo').addEventListener('click', (e) => { if (e.target.closest('#btnSwingApply') && S.swingEst) setSwing(S.swingEst.ratio, 'ölçülen oran uygulandı'); });
 $('#inPlayClick').addEventListener('change', (e) => { S.proj.mixer.click = e.target.checked; });
 $$('input[name=editMode]').forEach((r) => r.addEventListener('change', (e) => setEditMode(e.target.value)));
 function setEditMode(m) {

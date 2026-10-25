@@ -172,6 +172,8 @@ const DRUM_LOOPS = [
     K: '........x.......', S: '........X.......', H: '..x...x...x...x.', desc: "1. vuruş boş, kick ve trampet birlikte 3'te" },
   { id: 'shuffle', name: 'Shuffle / swing (üçleme)', meter: '4/4', spb: 3, feel: 'triple', bpm: [70, 140], base: 0,
     K: 'x.....x.....', S: '...X.....X..', H: 'x.xx.xx.xx.x', desc: "üçleme hissi: hi-hat 'uzun-kısa', 2 ve 4'te trampet" },
+  { id: 'shufflecell', name: 'Shuffle hücresi — X . t (her vuruşta aynı)', meter: '4/4', spb: 3, feel: 'triple', bpm: [70, 140], base: 0,
+    K: 'x.....x.....', S: '...X.....X..', H: 'x.gx.gx.gx.g', desc: "her vuruşta aynı hücre: güçlü (X) · boş · hafif ghost (t) — sayım \"1 ve-let 2 ve-let…\"; kick 1 ve 3'te, trampet 2 ve 4'te. Ghost (t) projenin swing oranına oturur" },
   { id: 'push332', name: 'İtmeli pop-rock (3+3+2 kick, 4\'ün ve\'sinde öncel)', meter: '4/4', spb: 4, feel: 'straight', bpm: [128, 180], base: 0,
     K: 'x..x....x..x..x.', S: '....X.......X...', H: 'x.x.x.x.x.x.x.o.', desc: "kick 1, 1'in son 16'lığı, 3, 3'ün son 16'lığı ve 4'ün ve'sinde (sonraki 1'i önden iter, açık hi-hat); trampet 2 ve 4'te. Melodisi vuruşların önüne/arkasına senkoplu hızlı şarkılar için" },
   { id: 'minimal', name: 'Sade — kick + hi-hat', meter: '4/4', spb: 4, feel: 'straight', bpm: [55, 150], base: -0.12,
@@ -235,7 +237,9 @@ function suggestDrumLoop(notes, settings, est = null) {
   const P = 60 / bpm;
   const res = { meter, bpm, ranked: [], best: null, ok: false, reasons: [], request: '' };
   const ns = notes.filter((n) => n.t1 > n.t0);
-  const feel = est && est.ok ? est.feel : 'straight';
+  // senin bildirdiğin swing oranı (≥ %60) varsa his üçlemedir; yoksa melodiden tahmin
+  const declared = settings.swingRatio >= 0.6;
+  const feel = declared ? 'triple' : est && est.ok ? est.feel : 'straight';
   const pool = loopsFor(meter);
   if (!pool.length) res.reasons.push(`${meter} ölçüsü için loop yok.`);
   for (const L of pool) {
@@ -250,6 +254,7 @@ function suggestDrumLoop(notes, settings, est = null) {
     if (settings.clickFeel === 'halftime' && L.id === 'half') { total += 0.12; why.push('click deseni yarım zaman seçili'); }
     why.push(tf === 1 ? `tempo ${bpm} BPM aralıkta (${L.bpm[0]}–${L.bpm[1]})` : `tempo ${bpm} BPM aralık dışı (${L.bpm[0]}–${L.bpm[1]})`);
     if (mp) why.push(acc > 0.25 ? 'vurguları melodinin güçlü vuruşlarıyla örtüşüyor' : acc > 0 ? 'vurgularla zayıf örtüşme' : 'vurguları melodinin güçlü vuruşlarına ters düşüyor');
+    if (declared && ff) why.push(`swing oranın %${Math.round(settings.swingRatio * 100)}: üçleme hisli loop'lar öne çıkar`);
     if (!ff) why.push(L.feel === 'triple' ? 'loop üçleme hisli, melodi düz' : 'loop düz, melodi üçleme hisli');
     res.ranked.push({ loop: L, score: total, accent: acc, tempo: tf, feelOk: !!ff, why });
   }

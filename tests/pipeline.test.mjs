@@ -1025,6 +1025,67 @@ await step('Bas puanı: tüm kalıplar puan alır (sıralı), kural önsel + dav
   return `rock8: ${r.slice(0, 3).map((x) => `${x.id} ${x.score.toFixed(2)}`).join(' > ')} · sekizlik 100 BPM ${slow.fit.toFixed(2)} → 170 BPM ${fast.fit.toFixed(2)}`;
 });
 
+await step('Alt bölme / swing: oran eşlemesi, melodiden ölçüm, davul + bas + akor shuffle (X . t) AYNI ızgarada, düz ve 6/8 etkilenmez, quantize swing ızgarasına', () => {
+  const g4 = Core.makeGrid({ bpm: 120, meter: '4/4' });
+  const near = (a, b, m = '') => assert.ok(Math.abs(a - b) < 1e-9, `${m} ${a} ≠ ${b}`);
+  near(Core.swingMap(0.5, g4, 0.7), 0.7, "8'lik ve"); near(Core.swingMap(1, g4, 0.7), 1, 'vuruş sabit'); near(Core.swingMap(0.25, g4, 0.7), 0.35, "16'lık"); near(Core.swingMap(0.75, g4, 0.7), 0.85);
+  near(Core.swingMap(2 / 3, g4, 0.7, 2 / 3), 0.7, 'üçleme içeriği %70e'); near(Core.swingMap(1 / 3, g4, 0.7, 2 / 3), 0.35);
+  near(Core.swingMap(0.5, g4, 0.5), 0.5); near(Core.swingMap(2 / 3, g4, 0.5, 2 / 3), 2 / 3, 'düz projede üçleme içeriği olduğu gibi');
+  for (const q of [0.1, 0.45, 0.5, 0.62, 0.9, 3.77]) near(Core.swingUnmap(Core.swingMap(q, g4, 0.7), g4, 0.7), q, 'tersi');
+  const g68 = Core.makeGrid({ bpm: 80, meter: '6/8' });
+  near(Core.swingMap(0.5, g68, 0.7), 0.5, '6/8 etkilenmez');
+  // melodiden ölçüm: zayıf vuruşlar %70'te
+  const notes = []; for (let b = 0; b < 8; b++) { notes.push({ q0: b }); notes.push({ q0: b + 0.7 + (b % 2 ? 0.01 : -0.01) }); }
+  const est = Core.estimateSwing(notes, g4);
+  assert.ok(est && Math.abs(est.ratio - 0.7) < 0.015 && est.confident, JSON.stringify(est));
+  assert.equal(Core.estimateSwing(notes.slice(0, 5), g4), null); assert.equal(Core.estimateSwing(notes, g68), null);
+  const straight = Core.estimateSwing(Array.from({ length: 16 }, (_, i) => ({ q0: i * 0.5 })), g4);
+  assert.ok(straight && Math.abs(straight.ratio - 0.5) < 1e-9, 'düz sekizlikler: oran %50');
+  // aynı ızgara: bas / davul / akor ghost'ları vuruşun %70'inde
+  const mkc = (bar, root, bass) => ({ chord: { root, q: 'maj' }, bar, section: 'a', q0: (bar - 1) * 4, q1: bar * 4, voicing: { bass, notes: [bass + 16, bass + 19, bass + 24] } });
+  const ch = [mkc(1, 0, 36), mkc(2, 7, 43)];
+  const frac = (q) => Math.round((q - Math.floor(q + 1e-9)) * 1000) / 1000;
+  const bs = Core.bassEvents(ch, g4, { patternFor: () => 'shuffle', swing: 0.7 });
+  assert.equal(bs.length, 16, '2 ölçü × 4 vuruş × (X + t)');
+  assert.deepEqual([...new Set(bs.filter((e) => e.vel < 60).map((e) => frac(e.q0)))], [0.7]); assert.deepEqual([...new Set(bs.filter((e) => e.vel >= 90).map((e) => frac(e.q0)))], [0]);
+  assert.ok(bs.filter((e) => e.vel < 60).every((e) => e.dur < bs.find((x) => x.vel >= 90).dur), 'ghost kısa');
+  near(bs[0].dur, (0.7 * g4.spq) * 0.96, 'X vuruşun %70i boyunca (ghost yerine kadar)');
+  const dr = Core.arrangeDrums(g4, 2, 1, () => Core.DRUM_LOOPS.find((l) => l.id === 'shufflecell'), null, 0.7);
+  assert.deepEqual([...new Set(dr.filter((e) => e.kind === 'H' && e.vel < 0.5).map((e) => frac(e.q)))], [0.7], 'davul hücresinin t\'si %70');
+  assert.deepEqual([...new Set(dr.filter((e) => e.kind === 'H' && e.vel > 0.5).map((e) => frac(e.q)))], [0], 'X vuruşta');
+  const pk = Core.pianoEvents(ch, g4, { pattern: 'shuffle', inst: 'piano', repeat: 'off', swing: 0.7 });
+  assert.deepEqual([...new Set(pk.filter((e) => e.vel < 40).map((e) => frac(e.q0)))], [0.7], 'akor ghost');
+  assert.ok(pk.filter((e) => e.vel >= 60).every((e) => frac(e.q0) === 0));
+  assert.equal(pk.filter((e) => e.vel < 40).length, 2 * 4 * 3, 'ghost: ölçü × vuruş × akor sesi');
+  // saf üçleme (%67): ghost 2/3'te; düz projede (r=0,5) shuffle içeriği yine 2/3'te (düz sekizliğe çökmez)
+  assert.deepEqual([...new Set(Core.bassEvents(ch, g4, { patternFor: () => 'shuffle', swing: 2 / 3 }).filter((e) => e.vel < 60).map((e) => frac(e.q0)))], [0.667]);
+  assert.deepEqual([...new Set(Core.bassEvents(ch, g4, { patternFor: () => 'shuffle', swing: 0.5 }).filter((e) => e.vel < 60).map((e) => frac(e.q0)))], [0.667]);
+  // düz içerik swing alır: rock8 hi-hat 8'likleri %70'e, düz projede 0,5'te
+  const r8 = (sw) => [...new Set(Core.arrangeDrums(g4, 1, 1, () => Core.DRUM_LOOPS.find((l) => l.id === 'rock8'), null, sw).filter((e) => e.kind === 'H').map((e) => frac(e.q)))].sort();
+  assert.deepEqual(r8(0.5), [0, 0.5]); assert.deepEqual(r8(0.7), [0, 0.7]);
+  // bas 8'likleri ve arpej de aynı oranda
+  const e8 = Core.bassEvents(ch, g4, { patternFor: () => 'eighths', swing: 0.7 });
+  assert.deepEqual([...new Set(e8.map((e) => frac(e.q0)))].sort(), [0, 0.7]);
+  const ap = Core.pianoEvents(ch, g4, { pattern: 'arp', rate: '1/8', inst: 'piano', swing: 0.7 });
+  assert.deepEqual([...new Set(ap.map((e) => frac(e.q0)))].sort(), [0, 0.7]);
+  // fill: üçleme loop'ta 3 vuruş
+  const f = Core.arrangeDrums(g4, 2, 1, () => Core.DRUM_LOOPS.find((l) => l.id === 'shufflecell'), (b) => b === 1, 0.7).filter((e) => e.fill);
+  assert.equal(f.length, 3);
+  // quantize: swing ızgarası
+  const qn = [{ qOrig: 0.68, id: 'a' }, { qOrig: 1.02, id: 'b' }, { qOrig: 2.52, id: 'c' }];
+  const qs = Core.quantizeTargets(qn, g4, { gridQ: 0.5, strength: 1, swing: 0.7 }).targets.map((t) => Math.round((t.q0to ?? t.note.qOrig) * 100) / 100);
+  assert.deepEqual(qs, [0.7, 1, 2.7], 'swing ızgarasına');
+  const qp = Core.quantizeTargets(qn, g4, { gridQ: 0.5, strength: 1 }).targets.map((t) => Math.round((t.q0to ?? t.note.qOrig) * 100) / 100);
+  assert.deepEqual(qp, [0.5, 1, 2.5], 'swing yokken düz');
+  // bas puanı: swing ilan edilince shuffle önerilir; davul puanı üçleme his
+  assert.equal(Core.suggestBass(Core.DRUM_LOOPS.find((l) => l.id === 'rock8'), '4/4', 100, 1, 0.7).id, 'shuffle');
+  assert.equal(Core.suggestBass(Core.DRUM_LOOPS.find((l) => l.id === 'shufflecell'), '4/4', 100).id, 'shuffle');
+  const mel = (bpm) => { const P = 60 / bpm, o = []; for (let b = 0; b < 8; b++) for (const [pos, d, p] of [[0, 1.5, 64], [1.5, 0.5, 62], [2, 1, 64], [3, 0.5, 60], [3.5, 0.5, 62]]) { const t = (b * 4 + pos) * P; o.push({ t0: t, t1: t + d * P * 0.95, pitch: p }); } return o; };
+  const sug = Core.suggestDrumLoop(mel(100), { meter: '4/4', bpm: 100, swingRatio: 0.7 }, Core.estimateMeter(mel(100), 100));
+  assert.ok(sug.best.loop.feel === 'triple', 'ilan edilen %70 swing → üçleme hisli loop öne çıkar: ' + sug.best.loop.id);
+  return `swing %70: bas / davul / akor ghost'ları 0,70 · %67'de 0,667 · düz projede shuffle içeriği 0,667, düz içerik 0,5 · quantize ${JSON.stringify(qs)} · önerilen loop ${sug.best.loop.id}`;
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nTüm adımlar geçti.');

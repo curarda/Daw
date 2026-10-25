@@ -943,7 +943,7 @@ try {
   await step('Akor sesi: piyano / synth × akor / arpej seçilir; tekrar basma modları; synth çalar ve mix WAV / MIDI\'ye girer', async () => {
     await resetTest();
     const opts = await page.$$eval('#inPianoStyle option', (o) => o.map((x) => x.textContent));
-    assert.deepEqual(opts, ['Piyano — akor', 'Piyano — arpej', 'Synth klavye — akor', 'Synth klavye — arpej']);
+    assert.deepEqual(opts, ['Piyano — akor', 'Piyano — arpej', 'Synth klavye — akor', 'Synth klavye — arpej', 'Piyano — shuffle (X . t)', 'Synth klavye — shuffle (X . t)']);
     assert.equal(await page.inputValue('#inPianoRepeat'), 'hold', 'varsayılan: aynı akor bir kez basılır');
     assert.equal(await page.isHidden('#arpWrap'), true);
     await page.selectOption('#inPianoStyle', 'synth-arp');
@@ -1042,7 +1042,7 @@ try {
     assert.equal(await S(() => window.__daw.proj.bass.on), false);
     assert.match(await page.textContent('#bassInfo'), /Otomatik: /);
     const opts = await page.$$eval('#inBassPattern option', (o) => o.map((x) => x.value));
-    assert.deepEqual(opts.slice(0, 4), ['auto', 'kick', 'pop', 'rootfifth']);
+    assert.deepEqual(opts.slice(0, 4), ['auto', 'kick', 'shuffle', 'pop']);
     await page.check('#inBassOn');
     await page.selectOption('#inBassPattern', 'pop');
     const ev = await S(() => window.__dawAPI.arrangement().bass);
@@ -1068,8 +1068,8 @@ try {
     const st1 = await S(() => window.__daw.proj.piano.style);
     assert.notEqual(st1, st0); assert.equal(await page.inputValue('#inPianoStyle'), st1);
     const seen = new Set([st0, st1]);
-    for (let i = 0; i < 3; i++) { await page.click('#btnStyleNext'); seen.add(await S(() => window.__daw.proj.piano.style)); }
-    assert.equal(seen.size, 4, 'dört akor sesi sırayla geziliyor');
+    for (let i = 0; i < 5; i++) { await page.click('#btnStyleNext'); seen.add(await S(() => window.__daw.proj.piano.style)); }
+    assert.equal(seen.size, 6, 'altı akor sesi sırayla geziliyor');
     await page.click('#btnPlay');
     // mix WAV ve MIDI bas içerir
     const mid = await download('#btnExpMidi');
@@ -1176,10 +1176,10 @@ try {
     // puanlı listeler görünür
     await resetTest();
     const nDrum = await page.locator('#drumRank .rank-row').count(), nBass = await page.locator('#bassRank .rank-row').count();
-    assert.equal(nDrum, 9, "4/4'te 9 davul loop'u puanlı listede (itmeli pop-rock dahil)"); assert.equal(nBass, 7);
+    assert.equal(nDrum, 10, "4/4'te 10 davul loop'u puanlı listede (itmeli pop-rock ve shuffle hücresi dahil)"); assert.equal(nBass, 8);
     assert.ok(await page.isVisible('#drumRank .rank-row'), 'liste açık bölümde görünür');
     const names = await page.$$eval('#drumRank .rk-name', (e) => e.map((x) => x.textContent));
-    assert.ok(names.some((x) => /İtmeli pop-rock/.test(x)) && names.some((x) => /Sade/.test(x)), 'yeni loop\'lar listede: ' + names.join(' | '));
+    assert.ok(names.some((x) => /İtmeli pop-rock/.test(x)) && names.some((x) => /Sade/.test(x)) && names.some((x) => /X \. t/.test(x)), 'yeni loop\'lar listede: ' + names.join(' | '));
     const scores = await page.$$eval('#drumRank .rk-score', (e) => e.map((x) => +x.textContent));
     assert.ok(scores.every((v, i) => i === 0 || scores[i - 1] >= v), "loop'lar puan sırasıyla");
     // ▶ seçmeden dinletir: ayarlar değişmez, bas / davul çalar
@@ -1227,6 +1227,43 @@ try {
     const z = await S(() => { const p = window.__daw.proj; return { drums: p.drums.on, bass: p.bass.on, secs: p.sections.map((s) => [s.tonic, !!s.arr]) }; });
     assert.deepEqual(z, { drums: false, bass: false, secs: [[null, false], [null, false]] });
     return `davul ${r.loop}, ${r.ev.drums.length} vuruş (fill var), bas ${r.ev.bass.length} nota; Ctrl+Z ile hepsi geri`;
+  });
+
+  await step('Alt bölme / swing: düz · üçleme (12/8) · özel oran; kayıttan ölç; davul, bas ve akor shuffle (X . t) aynı ızgarada; quantize ve cetvel orana uyar; geri alınır', async () => {
+    const tl = await resetTest();
+    assert.equal(await page.inputValue('#inSubdiv'), 'straight'); assert.equal(await page.isHidden('#swingWrap'), true);
+    // üçleme modu: oran 2/3, çip, thirds çizgileri
+    await page.selectOption('#inSubdiv', 'triplet');
+    assert.ok(Math.abs((await S(() => window.__daw.proj.swing.ratio)) - 2 / 3) < 1e-3);
+    assert.match(await page.textContent('#chipS1'), /üçleme/);
+    // özel oran: %70
+    await page.fill('#inSwing', '70'); await page.dispatchEvent('#inSwing', 'change');
+    assert.equal(await S(() => window.__daw.proj.swing.ratio), 0.7);
+    assert.equal(await page.inputValue('#inSubdiv'), 'swing'); assert.match(await page.textContent('#chipS1'), /swing %70/);
+    // kayıttan ölç: test melodisi düz sekizliklerle yazılmış → ölçülen oran ≈ %50 ya da ölçülemedi; swing'li sentetik nota seti için çekirdek testinde doğrulanır
+    await page.click('#btnSwingMeasure');
+    assert.match(await page.textContent('#swingInfo'), /%\d+|Ölçülemedi/);
+    // katmanlar: davul 'shuffle hücresi', bas 'shuffle', akor sesi 'piyano shuffle'; hepsinin "let" yeri aynı (%70)
+    await S(() => { const p = window.__daw.proj; p.drums.on = true; p.drums.loop = 'shufflecell'; p.bass.on = true; p.bass.pattern = 'shuffle'; p.piano.style = 'piano-shuffle'; p.piano.repeat = 'off'; window.__dawAPI.refresh(); });
+    const fr = (q) => Math.round((q - Math.floor(q + 1e-9)) * 1000) / 1000;
+    const arr = await S(() => window.__dawAPI.arrangement());
+    const ghostBass = arr.bass.filter((e) => e.vel < 60).map((e) => fr(e.q0)), ghostDrum = arr.drums.filter((e) => e.kind === 'H' && e.vel < 0.5).map((e) => fr(e.q)), ghostKeys = arr.piano.filter((e) => e.vel < 40).map((e) => fr(e.q0));
+    for (const [n, a] of [['bas', ghostBass], ['davul', ghostDrum], ['akor', ghostKeys]]) { assert.ok(a.length > 8, n + ' ghost sayısı'); assert.deepEqual([...new Set(a)], [0.7], `${n}: ghost vuruşun %70'inde`); }
+    assert.ok(arr.bass.filter((e) => e.vel >= 90).every((e) => fr(e.q0) === 0), 'X vuruşun başında');
+    // quantize swing ızgarasına: 1/8 → zayıf sekizlik %70
+    await page.selectOption('#inQuantGrid', '1/8');
+    const snap = await S(() => { const d = window.__daw.d; const r = window.__dawAPI.C.quantizeTargets(d.notes, d.g, { gridQ: 0.5, strength: 1, swing: 0.7, anchor: 0.5 }); return r.targets.filter((t) => t.q0to != null).map((t) => Math.round((t.q0to - Math.floor(t.q0to + 1e-9)) * 100) / 100); });
+    assert.ok(snap.every((v) => v === 0 || v === 0.7 || v === 0.5 + 0.2 || v === 0.35 || v === 0.85), 'quantize hedefleri swing ızgarasında: ' + JSON.stringify(snap));
+    // geri al: oran %50'ye döner
+    await pause();
+    await page.selectOption('#inSubdiv', 'straight');
+    assert.equal(await S(() => window.__daw.proj.swing.ratio), 0.5);
+    await pause();
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(() => window.__daw.proj.swing.ratio === 0.7, null, { timeout: 5000 });
+    assert.equal(await page.inputValue('#inSwing'), '70');
+    await page.selectOption('#inSubdiv', 'straight');
+    return `oran %70: bas / davul / akor ghost'ları ${[...new Set(ghostBass)]} / ${[...new Set(ghostDrum)]} / ${[...new Set(ghostKeys)]} · quantize ızgarası ${[...new Set(snap)].join(', ')} · Ctrl+Z`;
   });
 
   await step('Piyano örnekleri: birinci kaynak (github.io) engelliyse jsDelivr aynasından yüklenir; ikisi de yoksa yedek + "Tekrar dene"', async () => {
