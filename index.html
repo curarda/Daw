@@ -271,6 +271,15 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 #bassPanel .st-warn, #bsBarMenu .st-warn { margin: 4px 0; }
 #bsTapPad { min-width: 110px; }
 #bsTapPad.hit { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.bs-stat { width: 100%; border-collapse: collapse; font-size: 11px; }
+.bs-stat th, .bs-stat td { border-bottom: 1px solid var(--line); padding: 2px 4px; text-align: left; vertical-align: top; }
+.bs-stat th { color: var(--muted); font-weight: 500; }
+.bs-stat code { letter-spacing: 1px; }
+.bs-prev { max-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; margin: 4px 0; }
+.bs-prev select, .bs-qrow select { padding: 1px 2px; font-size: 11px; }
+.bs-qgrid { display: grid; gap: 2px; margin: 2px 0 6px; }
+.bs-qgrid input { width: 100%; min-width: 0; padding: 2px 3px; font-size: 11px; text-align: center; }
+.bs-qgrid input.beat { border-color: var(--accent2); }
 </style>
 </head>
 <body>
@@ -4101,7 +4110,7 @@ function defaultBassSection(type, instrumentType) {
 function defaultBassTrack() {
   return {
     enabled: false, generated: false, volume: 0.8, seed: 1, instrumentType: 'bass-guitar', instrumentPreset: 'Dark pick', layer: null, doubleLow: false,
-    styleProfileId: 'post-punk-drive', styleMix: null, range: Object.assign({}, RANGE_DEFAULT['bass-guitar']),
+    styleProfileId: 'post-punk-drive', styleMix: null, useSampler: false, range: Object.assign({}, RANGE_DEFAULT['bass-guitar']),
     synthGuitarTemplates: false, pump: 0, resonance: null, drive: null,
     sections: {}, bars: [], loops: [], customTemplates: [], profiles: [],
     tap: { grid: '16n', latencyMs: 0, mode: 'asPlayed', loopBars: 1 },
@@ -5116,6 +5125,264 @@ function hitBass(inst, e, time, o = {}) {
   if (!e.tie) inst.noteOff(time + Math.max(0.02, e.dur * (e.gate ?? 1)));
 }
 Object.assign(C.Bass, { BASS_PRESETS, BassSynth, BassSampler, hitBass, mtof });
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// ---------------------------------------------------------------- BAS STİL ÖĞRENME (8d, faz 4): MIDI okuyucu, hızlı giriş, istatistik, profil üretimi
+// DOM'suz. Ses hiçbir zaman nota yazıya çevrilmez; girdi bas izi olan bir MIDI dosyası ya da elle yazılan derecelerdir.
+// Çıktı: bass.js'teki profil biçimi { id, name, templateWeights, roles, rolesByEnergy{low,mid,high}, leapLimit, legato, templates[] }.
+(function (root) {
+const C = root.Core, B = C.Bass;
+const { STEP_Q, stepsOf, DEFAULT_ROLES, BASS_TEMPLATES, tapTemplate, hash32 } = B;
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const mod12 = (x) => ((x % 12) + 12) % 12;
+const BUCKETS = ['low', 'mid', 'high'];
+const BUCKET_E = { low: 0.17, mid: 0.5, high: 0.83 };
+const METERS = { '4/4': 1, '3/4': 1, '6/8': 1, '2/4': 1 };
+
+// ---------------------------------------------------------------- 1) MIDI okuyucu (süreli: nota başlangıcı + bitişi; tempo ve ölçü bilgisi)
+function readMidi(bytes) {
+  const d = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const str = (o, n) => String.fromCharCode(...d.slice(o, o + n));
+  if (d.length < 14 || str(0, 4) !== 'MThd') throw new Error('Geçerli bir MIDI dosyası değil (MThd yok).');
+  const ntr = (d[10] << 8) | d[11], div = (d[12] << 8) | d[13];
+  if (div & 0x8000) throw new Error('SMPTE zamanlı MIDI desteklenmiyor (çeyreklik bölüm gerekir).');
+  let p = 8 + ((d[4] << 24) | (d[5] << 16) | (d[6] << 8) | d[7]);
+  const out = { division: div, tempo: null, timeSig: null, tracks: [] };
+  for (let t = 0; t < ntr && p + 8 <= d.length; t++) {
+    if (str(p, 4) !== 'MTrk') { p += 8 + ((d[p + 4] << 24) | (d[p + 5] << 16) | (d[p + 6] << 8) | d[p + 7]); t--; if (p >= d.length) break; continue; }
+    const len = ((d[p + 4] << 24) | (d[p + 5] << 16) | (d[p + 6] << 8) | d[p + 7]) >>> 0;
+    p += 8; const end = Math.min(d.length, p + len);
+    const rv = () => { let v = 0, b; do { b = d[p++]; v = (v << 7) | (b & 0x7f); } while (b & 0x80 && p < end); return v; };
+    let tick = 0, run = 0, name = '';
+    const open = new Map(), notes = [];
+    while (p < end) {
+      tick += rv();
+      let st = d[p];
+      if (st === 0xff) {
+        p++; const type = d[p++], l = rv();
+        if (type === 0x03) name = new TextDecoder().decode(d.slice(p, p + l));
+        else if (type === 0x51 && l === 3 && out.tempo == null) out.tempo = Math.round(60e6 / ((d[p] << 16) | (d[p + 1] << 8) | d[p + 2]) * 100) / 100;
+        else if (type === 0x58 && l >= 2 && !out.timeSig) out.timeSig = { num: d[p], den: 2 ** d[p + 1] };
+        p += l; continue;
+      }
+      if (st === 0xf0 || st === 0xf7) { p++; const l = rv(); p += l; continue; }
+      if (st & 0x80) { run = st; p++; } else st = run;
+      const hi = st & 0xf0, ch = st & 0x0f;
+      if (hi === 0x90 || hi === 0x80) {
+        const n = d[p++], v = d[p++], key = ch * 128 + n;
+        if (hi === 0x90 && v > 0) { if (!open.has(key)) open.set(key, []); open.get(key).push({ tick, midi: n, vel: v, ch }); }
+        else { const q = open.get(key); if (q && q.length) { const o = q.shift(); notes.push({ tick: o.tick, dur: Math.max(1, tick - o.tick), midi: o.midi, vel: o.vel, ch }); } }
+      } else if (hi === 0xc0 || hi === 0xd0) p += 1; else p += 2;
+    }
+    for (const q of open.values()) for (const o of q) notes.push({ tick: o.tick, dur: div / 4, midi: o.midi, vel: o.vel, ch: o.ch }); // bitişi olmayan nota: 16'lık
+    p = end;
+    notes.sort((a, b) => a.tick - b.tick || a.midi - b.midi);
+    out.tracks.push({ index: out.tracks.length, name, notes, channels: [...new Set(notes.map((n) => n.ch))] });
+  }
+  return out;
+}
+// bas izi tahmini: perdesi en alçak, tek sesli ve notası yeterli iz (kanal 10 / davul hariç)
+function guessBassTrack(m) {
+  let best = null, bestScore = -1;
+  for (const t of m.tracks) {
+    const ns = t.notes.filter((n) => n.ch !== 9); if (ns.length < 4) continue;
+    const mean = ns.reduce((a, n) => a + n.midi, 0) / ns.length, name = /bas|bass/i.test(t.name) ? 40 : 0;
+    const score = name + (70 - mean) + Math.min(10, ns.length / 20);
+    if (score > bestScore) { bestScore = score; best = t.index; }
+  }
+  return best;
+}
+
+// ---------------------------------------------------------------- 2) Ölçülere böl (16'lık ızgara); ölçünün kökü = 1. vuruştaki en alçak nota
+function meterOf(m, override) {
+  if (override && METERS[override]) return override;
+  const ts = m && m.timeSig; if (!ts) return '4/4';
+  const s = `${ts.num}/${ts.den}`; return METERS[s] ? s : '4/4';
+}
+function midiBars(m, trackIndex, o = {}) {
+  const tr = m.tracks[trackIndex]; if (!tr) throw new Error('İz yok.');
+  const meter = meterOf(m, o.meter), steps = stepsOf(meter), barQ = steps * STEP_Q;
+  const mono = new Map();
+  for (const n of tr.notes) {
+    if (n.ch === 9) continue;
+    const q = n.tick / m.division; let bar = Math.floor(q / barQ + 1e-9), step = Math.round((q - bar * barQ) / STEP_Q);
+    if (step >= steps) { bar++; step = 0; }
+    const key = bar * 64 + step, cur = mono.get(key);
+    if (!cur || n.midi < cur.midi) mono.set(key, { bar, step, midi: n.midi, vel: n.vel, dur: n.dur / m.division / STEP_Q });
+  }
+  const byBar = new Map();
+  for (const x of mono.values()) { if (!byBar.has(x.bar)) byBar.set(x.bar, []); byBar.get(x.bar).push(x); }
+  const bars = [...byBar.keys()].sort((a, b) => a - b).map((i) => {
+    const notes = byBar.get(i).sort((a, b) => a.step - b.step);
+    return { index: i, notes: notes.map((n) => ({ step: n.step, midi: n.midi, vel: n.vel, dur: n.dur })), root: null };
+  });
+  for (const b of bars) b.root = autoRoot(b);
+  return { meter, steps, bars, bpm: m.tempo };
+}
+function autoRoot(bar) {
+  const first = bar.notes.filter((n) => n.step === 0);
+  const pool = first.length ? first : bar.notes.filter((n) => n.step <= 1).length ? bar.notes.filter((n) => n.step <= 1) : bar.notes;
+  return pool.length ? mod12(Math.min(...pool.map((n) => n.midi))) : 0;
+}
+
+// ---------------------------------------------------------------- 3) Hızlı giriş: 16'lık adım başına derece ("1", "b3", "5'", "7,", "8"; "." sus, boş = tut)
+function parseDegree(s) {
+  const m = /^([b#]?)([1-9])([',]*)$/.exec(String(s || '').trim()); if (!m) return null;
+  const base = { 1: 0, 2: 2, 3: 4, 4: 5, 5: 7, 6: 9, 7: 11, 8: 12, 9: 14 }[m[2]];
+  let v = base + (m[1] === 'b' ? -1 : m[1] === '#' ? 1 : 0);
+  for (const c of m[3]) v += c === "'" ? 12 : -12;
+  return v;
+}
+function quickBars(rows, meter = '4/4') {
+  const steps = stepsOf(meter), errors = [];
+  const bars = rows.map((r, bi) => {
+    const notes = [];
+    let cur = null;
+    for (let s = 0; s < steps; s++) {
+      const c = String((r.cells || [])[s] ?? '').trim();
+      if (c === '') { if (cur) cur.dur++; continue; }
+      if (c === '.') { cur = null; continue; }
+      const iv = parseDegree(c);
+      if (iv == null) { errors.push(`${bi + 1}. satır, ${s + 1}. adım: "${c}" anlaşılmadı (örn. 1, b3, 5, 7, 1', 5,)`); cur = null; continue; }
+      cur = { step: s, midi: 40 + iv, vel: 96, dur: 1 };
+      notes.push(cur);
+    }
+    return { index: bi, notes, root: 4, energy: r.energy || null }; // kök sabit (E): derece tabanlı
+  }).filter((b) => b.notes.length);
+  return { meter, steps, bars, errors };
+}
+
+// ---------------------------------------------------------------- 4) Enerji kovaları (verilmediyse ölçü başına nota yoğunluğunun üçte birlikleri)
+function assignBuckets(bars) {
+  const have = bars.every((b) => BUCKETS.includes(b.energy));
+  if (have) return bars.map((b) => b.energy);
+  const cnt = bars.map((b) => b.notes.length), sorted = cnt.slice().sort((a, b) => a - b), n = sorted.length;
+  const tLow = sorted[Math.floor((n - 1) / 3)], tHigh = sorted[Math.ceil((2 * (n - 1)) / 3)];
+  return bars.map((b, i) => (BUCKETS.includes(b.energy) ? b.energy : tLow < tHigh ? (cnt[i] <= tLow ? 'low' : cnt[i] >= tHigh ? 'high' : 'mid') : 'mid'));
+}
+
+// ---------------------------------------------------------------- 5) İstatistik
+const PRIOR_N = 6; // her rol dağılımına varsayılan ağırlıktan eklenen sanal örnek: az veride profil uç değerlere kaçmaz
+const ROLE_KEYS = { strong: ['root', 'fifth', 'octave', 'third'], weak: ['repeat', 'step', 'fifth', 'octave'], pickup: ['approach-d', 'approach-c', 'fifth'] };
+const emptyCounts = () => ({ strong: { root: 0, fifth: 0, octave: 0, third: 0, other: 0 }, weak: { repeat: 0, step: 0, fifth: 0, octave: 0 }, pickup: { 'approach-d': 0, 'approach-c': 0, fifth: 0 }, anchor: { root: 0, other: 0 } });
+function analyze(input, o = {}) {
+  const { bars, steps } = input, meter = input.meter, stride = meter === '6/8' ? 6 : 4;
+  const bucketOf = assignBuckets(bars);
+  const by = {};
+  for (const k of BUCKETS) by[k] = { bars: 0, notes: 0, onsetCount: new Array(steps).fill(0), counts: emptyCounts(), leaps: [], legatoSum: 0, legatoN: 0, intervals: 0 };
+  const patterns = new Map();
+  bars.forEach((bar, bi) => {
+    const k = bucketOf[bi], S = by[k], ns = bar.notes;
+    S.bars++; S.notes += ns.length;
+    const next = bars[bi + 1] && bars[bi + 1].index === bar.index + 1 ? bars[bi + 1] : null;
+    const prevBar = bars[bi - 1] && bars[bi - 1].index === bar.index - 1 ? bars[bi - 1] : null;
+    const lowRoot = Math.min(...ns.filter((n) => mod12(n.midi - bar.root) === 0).map((n) => n.midi), Infinity);
+    ns.forEach((n, j) => {
+      S.onsetCount[n.step]++;
+      const iv = mod12(n.midi - bar.root), prev = j > 0 ? ns[j - 1] : prevBar ? prevBar.notes[prevBar.notes.length - 1] : null;
+      const last = j === ns.length - 1, nextStep = last ? steps : ns[j + 1].step, gap = Math.max(1, nextStep - n.step);
+      S.legatoSum += clamp(n.dur / gap, 0, 1); S.legatoN++;
+      if (j > 0) { const dm = Math.abs(n.midi - ns[j - 1].midi); S.leaps.push(dm); S.intervals++; }
+      const pickup = last && next && mod12(next.root - bar.root) !== 0 && n.step >= steps - 4 && j > 0;
+      if (j === 0 && n.step === 0) { S.counts.anchor[iv === 0 ? 'root' : 'other']++; return; }
+      if (pickup) {
+        const dn = mod12(n.midi - next.root), c = dn === 1 || dn === 11 ? 'approach-c' : dn === 2 || dn === 10 ? 'approach-d' : 'fifth';
+        S.counts.pickup[c]++; return;
+      }
+      if (n.step % stride === 0) {
+        const c = iv === 0 ? (n.midi >= lowRoot + 12 ? 'octave' : 'root') : iv === 7 ? 'fifth' : iv === 3 || iv === 4 ? 'third' : 'other';
+        S.counts.strong[c]++; return;
+      }
+      const dm = prev ? Math.abs(n.midi - prev.midi) : 99;
+      const c = dm === 0 ? 'repeat' : dm <= 2 ? 'step' : iv === 7 ? 'fifth' : iv === 0 ? 'octave' : 'step';
+      S.counts.weak[c]++;
+    });
+    const key = ns.map((n) => n.step).join(',');
+    if (!patterns.has(key)) patterns.set(key, { key, steps: ns.map((n) => n.step), bars: [], lens: ns.map(() => []) });
+    const P = patterns.get(key); P.bars.push(bi);
+    ns.forEach((n, j) => { const nextStep = j === ns.length - 1 ? steps : ns[j + 1].step; P.lens[j].push(clamp(Math.round(n.dur), 1, nextStep - n.step)); });
+  });
+  return { by, bucketOf, patterns, steps, meter };
+}
+
+// sayımları yüzdeye çevir: varsayılan profil önsel olarak karışır
+function rolePercent(counts, role, prior) {
+  const keys = ROLE_KEYS[role], n = keys.reduce((a, k) => a + counts[k], 0), tot = keys.reduce((a, k) => a + (prior[k] || 0), 0) || 1, out = {};
+  for (const k of keys) out[k] = Math.round(1000 * ((counts[k] + (PRIOR_N * (prior[k] || 0)) / tot) / (n + PRIOR_N))) / 10;
+  return out;
+}
+const sumCounts = (list, role) => { const o = {}; for (const k of ROLE_KEYS[role]) o[k] = list.reduce((a, c) => a + c[role][k], 0); return o; };
+
+// ---------------------------------------------------------------- 6) Profil üret
+function buildProfile(input, o = {}) {
+  const A = analyze(input, o), { by, patterns, steps } = A;
+  const total = BUCKETS.reduce((a, k) => a + by[k].bars, 0);
+  if (!total) throw new Error('Analiz edilecek nota yok.');
+  const name = String(o.name || '').trim() || 'Öğrenilen stil';
+  const id = o.id || 'learned-' + hash32(name + total + (o.salt ?? Date.now())).toString(36);
+  const allCounts = BUCKETS.map((k) => by[k].counts);
+  const mk = (countsList) => {
+    const r = {};
+    for (const role of ['strong', 'weak', 'pickup']) r[role] = rolePercent(sumCounts(countsList, role), role, DEFAULT_ROLES[role]);
+    return r;
+  };
+  const rolesAll = Object.assign({}, DEFAULT_ROLES, mk(allCounts));
+  const rolesByEnergy = {};
+  for (const k of BUCKETS) rolesByEnergy[k] = Object.assign({}, DEFAULT_ROLES, by[k].bars ? mk([by[k].counts]) : mk(allCounts));
+  // sıçrama sınırı: ölçü içi aralıkların %95'i; legato: not süresi / bir sonraki vuruşa uzaklık ortalaması
+  const leaps = BUCKETS.flatMap((k) => by[k].leaps).sort((a, b) => a - b);
+  const leapLimit = leaps.length >= 8 ? clamp(leaps[Math.min(leaps.length - 1, Math.floor(leaps.length * 0.95))], 5, 24) : 12;
+  const legN = BUCKETS.reduce((a, k) => a + by[k].legatoN, 0), legato = legN ? clamp(BUCKETS.reduce((a, k) => a + by[k].legatoSum, 0) / legN, 0.3, 1) : 0.92;
+  // vuruş yoğunluğu: tüm kovalar birlikte, kova başına ayrı da saklanır
+  const onsetFreq = (S) => S.onsetCount.map((c) => (S.bars ? c / S.bars : 0));
+  const overall = new Array(steps).fill(0).map((_, i) => BUCKETS.reduce((a, k) => a + by[k].onsetCount[i], 0) / total);
+  // kalıplar → şablon: en sık görülen tek ölçülük vuruş desenleri
+  const meter = input.meter, builtinSets = BASS_TEMPLATES.filter((t) => t.meter === meter).map((t) => ({ t, key: t.slots.map((s) => s.step).sort((a, b) => a - b).join(',') }));
+  const ranked = [...patterns.values()].sort((a, b) => b.bars.length - a.bars.length || a.key.localeCompare(b.key));
+  const minCount = total >= 4 ? 2 : 1, templates = [], boost = {};
+  const familyOf = (n) => (n <= 2 ? 'drone' : n <= 5 ? 'walk' : n <= 9 ? 'drive' : 'roll');
+  for (const P of ranked) {
+    if (P.bars.length < minCount || templates.length >= 3) break;
+    const same = builtinSets.find((x) => x.key === P.key);
+    if (same) { boost[same.t.id] = Math.max(boost[same.t.id] || 1, 1 + Math.min(4, P.bars.length)); continue; }
+    const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+    const slots = P.steps.map((st, j) => ({ step: st, len: med(P.lens[j]) }));
+    const avgE = P.bars.reduce((a, bi) => a + BUCKET_E[A.bucketOf[bi]], 0) / P.bars.length;
+    const t = tapTemplate(`${id}-t${templates.length + 1}`, `${name} ${templates.length + 1}`, meter, slots, { custom: false, learned: true, family: familyOf(slots.length), window: [clamp(avgE - 0.38, 0, 1), clamp(avgE + 0.38, 0, 1)] });
+    templates.push(t);
+  }
+  // yerleşik şablonlar: her kovanın adım başına vuruş sıklığıyla ağırlıklı Jaccard benzerliği (Σmin / Σmax) → ağırlık; en iyi kova sayılır
+  const templateWeights = {};
+  const freqs = BUCKETS.filter((k) => by[k].bars).map((k) => onsetFreq(by[k]));
+  for (const t of BASS_TEMPLATES) {
+    if (t.meter !== meter) continue;
+    const on = new Set(t.slots.map((s) => s.step));
+    let J = 0;
+    for (const f of freqs) {
+      let mn = 0, mx = 0;
+      f.forEach((x, i) => { const y = on.has(i) ? 1 : 0; mn += Math.min(x, y); mx += Math.max(x, y); });
+      J = Math.max(J, mx ? mn / mx : 0);
+    }
+    templateWeights[t.id] = clamp((0.1 + 12 * J * J) * (boost[t.id] || 1), 0.1, 12);
+  }
+  for (const t of templates) templateWeights[t.id] = 12;
+  const bucketStats = {};
+  for (const k of BUCKETS) {
+    const S = by[k], c = S.counts;
+    const n3 = S.leaps.length;
+    bucketStats[k] = {
+      bars: S.bars, notes: S.notes, density: S.bars ? S.notes / S.bars : 0, onsetFreq: onsetFreq(S).map((x) => Math.round(x * 100) / 100),
+      leapOver7: n3 ? S.leaps.filter((x) => x > 7).length / n3 : 0, leapMax: n3 ? Math.max(...S.leaps) : 0, legato: S.legatoN ? S.legatoSum / S.legatoN : null,
+      roles: { strong: rolesByEnergy[k].strong, weak: rolesByEnergy[k].weak, pickup: rolesByEnergy[k].pickup }, counts: c, ignoredStrong: c.strong.other,
+    };
+  }
+  return {
+    id, name, builtin: false, learned: true, templateWeights, roles: rolesAll, rolesByEnergy, synthRoles: null, leapLimit, legato, templates,
+    source: { kind: o.kind || 'midi', bars: total, meter }, stats: bucketStats,
+  };
+}
+
+Object.assign(B, { readMidi, guessBassTrack, midiBars, autoRoot, parseDegree, quickBars, assignBuckets, analyzeStyle: analyze, buildProfile, LEARN_BUCKETS: BUCKETS });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // ---------------------------------------------------------------- ZAMANLAMA: quantize, nota kaydırma (flex), tap ile ızgara
@@ -8681,7 +8948,7 @@ $('#btnNew').onclick = () => {
   if (S.audio && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
   Player.stop(true);
   S.proj = C.newProject(); S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
-  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null;
+  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   syncInputs(); refresh(); status('Yeni proje.');
 };
 $('#btnSave').onclick = () => saveProject();
@@ -8760,7 +9027,7 @@ async function openProject(file) {
   const audioData = p.audioData;
   delete p.audioData; delete p.savedAt;
   S.proj = mergeDefaults(C.newProject(), p);
-  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null;
+  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   if (audioData) {
     const w = C.decodeWav(C.base64ToBytes(audioData.wavBase64).buffer);
@@ -9129,6 +9396,7 @@ function bassNormalize() {
   for (const k of ['bars', 'loops', 'customTemplates', 'profiles']) if (!Array.isArray(t[k])) t[k] = [];
   if (!t.sections || typeof t.sections !== 'object') t.sections = {};
   S.proj.mixer.bass = S.proj.mixer.bass || { vol: -4, mute: false, solo: false };
+  bassMergeStoredProfiles();
 }
 function bassSyncUI() {
   bassNormalize();
@@ -9165,7 +9433,10 @@ const selBars = () => { if (!BS.sel) return []; const a = []; for (let i = BS.se
 function makeBassVoices(tr, ctx, connect) {
   const follow = tr.instrumentType === 'synth';
   const mk = (preset, vol) => { const s = new Bs.BassSynth(ctx, { preset, volume: vol, follow }); connect(s.output); return s; };
-  const voices = [{ inst: mk(tr.instrumentPreset, tr.volume), octave: 0, below: null }];
+  let main;
+  if (tr.useSampler && BS.bank.samples.length) { const sm = new Bs.BassSampler(ctx, { volume: tr.volume }); sm.load(BS.bank.samples, BS.bank.releases); connect(sm.output); main = sm; }
+  else main = mk(tr.instrumentPreset, tr.volume);
+  const voices = [{ inst: main, octave: 0, below: null }];
   if (tr.layer && tr.layer.preset && tr.layer.preset !== 'none') voices.push({ inst: mk(tr.layer.preset, tr.volume * 0.9), octave: tr.layer.octaveOffset || 0, below: null });
   if (tr.doubleLow) voices.push({ inst: mk(tr.instrumentPreset, tr.volume * 0.3), octave: 12, below: 31 }); // 31'in altı: bir oktav yukarısı %30 seviyede ikilenir
   return voices;
@@ -9248,7 +9519,7 @@ function loadDemoSong() {
   p.guitar = C.defaultGuitarState('4/4'); p.guitar.instrument = 'piano';
   bassNormalize();
   p.bass.enabled = true;
-  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.sec = null;
+  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.sec = null; BS.lsMerged = false;
   syncInputs(); refresh();
   const t = bTrack(); Bs.bassGenerateAll(t, bCtx());
   renderBass(); drawBass(); renderInfo();
@@ -9487,6 +9758,7 @@ function bassPanelHtml() {
     ${bsl('vol', 'Ses seviyesi', 0, 100, Math.round(t.volume * 100), (x) => x + '%')}
     <div class="gsub"><span>Mikser</span>${bchip('mute', 'm', 'M', m.mute, ' title="Sustur"')}${bchip('solo', 's', 'S', m.solo, ' title="Solo"')}</div>
     <div class="gsub"><span>Katman</span><select data-bs="layerPreset"><option value="none">Yok</option>${Object.keys(Bs.BASS_PRESETS).map((p) => `<option${t.layer && t.layer.preset === p ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select>${[[-12, '−12'], [0, '0'], [12, '+12']].map(([v, l]) => bchip('layerOct', v, l, (t.layer ? t.layer.octaveOffset : 0) === v, t.layer && t.layer.preset !== 'none' ? '' : ' disabled')).join('')}</div>
+    ${samplerHtml()}
     <div class="gsub"><span>Düşük notalar</span>${bchip('dbl', 'd', t.doubleLow ? 'MIDI 31 altı oktav yukarı ikilenir (%30)' : 'İkileme kapalı', t.doubleLow)}</div>
     ${synth ? `${bsl('pump', 'Pompa (tempo senkron)', 0, 60, Math.round(t.pump * 100), (x) => x + '%')}
       <div class="gsub"><span>Rezonans</span>${t.resonance == null ? bchip('resAuto', 'a', 'Oto (enerji)', true) : bsl('res', '', 0, 100, Math.round(t.resonance * 100), (x) => x + '%') + bchip('resAuto', 'a', 'Oto', false)}${t.resonance == null ? bchip('resMan', 'm', 'Elle', false) : ''}</div>
@@ -9792,8 +10064,209 @@ function bassTapChange(el) {
   return false;
 }
 
+// ---------------------------------------------------------------- STİL ÖĞRENME (MIDI içe aktar / hızlı giriş) + profil saklama
+// Ses nota yazıya çevrilmez: girdi bas izi olan bir MIDI dosyası ya da elle yazılan derecelerdir.
+const LS_PROFILES = 'dawBassProfiles';
+const lsRead = () => { try { const a = JSON.parse(localStorage.getItem(LS_PROFILES) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
+const lsWrite = (a) => { try { localStorage.setItem(LS_PROFILES, JSON.stringify(a)); } catch (e) { /* özel pencere / kota: yalnızca projede kalır */ } };
+// proje açılınca / yenilenince bir kez: tarayıcıda saklı profilleri projeye ekle (aynı kimlik varsa projedeki kalır)
+function bassMergeStoredProfiles() {
+  if (BS.lsMerged) return;
+  BS.lsMerged = true;
+  const t = S.proj.bass; if (!t) return;
+  for (const p of lsRead()) if (p && p.id && p.templateWeights && !t.profiles.some((x) => x.id === p.id)) t.profiles.push(p);
+}
+BS.learn = { mode: 'midi', fileName: '', midi: null, track: 0, meter: null, parsed: null, from: 1, to: 1, rows: 4, quick: [], name: '', result: null, error: '' };
+const LN = BS.learn;
+const energyTR = { low: 'düşük', mid: 'orta', high: 'yüksek' };
+const SPARK = '▁▂▃▄▅▆▇█';
+const spark = (f) => f.map((x) => (x <= 0 ? '·' : SPARK[Math.min(7, Math.floor(x * 7.999))])).join('');
+const quickSteps = () => Bs.stepsOf(S.proj.settings.meter);
+function learnEnsureQuick() {
+  const n = quickSteps();
+  while (LN.quick.length < LN.rows) LN.quick.push({ cells: new Array(n).fill(''), energy: 'mid' });
+  LN.quick.length = LN.rows;
+  for (const r of LN.quick) { while (r.cells.length < n) r.cells.push(''); r.cells.length = n; }
+}
+function learnParse() {
+  LN.result = null; LN.error = '';
+  if (!LN.midi) return;
+  try {
+    const tr = LN.midi.tracks[LN.track];
+    if (!tr || !tr.notes.length) { LN.parsed = null; LN.error = 'Bu izde nota yok.'; return; }
+    LN.parsed = Bs.midiBars(LN.midi, LN.track, { meter: LN.meter || undefined });
+    if (!LN.meter) LN.meter = LN.parsed.meter;
+    const idx = LN.parsed.bars.map((b) => b.index + 1);
+    LN.from = Math.min(...idx); LN.to = Math.max(...idx);
+  } catch (e) { LN.parsed = null; LN.error = e.message; }
+}
+async function learnLoadFile(file) {
+  try {
+    LN.midi = Bs.readMidi(new Uint8Array(await file.arrayBuffer()));
+    LN.fileName = file.name;
+    const g = Bs.guessBassTrack(LN.midi);
+    LN.track = g ?? Math.max(0, LN.midi.tracks.findIndex((t) => t.notes.length));
+    LN.meter = null; learnParse();
+    if (!LN.error) status(`${file.name}: ${LN.midi.tracks.length} iz, bas izi tahmini: ${LN.midi.tracks[LN.track].name || LN.track + 1}. Köklere göz at, gerekirse düzelt, sonra "Analiz et".`);
+  } catch (e) { LN.midi = null; LN.parsed = null; LN.error = e.message; status('MIDI okunamadı: ' + e.message, 'err'); }
+  renderBass();
+}
+function learnInput() {
+  if (LN.mode === 'midi') {
+    if (!LN.parsed) return null;
+    const bars = LN.parsed.bars.filter((b) => b.index + 1 >= LN.from && b.index + 1 <= LN.to);
+    return { meter: LN.parsed.meter, steps: LN.parsed.steps, bars, kind: 'midi' };
+  }
+  learnEnsureQuick();
+  const q = Bs.quickBars(LN.quick, S.proj.settings.meter);
+  if (q.errors.length) { LN.error = q.errors[0] + (q.errors.length > 1 ? ` (+${q.errors.length - 1} hata)` : ''); return null; }
+  LN.error = '';
+  return { meter: q.meter, steps: q.steps, bars: q.bars, kind: 'quick' };
+}
+function learnAnalyze() {
+  LN.result = null;
+  const inp = learnInput();
+  if (!inp) { renderBass(); if (LN.error) status(LN.error, 'err'); return; }
+  if (!inp.bars.length) { LN.error = 'Analiz edilecek nota yok.'; status(LN.error, 'err'); renderBass(); return; }
+  LN.error = '';
+  try { LN.result = Bs.buildProfile(inp, { name: LN.name || (LN.mode === 'midi' ? (LN.fileName || 'Öğrenilen stil').replace(/\.[^.]+$/, '') : 'El ile stil'), kind: inp.kind, id: 'learned-' + Bs.hash32(String(Date.now()) + Math.random()).toString(36) }); }
+  catch (e) { LN.error = e.message; status(e.message, 'err'); }
+  if (LN.result) status(`Analiz tamam: ${LN.result.source.bars} ölçü, ${LN.result.templates.length} yeni şablon. Adı kontrol edip kaydet.`);
+  renderBass();
+}
+function learnSave(apply) {
+  const p = LN.result; if (!p) return;
+  if (LN.name.trim()) p.name = LN.name.trim();
+  bsDo((tr, ctx) => {
+    tr.profiles = tr.profiles.filter((x) => x.id !== p.id); tr.profiles.push(JSON.parse(JSON.stringify(p)));
+    if (apply) { tr.styleProfileId = p.id; tr.styleMix = null; Bs.bassGenerateAll(tr, ctx); }
+  }, apply ? `"${p.name}" kaydedildi ve uygulandı; kilitsiz ölçüler bu stille yeniden üretildi.` : `"${p.name}" kaydedildi (Stil listesinden seçilebilir).`);
+  lsWrite(lsRead().filter((x) => x.id !== p.id).concat([JSON.parse(JSON.stringify(p))]));
+  LN.result = null;
+  renderBass();
+}
+function learnDelete() {
+  const t = bTrack(), id = t.styleProfileId, p = t.profiles.find((x) => x.id === id); if (!p) return;
+  bsDo((tr, ctx) => { tr.profiles = tr.profiles.filter((x) => x.id !== id); if (tr.styleMix && tr.styleMix.profileB === id) tr.styleMix = null; tr.styleProfileId = Bs.BUILTIN_PROFILES[0].id; Bs.bassGenerateAll(tr, ctx); }, `"${p.name}" silindi; Post-punk drive'a dönüldü.`);
+  lsWrite(lsRead().filter((x) => x.id !== id));
+}
+function learnResultHtml() {
+  const P = LN.result; if (!P) return '';
+  const cols = Bs.LEARN_BUCKETS, st = P.stats;
+  const pct = (o) => Object.entries(o).map(([k, v]) => `${k.replace('approach-', 'yaklaşma-')} ${Math.round(v)}`).join(' · ');
+  const row = (label, f) => `<tr><th>${label}</th>${cols.map((k) => `<td>${st[k].bars ? f(st[k], k) : '<span class="hint">—</span>'}</td>`).join('')}</tr>`;
+  return `<div class="adv-opt"><div class="gtitle">Analiz: ${esc(P.name)}</div>
+    <table class="bs-stat"><tr><th></th>${cols.map((k) => `<th>${energyTR[k]}</th>`).join('')}</tr>
+    ${row('ölçü', (s) => s.bars)}${row('nota / ölçü', (s) => s.density.toFixed(1))}
+    ${row('vuruş sıklığı (16\'lık)', (s) => `<code>${spark(s.onsetFreq)}</code>`)}
+    ${row('sağlam vuruş', (s) => pct(s.roles.strong))}${row('zayıf vuruş', (s) => pct(s.roles.weak))}${row('öncül (ölçü sonu)', (s) => pct(s.roles.pickup))}
+    ${row('7 yarım tondan büyük sıçrama', (s) => Math.round(s.leapOver7 * 100) + '%')}${row('legato', (s) => (s.legato == null ? '—' : Math.round(s.legato * 100) + '%'))}</table>
+    <div class="hint">Sıçrama sınırı ${P.leapLimit} yarım ton · genel legato ${Math.round(P.legato * 100)}%${cols.some((k) => st[k].ignoredStrong) ? ' · sağlam vuruşta üçlü/beşli/oktav dışı notalar sayılmadı' : ''}</div>
+    <div class="hint">${P.templates.length ? 'Yeni şablonlar: ' + P.templates.map((t) => `<code>${esc(t.name)} ${spark(Array.from({ length: P.source.meter === '4/4' ? 16 : 12 }, (_, i) => (t.slots.some((s) => s.step === i) ? 1 : 0)))}</code>`).join(' ') : 'Sık desenler zaten yerleşik şablonlarda var: onların ağırlığı yükseltildi.'}</div>
+    <div class="row"><label class="grow">Profil adı<input type="text" data-bs="lName" value="${esc(LN.name || P.name)}"></label></div>
+    <div class="row"><button class="accent small" data-bk="learnSave" data-bv="1">Kaydet ve uygula</button><button class="small" data-bk="learnSave" data-bv="0">Yalnızca kaydet</button></div></div>`;
+}
+function bassLearnHtml() {
+  learnEnsureQuick();
+  const mode = bchip('lmode', 'midi', 'MIDI içe aktar', LN.mode === 'midi') + bchip('lmode', 'quick', 'Hızlı giriş', LN.mode === 'quick');
+  let body;
+  if (LN.mode === 'midi') {
+    const m = LN.midi, P = LN.parsed;
+    const tracks = m ? `<label>Bas izi<select data-bs="lTrack">${m.tracks.map((t, i) => `<option value="${i}"${i === LN.track ? ' selected' : ''}>${i + 1}. ${esc(t.name || 'adsız')} (${t.notes.length} nota)</option>`).join('')}</select></label>
+      <div class="gsub"><span>Ölçü</span>${['4/4', '3/4', '6/8', '2/4'].map((x) => bchip('lmeter', x, x, LN.meter === x)).join('')}<span>Aralık</span><input type="number" data-bs="lFrom" min="1" value="${LN.from}" style="width:56px"> – <input type="number" data-bs="lTo" min="1" value="${LN.to}" style="width:56px"></div>` : '';
+    let table = '';
+    if (P) {
+      const buckets = Bs.assignBuckets(P.bars.filter((b) => b.index + 1 >= LN.from && b.index + 1 <= LN.to)), shown = P.bars.filter((b) => b.index + 1 >= LN.from && b.index + 1 <= LN.to);
+      table = `<div class="bs-prev"><table class="bs-stat"><tr><th>Ölçü</th><th>Kök</th><th>Vuruşlar</th><th>Enerji</th></tr>${shown.slice(0, 400).map((b, i) => {
+        const on = new Array(P.steps).fill('·'); b.notes.forEach((n) => { on[n.step] = 'x'; });
+        return `<tr><td>${b.index + 1}</td><td><select data-bs="lRoot" data-i="${P.bars.indexOf(b)}">${PCS.map((x, k) => `<option value="${k}"${b.root === k ? ' selected' : ''}>${x}</option>`).join('')}</select></td><td><code>${on.join('')}</code></td><td>${energyTR[buckets[i]]}</td></tr>`;
+      }).join('')}</table></div><div class="hint">Kök = ölçünün 1. vuruşundaki en alçak nota; yanlışsa değiştir. Enerji, ölçü başına nota sayısının üçte birliklerinden (düşük / orta / yüksek) gelir.</div>`;
+    }
+    body = `<div class="row"><button class="small" data-bk="learnPick">MIDI dosyası seç…</button><span class="hint">${LN.fileName ? esc(LN.fileName) + (m && m.tempo ? ` · ${m.tempo} BPM` : '') : 'bas izi olan .mid'}</span></div>${tracks}${table}`;
+  } else {
+    const n = quickSteps();
+    body = `<div class="hint">Her kutuya o 16'lık adımda çalınan notanın derecesini yaz (akor köküne göre): <code>1</code> kök, <code>5</code> beşli, <code>b3</code>, <code>b7</code>, <code>8</code> oktav, <code>5'</code> bir oktav yukarı, <code>7,</code> bir oktav aşağı. <code>.</code> sus, boş kutu = notayı tut.</div>
+      <div class="gsub"><span>Ölçü sayısı</span>${[2, 4, 8].map((v) => bchip('lrows', v, String(v), LN.rows === v)).join('')}</div>
+      ${LN.quick.map((r, ri) => `<div class="bs-qrow"><div class="gsub"><span>${ri + 1}. ölçü</span><select data-bs="lEnergy" data-r="${ri}">${Bs.LEARN_BUCKETS.map((k) => `<option value="${k}"${r.energy === k ? ' selected' : ''}>enerji: ${energyTR[k]}</option>`).join('')}</select></div>
+        <div class="bs-qgrid" style="grid-template-columns:repeat(${n === 16 ? 8 : 6},1fr)">${r.cells.map((c, ci) => `<input type="text" data-bq="${ri},${ci}" value="${esc(c)}" maxlength="4" title="adım ${ci + 1}${ci % 4 === 0 ? ' (vuruş)' : ''}"${ci % 4 === 0 ? ' class="beat"' : ''}>`).join('')}</div></div>`).join('')}`;
+  }
+  const t = bTrack(), cur = t.profiles.find((p) => p.id === t.styleProfileId);
+  return bgrow('Stil öğren (referans şarkıdan)', `<div class="gsub"><span>Kaynak</span>${mode}</div>${body}
+    <div class="row"><button class="accent small" data-bk="learnAnalyze">Analiz et</button>${cur ? `<button class="small" data-bk="learnDelete" title="Seçili öğrenilmiş profili sil">🗑 "${esc(cur.name)}" sil</button>` : ''}</div>
+    ${LN.error ? `<div class="st-warn">${esc(LN.error)}</div>` : ''}${learnResultHtml()}`);
+}
+function bassLearnAction(k, v) {
+  switch (k) {
+    case 'lmode': LN.mode = v; LN.result = null; LN.error = ''; renderBass(); return true;
+    case 'lmeter': LN.meter = v; learnParse(); renderBass(); return true;
+    case 'lrows': LN.rows = +v; LN.result = null; renderBass(); return true;
+    case 'learnPick': $('#bsMidiFile').click(); return true;
+    case 'learnAnalyze': learnAnalyze(); return true;
+    case 'learnSave': learnSave(v === '1'); return true;
+    case 'learnDelete': learnDelete(); return true;
+    case 'samplePick': $('#bsSampleFiles').click(); return true;
+    case 'sampleUse': bsDo((tr) => { tr.useSampler = !tr.useSampler; }, tr_useMsg()); return true;
+    case 'sampleClear': BS.bank = { samples: [], releases: [], names: [] }; bsDo((tr) => { tr.useSampler = false; }, 'Örnekler temizlendi.'); return true;
+    default: return false;
+  }
+}
+const tr_useMsg = () => (bTrack().useSampler ? 'Örnekçi kapalı: sentez kullanılıyor.' : 'Örnekçi açık: ana ses yüklediğin örneklerden çalar.');
+function bassLearnChange(el) {
+  const k = el.dataset.bs;
+  if (k === 'lTrack') { LN.track = +el.value; LN.meter = null; learnParse(); renderBass(); }
+  else if (k === 'lRoot') { const b = LN.parsed && LN.parsed.bars[+el.dataset.i]; if (b) { b.root = +el.value; LN.result = null; renderBass(); } }
+  else if (k === 'lFrom' || k === 'lTo') { LN[k === 'lFrom' ? 'from' : 'to'] = Math.max(1, Math.round(+el.value) || 1); LN.result = null; renderBass(); }
+  else if (k === 'lName') { LN.name = el.value; if (LN.result) LN.result.name = el.value.trim() || LN.result.name; }
+  else if (k === 'lEnergy') { learnEnsureQuick(); LN.quick[+el.dataset.r].energy = el.value; LN.result = null; }
+}
+$('#bassPanel').addEventListener('input', (e) => {
+  const q = e.target.dataset && e.target.dataset.bq; if (!q) return;
+  const [r, c] = q.split(',').map(Number); learnEnsureQuick(); if (LN.quick[r]) { LN.quick[r].cells[c] = e.target.value; LN.result = null; }
+});
+{
+  const f = document.createElement('input'); f.type = 'file'; f.id = 'bsMidiFile'; f.accept = '.mid,.midi,audio/midi'; f.hidden = true; document.body.appendChild(f);
+  f.addEventListener('change', async () => { const file = f.files[0]; f.value = ''; if (file) await learnLoadFile(file); });
+}
+
+// ---------------------------------------------------------------- ÖRNEKÇİ (kullanıcının kendi örnekleri; bellekte, projeyle kaydedilmez)
+// dosya adından perde: "E1.wav", "bass_A#2_rr1.wav"; adında "rel" geçen = bırakma örneği; aynı perdeden birden çok dosya = dönüşümlü (round-robin)
+BS.bank = { samples: [], releases: [], names: [] };
+function parseSampleName(name) {
+  const base = name.replace(/\.[^.]+$/, ''), rel = /rel/i.test(base);
+  const m = /(?:^|[^A-Za-z])([A-Ga-g])([#b]?)(-?\d)(?!\d)/.exec(base);
+  if (!m) return rel ? { midi: 40, release: true } : null;
+  const pc = { c: 0, d: 2, e: 4, f: 5, g: 7, a: 9, b: 11 }[m[1].toLowerCase()] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0);
+  return { midi: (+m[3] + 1) * 12 + pc, release: rel };
+}
+async function bankLoad(files) {
+  try { await Player.ensure(); } catch (e) { status(e.message, 'err'); return; }
+  const rc = Tone.getContext().rawContext, bad = [];
+  for (const f of files) {
+    const info = parseSampleName(f.name);
+    if (!info) { bad.push(f.name); continue; }
+    try {
+      const buffer = await rc.decodeAudioData(await f.arrayBuffer());
+      (info.release ? BS.bank.releases : BS.bank.samples).push({ midi: info.midi, buffer, name: f.name });
+      BS.bank.names.push(f.name);
+    } catch (e) { bad.push(f.name); }
+  }
+  status(`${BS.bank.samples.length} örnek, ${BS.bank.releases.length} bırakma örneği yüklendi${bad.length ? ` · okunamadı / perde adı yok: ${bad.join(', ')}` : ''}.`, bad.length ? 'err' : undefined);
+  if (BS.bank.samples.length && !bTrack().useSampler) bsDo((tr) => { tr.useSampler = true; });
+  renderBass(); if (Player.playing) { clearTimeout(BS.timer); BS.timer = setTimeout(() => Player.play(), 250); }
+}
+function samplerHtml() {
+  const t = bTrack(), n = BS.bank.samples.length, r = BS.bank.releases.length;
+  const notes = [...new Set(BS.bank.samples.map((s) => s.midi))].sort((a, b) => a - b).map((m) => C.noteName(m)).join(' ');
+  return `<div class="gsub"><span>Örnekçi</span><button class="small" data-bk="samplePick" type="button">Örnek dosyaları yükle…</button>${bchip('sampleUse', 'u', t.useSampler ? 'Açık' : 'Kapalı', !!t.useSampler, n ? '' : ' disabled')}${n ? bchip('sampleClear', 'c', 'Temizle', false) : ''}</div>
+    <div class="hint">${n ? `${n} örnek (${notes}), ${r} bırakma. Aralarda perde kaydırılır; aynı perdeden iki dosya dönüşümlü çalar. Örnekler projeyle kaydedilmez — projeyi açınca yeniden yükle.` : 'Adında perde olan dosyalar (E1.wav, A#2_rr1.wav); "release" geçen dosya bırakma örneği olur.'}${t.useSampler && !n ? ' · örnek yok: sentez çalar' : ''}</div>`;
+}
+{
+  const f = document.createElement('input'); f.type = 'file'; f.id = 'bsSampleFiles'; f.accept = 'audio/*,.wav,.mp3,.ogg,.flac'; f.multiple = true; f.hidden = true; document.body.appendChild(f);
+  f.addEventListener('change', async () => { const files = [...f.files]; f.value = ''; if (files.length) await bankLoad(files); });
+}
+
 // sınamalar için
-window.__dawAPI.bass = { makeVoices: makeBassVoices, hit: bassHit, renderOffline: renderBassOffline, BS, loadDemo: loadDemoSong, ctx: bCtx, tap: { start: tapStart, finish: tapFinish, down: tapDown, up: tapUp, auto: tapAuto, calibDone: tapCalibDone, audioTimeOf } };
+window.__dawAPI.bass = { makeVoices: makeBassVoices, hit: bassHit, renderOffline: renderBassOffline, BS, loadDemo: loadDemoSong, ctx: bCtx, tap: { start: tapStart, finish: tapFinish, down: tapDown, up: tapUp, auto: tapAuto, calibDone: tapCalibDone, audioTimeOf }, learn: LN, bank: () => BS.bank, parseSampleName };
 
 // ---------------------------------------------------------------- başlangıç
 setEditMode('sound'); // varsayılan: notayı sürükleyerek taşı

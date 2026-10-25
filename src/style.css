@@ -259,3 +259,12 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 #bassPanel .st-warn, #bsBarMenu .st-warn { margin: 4px 0; }
 #bsTapPad { min-width: 110px; }
 #bsTapPad.hit { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.bs-stat { width: 100%; border-collapse: collapse; font-size: 11px; }
+.bs-stat th, .bs-stat td { border-bottom: 1px solid var(--line); padding: 2px 4px; text-align: left; vertical-align: top; }
+.bs-stat th { color: var(--muted); font-weight: 500; }
+.bs-stat code { letter-spacing: 1px; }
+.bs-prev { max-height: 190px; overflow: auto; border: 1px solid var(--line); border-radius: 6px; margin: 4px 0; }
+.bs-prev select, .bs-qrow select { padding: 1px 2px; font-size: 11px; }
+.bs-qgrid { display: grid; gap: 2px; margin: 2px 0 6px; }
+.bs-qgrid input { width: 100%; min-width: 0; padding: 2px 3px; font-size: 11px; text-align: center; }
+.bs-qgrid input.beat { border-color: var(--accent2); }

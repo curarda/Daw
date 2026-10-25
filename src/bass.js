@@ -181,7 +181,7 @@ function defaultBassSection(type, instrumentType) {
 function defaultBassTrack() {
   return {
     enabled: false, generated: false, volume: 0.8, seed: 1, instrumentType: 'bass-guitar', instrumentPreset: 'Dark pick', layer: null, doubleLow: false,
-    styleProfileId: 'post-punk-drive', styleMix: null, range: Object.assign({}, RANGE_DEFAULT['bass-guitar']),
+    styleProfileId: 'post-punk-drive', styleMix: null, useSampler: false, range: Object.assign({}, RANGE_DEFAULT['bass-guitar']),
     synthGuitarTemplates: false, pump: 0, resonance: null, drive: null,
     sections: {}, bars: [], loops: [], customTemplates: [], profiles: [],
     tap: { grid: '16n', latencyMs: 0, mode: 'asPlayed', loopBars: 1 },

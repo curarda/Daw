@@ -213,6 +213,38 @@ await step('Gerçek zamanlı oynatma: nota olayları Tone.Transport ile ses saat
   return `${hits} nota çalındı`;
 });
 
+await step('Örnekçi: en yakın örneğe perde kaydırma, aynı perdeden iki örnek dönüşümlü, bırakma örneği, tek ses', async () => {
+  const r = await A(async () => {
+    const { render, peakHz, rms, B, sr } = window.__A;
+    const mk = (oc, hz, secs = 1.2, amp = 0.5) => { const b = oc.createBuffer(1, Math.round(secs * sr), sr), x = b.getChannelData(0); for (let i = 0; i < x.length; i++) x[i] = amp * Math.sin((2 * Math.PI * hz * i) / sr) * Math.exp(-i / (sr * 0.8)); return b; };
+    const out = {};
+    // 1) E1 (28) örneği: 33 → +5 yarım ton
+    for (const midi of [28, 33, 40]) {
+      const x = await render((oc) => { const s = new B.BassSampler(oc, { volume: 1 }); s.load([{ midi: 28, buffer: mk(oc, 41.2034) }]); s.output.connect(oc.destination); s.noteOn(midi, 100, 0.1, {}); s.noteOff(0.9); });
+      out['p' + midi] = { hz: peakHz(x, 0.2, 30, 400, 32768), want: 440 * 2 ** ((midi - 69) / 12), level: rms(x, 0.2, 0.6) };
+    }
+    // 2) dönüşümlü: aynı perdeden iki farklı örnek (genlik 0.5 / 0.2): art arda iki nota farklı seviyede
+    const rr = await render((oc) => { const s = new B.BassSampler(oc, { volume: 1 }); s.load([{ midi: 33, buffer: mk(oc, 55, 0.5, 0.5) }, { midi: 33, buffer: mk(oc, 55, 0.5, 0.15) }]); s.output.connect(oc.destination); s.noteOn(33, 127, 0.1, {}); s.noteOff(0.45); s.noteOn(33, 127, 0.6, {}); s.noteOff(0.95); s.noteOn(33, 127, 1.1, {}); s.noteOff(1.45); }, 1.8);
+    out.rr = [rms(rr, 0.12, 0.25), rms(rr, 0.62, 0.75), rms(rr, 1.12, 1.25)];
+    // 3) bırakma örneği: noteOff sonrası ek ses
+    const rel = (withRel) => render((oc) => { const s = new B.BassSampler(oc, { volume: 1 }); s.load([{ midi: 33, buffer: mk(oc, 55, 0.5, 0.5) }], withRel ? [{ midi: 40, buffer: mk(oc, 300, 0.2, 0.6) }] : []); s.output.connect(oc.destination); s.noteOn(33, 100, 0.1, {}); s.noteOff(0.4); }, 1.0);
+    const [a, b] = [await rel(false), await rel(true)];
+    out.rel = [rms(a, 0.45, 0.6), rms(b, 0.45, 0.6)];
+    // 4) tek ses: ikinci nota birincinin üstüne binmez (eski perde kalmaz)
+    const mono = await render((oc) => { const s = new B.BassSampler(oc, { volume: 1 }); s.load([{ midi: 28, buffer: mk(oc, 41.2034, 1.5) }, { midi: 40, buffer: mk(oc, 82.4069, 1.5) }]); s.output.connect(oc.destination); s.noteOn(28, 100, 0.1, {}); s.noteOn(40, 100, 0.5, {}); s.noteOff(1.0); }, 1.3);
+    out.mono = peakHz(mono, 0.6, 30, 400, 32768);
+    out.empty = Math.max(...(await render((oc) => { const s = new B.BassSampler(oc); s.output.connect(oc.destination); s.noteOn(40, 100, 0.1, {}); }, 0.5)).map(Math.abs));
+    return out;
+  });
+  for (const k of ['p28', 'p33', 'p40']) assert.ok(Math.abs(r[k].hz / r[k].want - 1) < 0.02, `${k}: ${r[k].hz.toFixed(2)} Hz ≈ ${r[k].want.toFixed(2)} Hz`);
+  assert.ok(r.p28.level > 0.05, 'ses var');
+  assert.ok(Math.abs(r.rr[0] / r.rr[1] - 1) > 0.5 && Math.abs(r.rr[0] / r.rr[2] - 1) < 0.15, 'dönüşümlü örnekler: ' + r.rr.map((v) => v.toFixed(3)));
+  assert.ok(r.rel[1] > r.rel[0] * 3 + 0.002, `bırakma örneği duyulur: ${r.rel.map((v) => v.toFixed(4))}`);
+  assert.ok(Math.abs(r.mono / (440 * 2 ** ((40 - 69) / 12)) - 1) < 0.02, 'ikinci nota birincinin yerini alır: ' + r.mono.toFixed(1));
+  assert.equal(r.empty, 0, 'örnek yokken sessiz');
+  return `perde ${r.p33.hz.toFixed(1)} Hz · dönüşüm ${r.rr.map((v) => v.toFixed(2)).join('/')} · bırakma ${r.rel.map((v) => v.toFixed(3)).join('→')}`;
+});
+
 await browser.close();
 console.log(results.join('\n'));
 if (errors.length) { console.log('Tarayıcı hataları:', errors); failures++; }

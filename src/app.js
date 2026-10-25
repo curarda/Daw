@@ -2080,7 +2080,7 @@ $('#btnNew').onclick = () => {
   if (S.audio && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
   Player.stop(true);
   S.proj = C.newProject(); S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
-  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null;
+  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   syncInputs(); refresh(); status('Yeni proje.');
 };
 $('#btnSave').onclick = () => saveProject();
@@ -2159,7 +2159,7 @@ async function openProject(file) {
   const audioData = p.audioData;
   delete p.audioData; delete p.savedAt;
   S.proj = mergeDefaults(C.newProject(), p);
-  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null;
+  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   if (audioData) {
     const w = C.decodeWav(C.base64ToBytes(audioData.wavBase64).buffer);

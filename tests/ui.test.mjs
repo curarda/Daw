@@ -983,6 +983,87 @@ try {
     return 'sayım→kayıt→yuvarlama, gecikme ±150 ms, B tuşu, Esc, döngü (5–8), şablon, kalibrasyon';
   });
 
+  await step('Bas stil öğrenme: MIDI içe aktar → kök düzeltme → analiz → kaydet+uygula (tarayıcıda da saklı) · hızlı giriş + hata · profil silme · örnekçi (kendi örnekleri)', async () => {
+    await S(() => { window.confirm = () => true; });
+    await page.click('#bassPanel [data-bk=demo]'); await waitStatus(/Demo şarkı yüklendi/);
+    await S(() => { try { localStorage.removeItem('dawBassProfiles'); } catch (e) { /* */ } });
+    const bass = () => S(() => JSON.parse(JSON.stringify(window.__daw.proj.bass)));
+    // referans MIDI: 8 seyrek (kök + 3. vuruş) + 8 yoğun ölçü (tipik post-punk), tek bas izi
+    const roots = [9, 5, 0, 7], notes = [];
+    for (let b = 0; b < 16; b++) {
+      const root = roots[b % 4], nextRoot = roots[(b + 1) % 4], high = b % 8 >= 4, base = 33 + (((root - 33) % 12) + 12) % 12, steps = high ? [0, 4, 7, 8, 11, 14] : [0, 8];
+      steps.forEach((s, k) => { let m = base; if (high && s === 8) m = base + 12; else if (high && s === 7) m = base + 7; if (high && k === steps.length - 1) m = 33 + (((nextRoot - 1 - 33) % 12) + 12) % 12; const nx = k + 1 < steps.length ? steps[k + 1] : 16; notes.push({ q0: b * 4 + s * 0.25, q1: b * 4 + (s + Math.max(1, nx - s - (high ? 1 : 0))) * 0.25, midi: m, vel: 96 }); });
+    }
+    const midPath = path.join(here, '..', '.tmp-ref.mid'); writeFileSync(midPath, Buffer.from(Core.writeMidi({ quarterBpm: 100, meter: '4/4', tracks: [{ name: 'Bass', channel: 0, program: 33, notes }] })));
+    await page.setInputFiles('#bsMidiFile', midPath); await waitStatus(/bas izi tahmini: Bass/); rmSync(midPath, { force: true });
+    assert.equal(await page.locator('#bassPanel .bs-prev select[data-bs=lRoot]').count(), 16, '16 ölçülük önizleme');
+    const rootOf = (i) => S(`window.__dawAPI.bass.learn.parsed.bars[${i}].root`);
+    assert.equal(await rootOf(0), 9); assert.equal(await rootOf(1), 5);
+    // kök düzeltme: 2. ölçünün kökünü D#'ye çevir, sonra geri al
+    await page.locator('#bassPanel select[data-bs=lRoot][data-i="1"]').selectOption('3'); assert.equal(await rootOf(1), 3);
+    await page.locator('#bassPanel select[data-bs=lRoot][data-i="1"]').selectOption('5'); assert.equal(await rootOf(1), 5);
+    // aralık: yalnızca 1–8. ölçüler (hepsi seyrek) → tek kova; sonra tümü
+    await page.fill('#bassPanel [data-bs=lTo]', '16'); await page.locator('#bassPanel [data-bs=lTo]').dispatchEvent('change');
+    await page.click('#bassPanel [data-bk=learnAnalyze]');
+    let lr = await S(() => JSON.parse(JSON.stringify(window.__dawAPI.bass.learn.result)));
+    assert.equal(lr.stats.low.bars, 8); assert.equal(lr.stats.high.bars, 8); assert.ok(lr.stats.high.density > lr.stats.low.density);
+    assert.ok(await page.locator('#bassPanel .bs-stat').count(), 'analiz tablosu görünür');
+    assert.ok(lr.templates.length >= 1 && lr.templates[0].slots.map((s) => s.step).join() === '0,4,7,8,11,14', 'yeni şablon: ' + JSON.stringify(lr.templates.map((t) => t.slots.map((s) => s.step))));
+    // kaydet + uygula (adı değiştir)
+    await page.fill('#bassPanel [data-bs=lName]', 'Referans şarkı'); await page.locator('#bassPanel [data-bs=lName]').dispatchEvent('change');
+    const beforeNotes = JSON.stringify((await bass()).bars.map((b) => b.notes));
+    await page.click('#bassPanel [data-bk=learnSave][data-bv="1"]'); await waitStatus(/kaydedildi ve uygulandı/);
+    let tb = await bass(); assert.equal(tb.profiles.length, 1); assert.equal(tb.profiles[0].name, 'Referans şarkı'); assert.equal(tb.styleProfileId, tb.profiles[0].id);
+    assert.notEqual(JSON.stringify(tb.bars.map((b) => b.notes)), beforeNotes, 'profil uygulanınca kilitsiz ölçüler yeniden üretildi');
+    assert.deepEqual(await page.locator('#bassPanel select[data-bs=prof] option:checked').allTextContents(), ['Referans şarkı']);
+    assert.equal(await S(() => JSON.parse(localStorage.getItem('dawBassProfiles')).length), 1, 'tarayıcıda da saklandı');
+    // üretici öğrenilen şablonu seçer (cümle başına bir seçim olduğundan birkaç tohum denenir)
+    let used = false; for (let k = 0; k < 8 && !used; k++) { tb = await bass(); used = tb.bars.some((b) => b.templateId.startsWith(tb.profiles[0].id)); if (!used) await page.click('#bassPanel [data-bk=dice]'); }
+    assert.ok(used, 'üretici öğrenilen şablonu seçer');
+    // Generate aynı tohumla aynı notalar
+    const g1 = JSON.stringify((await bass()).bars.map((b) => b.notes)); await page.click('#bassPanel [data-bk=generate]'); assert.equal(JSON.stringify((await bass()).bars.map((b) => b.notes)), g1);
+    // karışım: öğrenilen ↔ Darkwave
+    await page.locator('#bassPanel select[data-bs=profB]').selectOption('darkwave-pulse'); tb = await bass(); assert.equal(tb.styleMix.profileB, 'darkwave-pulse'); assert.ok(tb.bars.every((b) => b.notes.length));
+    await page.locator('#bassPanel select[data-bs=profB]').selectOption('');
+    // proje kaydet → yeni proje: profil projede kalır; yeni projeye tarayıcı kaydından gelir
+    const pj = await download('#btnSave'); const f3 = path.join(here, '..', '.tmp-prof.json'); writeFileSync(f3, pj.data);
+    await page.click('#btnNew'); assert.equal((await bass()).profiles.length, 1, 'yeni projede tarayıcıda saklı profil var');
+    await page.setInputFiles('#fileProject', f3); await waitStatus(/Proje açıldı/); rmSync(f3, { force: true });
+    tb = await bass(); assert.equal(tb.profiles.length, 1); assert.equal(tb.profiles[0].templates.length, lr.templates.length); assert.equal(tb.styleProfileId, tb.profiles[0].id, 'seçili profil geri geldi');
+    // hızlı giriş: hata satırı ve başarılı analiz
+    await page.click('#bassPanel [data-bk=demo]'); await waitStatus(/Demo şarkı yüklendi/);
+    await page.click('#bassPanel [data-bk=lmode][data-bv=quick]');
+    await page.fill('#bassPanel input[data-bq="0,0"]', 'zz'); await page.click('#bassPanel [data-bk=learnAnalyze]');
+    assert.match(await page.locator('#bassPanel .st-warn').first().textContent(), /zz/); assert.equal(await S(() => window.__dawAPI.bass.learn.result), null, 'hatalıyken sonuç yok');
+    for (let r = 0; r < 4; r++) { await page.fill(`#bassPanel input[data-bq="${r},0"]`, '1'); await page.fill(`#bassPanel input[data-bq="${r},8"]`, '5'); }
+    await page.click('#bassPanel [data-bk=learnAnalyze]'); await waitStatus(/Analiz tamam/);
+    lr = await S(() => JSON.parse(JSON.stringify(window.__dawAPI.bass.learn.result))); assert.equal(lr.source.kind, 'quick'); assert.equal(lr.stats.mid.bars, 4);
+    // silme: öğrenilmiş seçiliyken sil
+    assert.equal((await bass()).profiles.length, 1, 'demo (yeni proje) tarayıcıdaki profili de getirir');
+    await page.locator('#bassPanel select[data-bs=prof]').selectOption({ label: 'Referans şarkı' });
+    assert.ok(await page.locator('#bassPanel [data-bk=learnDelete]').count(), 'silme düğmesi öğrenilmiş profil seçiliyken görünür');
+    await page.click('#bassPanel [data-bk=learnDelete]'); tb = await bass(); assert.equal(tb.profiles.length, 0); assert.equal(tb.styleProfileId, 'post-punk-drive');
+    assert.equal(await S(() => JSON.parse(localStorage.getItem('dawBassProfiles')).length), 0, 'tarayıcı kaydından da silindi');
+    // örnekçi: kendi örneklerin (E1, A1, bırakma) → perde kaydırmalı çalar
+    const sine = (hz, secs, sr = 44100) => { const x = new Float32Array(Math.round(secs * sr)); for (let i = 0; i < x.length; i++) x[i] = 0.6 * Math.sin((2 * Math.PI * hz * i) / sr) * Math.exp(-i / (sr * 1.2)); return x; };
+    const dir = path.join(here, '..'); const files = [['E1.wav', sine(41.2034, 1.5)], ['A1.wav', sine(55, 1.5)], ['A1_rr2.wav', sine(55, 1.5)], ['release.wav', sine(300, 0.1)], ['rastgele.wav', sine(100, 0.1)]].map(([n, x]) => { const p = path.join(dir, '.tmp-' + n); writeFileSync(p, Buffer.from(Core.encodeWav([x], 44100))); return p; });
+    await page.setInputFiles('#bsSampleFiles', files); await waitStatus(/örnek, 1 bırakma/); files.forEach((f) => rmSync(f, { force: true }));
+    assert.match(await S(() => document.querySelector('#status').textContent), /rastgele\.wav/, 'perdesi olmayan dosya bildirilir');
+    const bank = await S(() => ({ n: window.__dawAPI.bass.bank().samples.length, r: window.__dawAPI.bass.bank().releases.length, notes: window.__dawAPI.bass.bank().samples.map((s) => s.midi).sort() }));
+    assert.deepEqual(bank, { n: 3, r: 1, notes: [28, 33, 33] }); assert.equal((await bass()).useSampler, true);
+    const pitch = await S(async () => {
+      const A = window.__dawAPI.bass, d = window.__daw.d, Bs = window.Core.Bass, t = window.__daw.proj.bass;
+      const ev = Bs.bassEvents(t, d.g, d.bars)[0], x = await A.renderOffline(44100, Math.round((ev.t + 1.2) * 44100)), a = Math.round((ev.t + 0.05) * 44100), b = Math.round((ev.t + Math.min(0.4, ev.dur) ) * 44100);
+      let z = 0; for (let i = a + 1; i < b; i++) if (x[i - 1] < 0 && x[i] >= 0) z++;
+      return { hz: z / ((b - a) / 44100), want: 440 * 2 ** ((ev.midi - 69) / 12), kind: A.BS.lastOffline[0].inst.constructor.name, peak: Math.max(...x.subarray(a, b).map(Math.abs)) };
+    });
+    assert.equal(pitch.kind, 'BassSampler'); assert.ok(Math.abs(pitch.hz / pitch.want - 1) < 0.04, `örnekçi perdesi ${pitch.hz.toFixed(1)} ≈ ${pitch.want.toFixed(1)}`); assert.ok(pitch.peak > 0.02, 'ses var');
+    await page.click('#bassPanel [data-bk=sampleUse]'); assert.equal((await bass()).useSampler, false, 'kapatınca sentez döner');
+    assert.equal(await S(async () => { await window.__dawAPI.bass.renderOffline(44100, 44100); return window.__dawAPI.bass.BS.lastOffline[0].inst.constructor.name; }), 'BassSynth');
+    await page.click('#bassPanel [data-bk=sampleUse]'); await page.click('#bassPanel [data-bk=sampleClear]'); assert.equal((await bass()).useSampler, false);
+    return `MIDI → ${lr.source.bars} ölçü analiz, profil kaydı/silme/LS, hızlı giriş, örnekçi ${pitch.hz.toFixed(0)} Hz`;
+  });
+
   await step('Zamanlama: notayı sağa sürükle (ızgaraya yapışır) → ses kayar; quantize; zamanı geri al; piyano tuşu çalar; T ile tap → tempo/ölçü/ızgara', async () => {
     page.once('dialog', (d) => d.accept());
     await page.click('#btnTest');

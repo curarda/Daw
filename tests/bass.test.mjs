@@ -568,6 +568,120 @@ await step('Tap gecikme kalibrasyonu: medyan fark, aykırı vuruş etkisiz, en a
   r = B.tapOffset(clicks, clicks.map((c) => c - 0.03)); assert.equal(r.offsetMs, -30, 'erken basan negatif gecikme');
 });
 
+// ---------------------------------------------------------------- Faz 4: stil öğrenme
+const PATTERN_LOW = [0, 8], PATTERN_HIGH = [0, 4, 7, 8, 11, 14]; // yüksek enerji deseni yerleşik şablonlarda yok → yeni şablon olmalı
+function refMidi({ bars = 16, bpm = 100, meter = '4/4' } = {}) {
+  const roots = [9, 5, 0, 7], notes = [], barQ = 4;
+  for (let b = 0; b < bars; b++) {
+    const root = roots[b % 4], nextRoot = roots[(b + 1) % 4], high = b % 8 >= 4, base = 33 + mod12(root - 33);
+    const steps = high ? PATTERN_HIGH : PATTERN_LOW;
+    steps.forEach((s, k) => {
+      let m = base; const last = k === steps.length - 1;
+      if (high && s === 8) m = base + 12;                     // sağlam vuruşta oktav
+      else if (high && s === 7) m = base + 7;                 // zayıf vuruşta beşli
+      if (high && last) m = 33 + mod12(nextRoot - 1 - 33);    // ölçü sonu: sonraki köke yarım ton yaklaşma
+      const nextS = k + 1 < steps.length ? steps[k + 1] : 16;
+      notes.push({ q0: b * barQ + s * 0.25, q1: b * barQ + (s + Math.max(1, nextS - s - (high ? 1 : 0))) * 0.25, midi: m, vel: 96 });
+    });
+  }
+  return Core.writeMidi({ quarterBpm: bpm, meter, tracks: [{ name: 'Bass', channel: 0, program: 33, notes }] });
+}
+await step('Stil öğrenme / MIDI okuyucu: süreler, tempo, ölçü, çalışan durum (running status), nota-bitişi vel 0; bas izi tahmini', () => {
+  const m = B.readMidi(refMidi());
+  assert.equal(m.tempo, 100); assert.deepEqual(m.timeSig, { num: 4, den: 4 }); assert.equal(m.division, 480);
+  const tr = m.tracks.find((t) => t.name === 'Bass'); assert.ok(tr.notes.length >= 16 * 2);
+  assert.equal(tr.notes[0].tick, 0); assert.equal(tr.notes[0].dur, 2 * 480, 'ilk nota 2 çeyrek sürer (sus yok): ' + tr.notes[0].dur);
+  assert.equal(B.guessBassTrack(m), tr.index);
+  // elle yazılmış: running status + vel 0 ile nota bitişi + SysEx atlanır
+  const bytes = Uint8Array.from([0x4d, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 1, 0, 1, 0x01, 0xe0,
+    0x4d, 0x54, 0x72, 0x6b, 0, 0, 0, 0x1c,
+    0x00, 0xf0, 0x02, 0x7e, 0xf7, // sysex
+    0x00, 0x90, 40, 100,   // on
+    0x60, 40, 0,           // running status, vel 0 → off (96 tick = 1/5 çeyrek değil: ppq 480 → 0.2 q)
+    0x00, 41, 90, 0x83, 0x60, 41, 0, // on 41, sonra 480 tick → off
+    0x00, 0xff, 0x2f, 0x00, 0x00, 0x00]);
+  bytes[bytes.length - 1] = 0; // uzunluk alanı yaklaşık; okuyucu dosya sonunda durmalı
+  const m2 = B.readMidi(bytes); const ns = m2.tracks[0].notes;
+  assert.equal(ns.length, 2); assert.equal(ns[0].midi, 40); assert.equal(ns[0].dur, 96); assert.equal(ns[1].midi, 41); assert.equal(ns[1].dur, 480);
+  assert.throws(() => B.readMidi(new Uint8Array([1, 2, 3])), /MIDI/);
+});
+await step('Stil öğrenme / ölçülere bölme: ölçü kökü = 1. vuruştaki en alçak nota; elle düzeltilebilir; 3/4 ve 6/8 ölçü bilgisi', () => {
+  const m = B.readMidi(refMidi()), tr = B.guessBassTrack(m), mb = B.midiBars(m, tr);
+  assert.equal(mb.meter, '4/4'); assert.equal(mb.bars.length, 16);
+  assert.deepEqual(mb.bars.slice(0, 4).map((b) => b.root), [9, 5, 0, 7]);
+  assert.deepEqual(mb.bars[4].notes.map((n) => n.step), PATTERN_HIGH);
+  const four = mb.bars[4]; four.root = 3; assert.equal(four.root, 3, 'kök düzeltmesi bar nesnesinde');
+  const low = B.midiBars(B.readMidi(refMidi()), tr, { meter: '3/4' }); assert.equal(low.steps, 12, 'ölçü zorlanabilir');
+});
+await step('Stil öğrenme / hızlı giriş: dereceler (b3, 5\', 7,, 8), sus ".", tutma, hata mesajı', () => {
+  assert.equal(B.parseDegree('1'), 0); assert.equal(B.parseDegree('b3'), 3); assert.equal(B.parseDegree('5'), 7); assert.equal(B.parseDegree("5'"), 19); assert.equal(B.parseDegree('7,'), -1); assert.equal(B.parseDegree('8'), 12); assert.equal(B.parseDegree('#4'), 6); assert.equal(B.parseDegree('x'), null);
+  const cells = (o) => { const a = new Array(16).fill(''); for (const [k, v] of Object.entries(o)) a[+k] = v; return a; };
+  const q = B.quickBars([{ cells: cells({ 0: '1', 4: '5', 6: '.', 8: 'b7', 12: 'zz' }), energy: 'high' }, { cells: new Array(16).fill('') }]);
+  assert.equal(q.bars.length, 1, 'boş satır atılır'); assert.equal(q.errors.length, 1); assert.match(q.errors[0], /zz/);
+  const n = q.bars[0].notes; assert.deepEqual(n.map((x) => [x.step, x.midi - 40, x.dur]), [[0, 0, 4], [4, 7, 2], [8, 10, 4]], 'süre = bir sonraki girişe / susa kadar');
+});
+await step('Stil öğrenme / analiz: enerji kovaları, adım başına vuruş sıklığı, roller, öncül karışımı, sıçrama sınırı, legato, kalıp → şablon', () => {
+  const m = B.readMidi(refMidi()), mb = B.midiBars(m, B.guessBassTrack(m));
+  const P = B.buildProfile(mb, { name: 'Referans', id: 'learned-ref' });
+  assert.equal(P.id, 'learned-ref'); assert.equal(P.builtin, false); assert.equal(P.learned, true);
+  const st = P.stats;
+  assert.equal(st.low.bars, 8); assert.equal(st.high.bars, 8); assert.equal(st.mid.bars, 0, 'iki yoğunluk kümesi → orta kova boş');
+  assert.equal(st.low.density, 2); assert.equal(st.high.density, 6);
+  PATTERN_LOW.forEach((s) => assert.equal(st.low.onsetFreq[s], 1)); assert.equal(st.low.onsetFreq[3], 0);
+  PATTERN_HIGH.forEach((s) => assert.equal(st.high.onsetFreq[s], 1)); assert.equal(st.high.onsetFreq[2], 0);
+  // roller: yüksekte sağlam vuruşta (8) oktav var, düşükte yok (8. adım düşükte kök)
+  assert.ok(P.rolesByEnergy.high.strong.octave > P.rolesByEnergy.low.strong.octave + 20, `oktav ${P.rolesByEnergy.high.strong.octave} > ${P.rolesByEnergy.low.strong.octave}`);
+  assert.ok(P.rolesByEnergy.low.strong.root > 60, 'düşükte sağlam vuruş kökte: ' + P.rolesByEnergy.low.strong.root);
+  assert.ok(P.rolesByEnergy.high.weak.fifth > P.rolesByEnergy.low.weak.fifth, 'zayıf vuruşta beşli yüksekte');
+  // öncül: ölçü sonu yarım ton yaklaşma (kök-1) baskın
+  assert.ok(P.rolesByEnergy.high.pickup['approach-c'] > P.rolesByEnergy.high.pickup['approach-d'] + 30, JSON.stringify(P.rolesByEnergy.high.pickup));
+  for (const k of ['low', 'mid', 'high']) for (const r of ['strong', 'weak', 'pickup']) { const s = Object.values(P.rolesByEnergy[k][r]).reduce((a, b) => a + b, 0); assert.ok(Math.abs(s - 100) < 0.5, `${k}.${r} toplam ${s}`); }
+  for (const r of Object.keys(B.DEFAULT_ROLES)) assert.ok(P.rolesByEnergy.mid[r] && P.roles[r], 'tüm roller var: ' + r);
+  assert.ok(P.leapLimit >= 5 && P.leapLimit <= 24); assert.ok(st.high.leapMax >= 7);
+  assert.ok(P.legato > 0.5 && P.legato <= 1, 'legato ' + P.legato); assert.ok(st.high.legato < st.low.legato, 'yüksekte notalar daha kesik');
+  // şablon: yüksek desen yerleşiklerde yok → öğrenilmiş şablon; düşük desen (0, 8) yerleşik drone-halves olabilir → ağırlığı yükselir
+  assert.ok(P.templates.length >= 1); const t = P.templates.find((x) => x.slots.map((s) => s.step).join() === PATTERN_HIGH.join());
+  assert.ok(t, 'yüksek desen şablon oldu: ' + JSON.stringify(P.templates.map((x) => x.slots.map((s) => s.step)))); assert.equal(t.meter, '4/4'); assert.ok(t.window[0] > 0.3, 'pencere yüksek enerjiye: ' + t.window);
+  assert.equal(P.templateWeights[t.id], 12);
+  const w = P.templateWeights; assert.ok(w['pedal-eighths'] < w['drone-halves'] || w['drone-halves'] > 1, 'yerleşik ağırlıklar öğrenilen sıklıktan');
+  assert.deepEqual(JSON.parse(JSON.stringify(P)), P, 'profil JSON ile birebir saklanır');
+});
+await step('Stil öğrenme / üretici öğrenilen profili kullanır: şablon, roller, kural 1 (ilk nota kök), determinizm, karışım, kayıt-yükleme', () => {
+  const m = B.readMidi(refMidi()), mb = B.midiBars(m, B.guessBassTrack(m));
+  const P = B.buildProfile(mb, { name: 'Referans', id: 'learned-ref' });
+  const song = mkSong({ bars: 16, chords: prog });
+  const mk = () => { const t = newTrack({ seed: 7, profiles: [clone(P)], styleProfileId: 'learned-ref' }); B.ensureBars(t, song.ctx); for (const s of Object.values(t.sections)) { s.energyStart = 0.85; s.energyEnd = 0.9; s.fills = false; } B.bassGenerateAll(t, song.ctx); return t; };
+  const t1 = mk(), t2 = mk(); assert.deepEqual(barsJson(t1), barsJson(t2), 'aynı tohum + aynı profil = aynı notalar');
+  const learned = t1.bars.filter((b) => b.templateId.startsWith('learned-ref-t')); assert.ok(learned.length >= 4, `yüksek enerjide öğrenilen şablon seçilir: ${learned.length}/16`);
+  t1.bars.forEach((b, i) => { if (i % 4 === 0 || true) assert.equal(mod12(b.notes[0].midi), mod12(song.ctx.segs(i)[0].chord.root), 'kural 1: ilk nota köktür ' + i); });
+  const lowT = newTrack({ seed: 7, profiles: [clone(P)], styleProfileId: 'learned-ref' }); B.ensureBars(lowT, song.ctx); for (const s of Object.values(lowT.sections)) { s.energyStart = 0.1; s.energyEnd = 0.15; s.fills = false; } B.bassGenerateAll(lowT, song.ctx);
+  const avg = (t) => t.bars.reduce((a, b) => a + b.notes.length, 0) / t.bars.length; assert.ok(avg(lowT) < avg(t1) - 1, `düşük enerji seyrek, yüksek yoğun: ${avg(lowT).toFixed(1)} < ${avg(t1).toFixed(1)}`);
+  // karışım: öğrenilen ↔ yerleşik, bir bar bile bozulmadan üretir; 0 = yalnız A, 1 = yalnız B
+  const bl = B.blendProfiles(P, B.BUILTIN_PROFILES[1], 0.5); for (const r of Object.keys(B.DEFAULT_ROLES)) assert.ok(bl.roles[r]); assert.equal(bl.templates.length, P.templates.length);
+  const tb = newTrack({ seed: 7, profiles: [clone(P)], styleProfileId: 'learned-ref', styleMix: { profileB: 'darkwave-pulse', amount: 0.5 } }); B.ensureBars(tb, song.ctx); B.bassGenerateAll(tb, song.ctx); assert.ok(tb.bars.every((b) => b.notes.length));
+  // kayıt-yükleme
+  const re = clone(t1); assert.deepEqual(re.profiles, t1.profiles); assert.equal(re.styleProfileId, 'learned-ref');
+  // bas gitar ve synth ikisi de kullanır
+  const ts = newTrack({ seed: 7, instrumentType: 'synth', profiles: [clone(P)], styleProfileId: 'learned-ref' }); B.ensureBars(ts, song.ctx); B.bassGenerateAll(ts, song.ctx); assert.ok(ts.bars.every((b) => b.notes.length));
+});
+await step('Stil öğrenme / hızlı giriş uçtan uca: 4 ölçülük yürüyüş + 4 ölçülük pedal → iki kova, profil üretici ile çalışır', () => {
+  const cells = (o) => { const a = new Array(16).fill(''); for (const [k, v] of Object.entries(o)) a[+k] = v; return a; };
+  const rows = [
+    ...Array.from({ length: 4 }, () => ({ energy: 'low', cells: cells({ 0: '1', 8: '5' }) })),
+    ...Array.from({ length: 4 }, () => ({ energy: 'high', cells: cells({ 0: '1', 2: '1', 4: '1', 6: '1', 8: '8', 10: '1', 12: '1', 14: '7,' }) })),
+  ];
+  const q = B.quickBars(rows); assert.deepEqual(q.errors, []);
+  const P = B.buildProfile(q, { name: 'El ile', id: 'learned-hand', kind: 'quick' });
+  assert.equal(P.source.kind, 'quick'); assert.equal(P.stats.low.bars, 4); assert.equal(P.stats.high.bars, 4); assert.equal(P.stats.mid.bars, 0);
+  assert.ok(P.stats.high.onsetFreq[14] === 1 && P.stats.low.onsetFreq[14] === 0);
+  assert.ok(P.rolesByEnergy.low.strong.fifth > P.rolesByEnergy.high.strong.fifth, 'düşükte beşli sağlam vuruşta');
+  assert.throws(() => B.buildProfile({ bars: [], steps: 16, meter: '4/4' }), /nota yok/);
+  // yerleşik şablonla aynı desen yeni şablon açmaz, onun ağırlığını yükseltir
+  const only = B.buildProfile(B.quickBars(Array.from({ length: 4 }, () => ({ energy: 'mid', cells: cells({ 0: '1', 8: '5' }) }))), { name: 'Yarım notalar', id: 'learned-halves' });
+  assert.equal(only.templates.length, 0); assert.ok(only.templateWeights['drone-halves'] > 2 * only.templateWeights['walking-quarters'], 'drone-halves öne çıktı: ' + only.templateWeights['drone-halves'].toFixed(2) + ' vs ' + only.templateWeights['walking-quarters'].toFixed(2));
+  const song = mkSong({ bars: 8, chords: prog }); const t = newTrack({ seed: 3, profiles: [P], styleProfileId: 'learned-hand' }); B.ensureBars(t, song.ctx); B.bassGenerateAll(t, song.ctx); assert.ok(t.bars.every((b) => b.notes.length));
+});
+
 console.log(results.join('\n'));
 if (failures) { console.log(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nBas testleri geçti.');
