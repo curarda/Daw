@@ -725,6 +725,237 @@ try {
     return `sürükle → nota ${q6.toFixed(2)} → ${m6.q0to} (1/8), ses render edildi · quantize 1/16 ✓ · piyano tuşu çaldı · T ile 2 nokta (${(taps[1] - taps[0]).toFixed(2)} s arayla) · 8 tap → 4/4, 120 BPM, ${mk} ✂`;
   });
 
+  // ---------------------------------------------------------------- toplu seçim, bölme, giriş ölçüsü, kaydırma, akor sesi
+  const noteBox = (i) => S(`(() => {
+    const d = window.__daw.d, n = d.notes[${i}], sc = document.querySelector('#tlScroll'), ppq = window.__daw.view.pxPerQ;
+    const H = sc.clientHeight; let lo = Infinity, hi = -Infinity;
+    for (const k of d.notes) { lo = Math.min(lo, k.effMidi, k.median); hi = Math.max(hi, k.effMidi, k.median); }
+    lo = Math.floor(lo) - 3; hi = Math.ceil(hi) + 3; if (hi - lo < 18) { const c = (lo + hi) / 2; lo = Math.floor(c - 9); hi = lo + 18; }
+    const rowH = (H - 84) / (hi - lo + 1);
+    return { x0: 46 + n.q0 * ppq - sc.scrollLeft, x1: 46 + n.q1 * ppq - sc.scrollLeft, y: 84 + (hi - n.effMidi + 0.5) * rowH, rowH, H, top: 84 + 3, ppq };
+  })()`);
+  const resetTest = async () => {
+    await page.click('#btnTest'); await waitStatus(/Test melodisi hazır/);
+    await S(() => { document.querySelector('#tlScroll').scrollLeft = 0; window.__daw.sel = null; });
+    await page.click('.seg input[value=sound] + span');
+    await page.waitForTimeout(150);
+    return page.locator('#tl').boundingBox();
+  };
+  const marquee = async (tl, ia, ib) => {
+    const a = await noteBox(ia), b = await noteBox(ib);
+    await page.mouse.move(tl.x + a.x0 + 5, tl.y + a.top - 1);
+    await page.mouse.down();
+    await page.mouse.move(tl.x + b.x1 - 5, tl.y + a.H - 4, { steps: 8 });
+    await page.mouse.up();
+  };
+  const effs = () => S(() => window.__daw.d.notes.map((n) => n.effMidi));
+  const q0s = () => S(() => window.__daw.d.notes.map((n) => n.q0));
+  const selIds = () => S(() => { const s = window.__daw.sel; return !s ? [] : s.type === 'note' ? [s.id] : s.type === 'notes' ? s.ids.slice() : []; });
+
+  await step('Toplu seçim: boş yerde sürükle → dikdörtgenle seç; birini sürükle → hepsi birlikte taşınır (perde + zaman); Ctrl+tık ekler; ↑↓ ←→ ; Ctrl+A; Esc; toplu geri al', async () => {
+    const tl = await resetTest();
+    const e0 = await effs(), t0 = await q0s();
+    await marquee(tl, 0, 3);
+    const ids = await selIds();
+    const exp = await S(() => window.__daw.d.notes.filter((n) => n.q0 < 8 && n.q1 > 0).length);
+    assert.ok(ids.length >= 4, 'dikdörtgenle en az 4 nota seçilmeli: ' + ids.length);
+    assert.match(await page.textContent('#inspector h3'), /\d+ nota seçili/);
+    const sel = await S(() => window.__daw.sel.ids.map((id) => window.__daw.d.notes.findIndex((n) => n.id === id)));
+    // perde: seçili notalardan birini 2 yarım ses yukarı sürükle → hepsi +2; seçilmeyenler aynı
+    const b1 = await noteBox(sel[1]);
+    await page.mouse.move(tl.x + (b1.x0 + b1.x1) / 2, tl.y + b1.y); await page.mouse.down();
+    await page.mouse.move(tl.x + (b1.x0 + b1.x1) / 2, tl.y + b1.y - 2 * b1.rowH, { steps: 8 });
+    const tip = await S(() => window.__daw.drag && window.__daw.drag.tip);
+    await page.mouse.up();
+    assert.match(tip, new RegExp(`^${sel.length} nota · Taşı`));
+    const e1 = await effs();
+    e0.forEach((m, i) => assert.equal(e1[i], sel.includes(i) ? m + 2 : m, `nota ${i}`));
+    assert.equal((await selIds()).length, sel.length, 'sürükleyince seçim bozulmaz');
+    // zaman: sağa 1/8 (0.5 çeyrek = 22 px) → hepsi birlikte, aralarındaki mesafe korunur
+    const b2 = await noteBox(sel[0]);
+    await page.mouse.move(tl.x + (b2.x0 + b2.x1) / 2, tl.y + b2.y); await page.mouse.down();
+    await page.mouse.move(tl.x + (b2.x0 + b2.x1) / 2 + b2.ppq * 0.5, tl.y + b2.y, { steps: 8 });
+    await page.mouse.up();
+    const t1 = await q0s();
+    t0.forEach((q, i) => assert.ok(Math.abs(t1[i] - (q + (sel.includes(i) ? 0.5 : 0))) < 0.02, `nota ${i}: ${q} → ${t1[i]}`));
+    // sürüklemeden tıkla: grup bozulur, yalnızca o not
+    const b3 = await noteBox(sel[2]);
+    await page.mouse.click(tl.x + (b3.x0 + b3.x1) / 2, tl.y + b3.y);
+    assert.equal((await selIds()).length, 1);
+    // Ctrl+tık: seçime ekle / çıkar
+    const b4 = await noteBox(sel[3]);
+    await page.keyboard.down('Control'); await page.mouse.click(tl.x + (b4.x0 + b4.x1) / 2, tl.y + b4.y); await page.keyboard.up('Control');
+    assert.equal((await selIds()).length, 2);
+    await page.keyboard.down('Control'); await page.mouse.click(tl.x + (b4.x0 + b4.x1) / 2, tl.y + b4.y); await page.keyboard.up('Control');
+    assert.equal((await selIds()).length, 1);
+    // klavye: Ctrl+A → hepsi; ↑ hepsi +1; → hepsi bir 1/8 sağa; Esc
+    await page.keyboard.down('Control'); await page.keyboard.press('a'); await page.keyboard.up('Control');
+    assert.equal((await selIds()).length, e0.length);
+    const e2 = await effs(), t2 = await q0s();
+    await page.keyboard.press('ArrowUp');
+    const e3 = await effs();
+    e2.forEach((m, i) => assert.equal(e3[i], m + 1));
+    await page.keyboard.press('ArrowRight');
+    const t3 = await q0s();
+    t2.forEach((q, i) => assert.ok(Math.abs(t3[i] - (q + 0.5)) < 0.02, `→ nota ${i}`));
+    // toplu işlemler: panel (oktav, ince akort, scale'e çek) ve geri al
+    await page.click('#inspector button[data-act=gMove][data-v="-12"]');
+    const e4 = await effs();
+    e3.forEach((m, i) => assert.equal(e4[i], m - 12));
+    await page.click('#inspector button[data-act=gFine][data-v="0.05"]');
+    assert.ok(await S(() => window.__daw.d.notes.every((n) => n.manualTarget != null && Math.abs(n.manualTarget - Math.round(n.manualTarget) - 0.05) < 0.011 || Math.abs(n.manualTarget - n.effMidi) <= 0.5)));
+    await page.click('#inspector .rm-bar button[data-act=gReset]');
+    assert.deepEqual(await effs(), e0, 'seçili notaların değişiklikleri kaldırılınca başlangıç');
+    assert.equal(await S(() => window.__daw.d.notes.filter((n) => n.q0to != null || n.manualTarget != null).length), 0);
+    await page.keyboard.press('Escape');
+    assert.equal((await selIds()).length, 0);
+    // boş yere tek tık seçimi temizler
+    await marquee(tl, 0, 1);
+    assert.ok((await selIds()).length >= 2);
+    await page.mouse.click(tl.x + 300, tl.y + (await noteBox(0)).top - 1);
+    assert.equal((await selIds()).length, 0);
+    return `dikdörtgen ${sel.length} nota · perde +2 ve zaman +1/8 hepsinde birlikte · Ctrl+tık ekle/çıkar · Ctrl+A ${e0.length} nota · ↑ → ✓ · oktav/ince akort/geri al`;
+  });
+
+  await step('Çift tık: tek sanılan nota ikiye bölünür (perdeler yeniden), seçilir; panelden ve özetten geri alınır; projede saklanır', async () => {
+    const tl = await resetTest();
+    const before = await S(() => window.__daw.d.notes.length);
+    const idx = await S(() => { const ns = window.__daw.d.notes; let b = 0; ns.forEach((n, i) => { if (n.q1 - n.q0 > ns[b].q1 - ns[b].q0) b = i; }); return b; });
+    await S(`(() => { const n = window.__daw.d.notes[${idx}]; document.querySelector('#tlScroll').scrollLeft = Math.max(0, 46 + n.q0 * window.__daw.view.pxPerQ - 200); })()`);
+    await page.waitForTimeout(150);
+    const b = await noteBox(idx);
+    const mid = tl.x + (b.x0 + b.x1) / 2;
+    await page.mouse.dblclick(mid, tl.y + b.y);
+    await page.waitForFunction((n) => window.__daw.d.notes.length === n + 1, before, { timeout: 5000 });
+    const r = await S(`(() => { const d = window.__daw.d, a = d.notes[${idx}], c = d.notes[${idx + 1}], s = window.__daw.sel; return { a0: a.q0, a1: a.q1, c0: c.q0, c1: c.q1, sel: s && s.type, ids: s && s.ids && s.ids.length, med: [a.median, c.median], splits: window.__daw.proj.noteSplits.length }; })()`);
+    assert.equal(r.sel, 'notes'); assert.equal(r.ids, 2);
+    assert.ok(r.c0 >= r.a1 - 0.2 && r.c0 > r.a0 + 0.2, 'ikinci parça birincinin ardında');
+    assert.ok(Math.abs(r.c1 - (b.x1 - 46 + (await S(() => document.querySelector('#tlScroll').scrollLeft))) / b.ppq) < 0.05, 'dış sınır aynı');
+    assert.equal(r.splits, 1);
+    assert.match(await page.textContent('#status'), /ikiye bölündü/);
+    assert.match(await page.textContent('#editSummary'), /Çift tıkla bölünen yer: 1/);
+    // ilk parçayı seç → panelde "bölmeyi geri al" (sonrakiyle birleştir)
+    const nb = await noteBox(idx);
+    await page.mouse.click(tl.x + (nb.x0 + nb.x1) / 2, tl.y + nb.y);
+    assert.match(await page.textContent('#inspector .rm-bar'), /çift tıkla bölündü/);
+    await page.click('#inspector .rm-bar button[data-act=unsplitEnd]');
+    assert.equal(await S(() => window.__daw.d.notes.length), before);
+    assert.equal(await S(() => window.__daw.proj.noteSplits.length), 0);
+    // bir daha böl → yeniden analizde de uygulanır → özetten hepsini geri al
+    await page.mouse.dblclick(tl.x + (b.x0 + b.x1) / 2, tl.y + b.y);
+    await page.waitForFunction((n) => window.__daw.d.notes.length === n + 1, before, { timeout: 5000 });
+    await page.click('#btnAnalyze'); await waitStatus(/Analiz tamam/);
+    assert.equal(await S(() => window.__daw.d.notes.length), before + 1, 'yeniden analizde bölme korunur');
+    // kenara çok yakın çift tık reddedilir
+    await page.click('#editSummary button[data-clear=splits]');
+    assert.equal(await S(() => window.__daw.d.notes.length), before);
+    const b2 = await noteBox(idx);
+    await page.mouse.dblclick(tl.x + b2.x0 + 3, tl.y + b2.y);
+    await page.waitForTimeout(200);
+    assert.equal(await S(() => window.__daw.d.notes.length), before);
+    assert.match(await page.textContent('#status'), /kenarına çok yakın/);
+    return `${before} → ${before + 1} → ${before} nota; parçalar ${r.med.map((x) => x.toFixed(1)).join(' / ')} · yeniden analizde korunur · kenar reddedilir`;
+  });
+
+  await step('Şarkıyı kaydır: +2 ölçü boşluk (bölümler, kilitler, ölçü sayısı, ses birlikte), geri alınır; başta boşluk yoksa öne alma reddedilir', async () => {
+    await resetTest();
+    const g = await S(() => ({ bars: window.__daw.d.bars, secs: window.__daw.proj.sections.map((x) => [x.startBar, x.endBar]), q: window.__daw.d.notes[0].q0, off: window.__daw.d.off }));
+    await page.click('[data-shift="-1"]');
+    assert.match(await page.textContent('#status'), /boş ölçü var|ses kesilir/);
+    assert.equal(await S(() => window.__daw.proj.audio.leadBars), 0);
+    await page.click('[data-shift="2"]');
+    const a = await S(() => ({ bars: window.__daw.d.bars, secs: window.__daw.proj.sections.map((x) => [x.startBar, x.endBar]), q: window.__daw.d.notes[0].q0, lead: window.__daw.proj.audio.leadBars, off: window.__daw.d.off, info: document.querySelector('#shiftInfo').textContent }));
+    assert.equal(a.lead, 2); assert.equal(a.bars, g.bars + 2);
+    assert.deepEqual(a.secs, g.secs.map(([x, y]) => [x + 2, y + 2]));
+    assert.ok(Math.abs(a.q - (g.q + 8)) < 1e-6, 'ilk nota 2 ölçü sonra'); assert.ok(Math.abs(g.off - a.off - 4) < 1e-6, 'ofset 2 ölçü (4 s) azaldı');
+    assert.match(a.info, /başta 2 ölçü boşluk var/);
+    // ilk 2 ölçüde akor yok (bölüm yok) — 3. ölçüden başlar
+    assert.ok(await S(() => window.__daw.d.chords.every((c) => c.bar >= 3)));
+    await page.click('[data-shift="-2"]');
+    const z = await S(() => ({ bars: window.__daw.d.bars, secs: window.__daw.proj.sections.map((x) => [x.startBar, x.endBar]), q: window.__daw.d.notes[0].q0, lead: window.__daw.proj.audio.leadBars }));
+    assert.deepEqual(z.secs, g.secs); assert.equal(z.lead, 0); assert.equal(z.bars, g.bars); assert.ok(Math.abs(z.q - g.q) < 1e-6);
+    return `+2 ölçü: ${g.bars} → ${a.bars} ölçü, bölümler ${JSON.stringify(a.secs)}, ilk nota q ${g.q.toFixed(2)} → ${a.q.toFixed(2)} · −2 ile döndü · başta boşluk yokken −1 reddedildi`;
+  });
+
+  await step('Akor ve davul girişi: sayı kutusu + cetveldeki 🎹/🥁 bayraklarını sürükle; o ölçü akor için 1. ölçü; öncesinde akor yok; imleçten', async () => {
+    const tl = await resetTest();
+    await page.fill('#inChordStart', '3'); await page.dispatchEvent('#inChordStart', 'change');
+    const a = await S(() => ({ cs: window.__daw.proj.chordStartBar, first: Math.min(...window.__daw.d.chords.map((c) => c.bar)), first0: window.__daw.d.chords[0].chord, st: window.__daw.d.chordStart, info: document.querySelector('#chordStartInfo').textContent }));
+    assert.equal(a.cs, 3); assert.equal(a.first, 3); assert.equal(a.st, 3);
+    assert.match(a.info, /Ölçü 1–2: akor ve piyano yok/);
+    // bayrağı sürükle: ölçü 3 → 2
+    const geo = await S(() => { const g = window.__daw.d.g; return { bx: (3 - 1) * g.barQ * window.__daw.view.pxPerQ, w: g.barQ * window.__daw.view.pxPerQ }; });
+    const fx = tl.x + 46 + geo.bx + 24 + 12, fy = tl.y + 10;
+    await page.mouse.move(fx, fy); await page.mouse.down();
+    await page.mouse.move(fx - geo.w * 0.7, fy, { steps: 8 });
+    const live = await S(() => window.__daw.drag && window.__daw.drag.bar);
+    await page.mouse.up();
+    assert.equal(live, 2, 'sürüklerken bayrak ölçüye yapışır');
+    assert.equal(await S(() => window.__daw.proj.chordStartBar), 2);
+    assert.equal(await S(() => Math.min(...window.__daw.d.chords.map((c) => c.bar))), 2);
+    assert.match(await page.textContent('#status'), /Akorlar ölçü 2'den girer/);
+    // davul: sayı kutusu + imleçten (imleç 3. ölçüye)
+    await page.fill('#inDrumStart', '4'); await page.dispatchEvent('#inDrumStart', 'change');
+    assert.equal(await S(() => window.__daw.proj.drums.startBar), 4);
+    assert.match(await page.textContent('#drumStartInfo'), /Ölçü 1–3: davul yok/);
+    await S(() => { window.__daw.pos = 2 * window.__daw.d.g.barSec + 0.3; });
+    await page.click('#btnDrumHere');
+    assert.equal(await S(() => window.__daw.proj.drums.startBar), 3);
+    // 🥁 bayrağı sürükle → 5; aynı ölçüdeyse yan yana (çakışmaz)
+    const fx2 = tl.x + 46 + 2 * geo.w + 24 + 12;
+    await page.mouse.move(fx2, fy); await page.mouse.down();
+    await page.mouse.move(fx2 + geo.w * 2, fy, { steps: 8 }); await page.mouse.up();
+    assert.equal(await S(() => window.__daw.proj.drums.startBar), 5);
+    // MIDI davul 5. ölçüden başlar
+    await S(() => { window.__daw.proj.drums.on = true; window.__dawAPI.refresh(); });
+    const mid = await download('#btnExpMidi');
+    const pm = Core.parseMidi(new Uint8Array(mid.data));
+    const dr = pm.tracks.find((t) => /Davul/.test(t.name));
+    assert.ok(dr && dr.notes.length > 0);
+    const firstDrum = Math.min(...dr.notes.map((n) => (n.q0 != null ? n.q0 : n.tick / 480)));
+    assert.ok(firstDrum >= 16 - 1e-6, 'davul 5. ölçüden (q=16) başlar: ' + firstDrum);
+    await page.fill('#inChordStart', '1'); await page.dispatchEvent('#inChordStart', 'change');
+    await page.fill('#inDrumStart', '1'); await page.dispatchEvent('#inDrumStart', 'change');
+    await S(() => { window.__daw.proj.drums.on = false; window.__dawAPI.refresh(); });
+    return `akor girişi 3 → bayrakla 2 · davul 4 → imleçten 3 → bayrakla 5 · MIDI davul q=${firstDrum} ve sonrası`;
+  });
+
+  await step('Akor sesi: piyano / synth × akor / arpej seçilir; tekrar basma modları; synth çalar ve mix WAV / MIDI\'ye girer', async () => {
+    await resetTest();
+    const opts = await page.$$eval('#inPianoStyle option', (o) => o.map((x) => x.textContent));
+    assert.deepEqual(opts, ['Piyano — akor', 'Piyano — arpej', 'Synth klavye — akor', 'Synth klavye — arpej']);
+    assert.equal(await page.inputValue('#inPianoRepeat'), 'hold', 'varsayılan: aynı akor bir kez basılır');
+    assert.equal(await page.isHidden('#arpWrap'), true);
+    await page.selectOption('#inPianoStyle', 'synth-arp');
+    assert.equal(await S(() => window.__daw.proj.piano.style), 'synth-arp');
+    assert.equal(await page.isVisible('#arpWrap'), true);
+    await page.selectOption('#inArpRate', '1/16');
+    await page.selectOption('#inPianoRepeat', 'fade');
+    assert.equal(await page.isVisible('#holdWrap'), true);
+    const h0 = await S(() => window.__dawAPI.player().synthHits || 0);
+    await page.click('#btnPlay');
+    await page.waitForFunction((h) => (window.__dawAPI.player().synthHits || 0) > h + 8, h0, { timeout: 20000 });
+    await page.click('#btnPlay');
+    const hits = (await S(() => window.__dawAPI.player().synthHits)) - h0;
+    const mix = await download('#btnExpMix');
+    assert.equal(mix.data.slice(0, 4).toString(), 'RIFF');
+    // synth akor + sönme: MIDI'de uzun notalar
+    await page.selectOption('#inPianoStyle', 'synth-chord');
+    await page.selectOption('#inPianoRepeat', 'hold');
+    await page.fill('#inHoldBars', '4'); await page.dispatchEvent('#inHoldBars', 'change');
+    const mid = await download('#btnExpMidi');
+    const pm = Core.parseMidi(new Uint8Array(mid.data));
+    const tr = pm.tracks[2];
+    assert.ok(/Synth klavye/.test(tr.name) || /Akorlar/.test(tr.name), tr.name);
+    const dur = (n) => (n.q1 != null ? n.q1 - n.q0 : (n.endTick - n.tick) / 480);
+    await page.selectOption('#inPianoRepeat', 'off');
+    const pm2 = Core.parseMidi(new Uint8Array((await download('#btnExpMidi')).data));
+    assert.ok(pm2.tracks[2].notes.length >= tr.notes.length, 'her ölçüde yeniden bas: nota sayısı en az hold kadar');
+    await page.selectOption('#inPianoStyle', 'piano-chord');
+    await page.selectOption('#inPianoRepeat', 'hold');
+    return `synth arpej 1/16 çalarken ${hits} nota tetiklendi · mix WAV ${(mix.data.length / 1e6).toFixed(1)} MB · MIDI "${tr.name}": hold ${tr.notes.length} nota, off ${pm2.tracks[2].notes.length}`;
+  });
+
   await step('Piyano örnekleri: birinci kaynak (github.io) engelliyse jsDelivr aynasından yüklenir; ikisi de yoksa yedek + "Tekrar dene"', async () => {
     const wav = Buffer.from(Core.encodeWav([Core.synthPianoSample(69, 44100, 0.5)], 44100));
     const p2 = await context.newPage();

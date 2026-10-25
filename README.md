@@ -19,9 +19,9 @@ I wanted to hear how my own singing would sit over chords, and to get a chord pr
 2. **Record or load:** count-in with metronome, or load a WAV/MP3 and align it to the bar grid.
 3. **Pitch detection:** finds note events (start, length, pitch in cents) and separates them from breaths and silence.
 4. **Sections and key:** mark sections and get key and mode suggestions for each one.
-5. **Pitch and timing correction:** optional autotune (TD-PSOLA) and quantization, both reversible.
+5. **Pitch and timing correction:** optional autotune (TD-PSOLA) and quantization, both reversible. Drag on empty space to select many notes and move them together (pitch and time), double-click a note to split it in two when the detector heard one sound, and shift the whole song by 1–2 bars to leave an intro gap.
 6. **Chord detection:** diatonic chords and common extensions, using a sequence model that favors fewer chord changes and avoids clashing notes.
-7. **Piano and drums:** piano from Salamander samples (with a built-in synthetic fallback offline), and simple drum loops.
+7. **Chord sound and drums:** piano (Salamander samples, built-in synthetic fallback offline) or a synth keyboard, each as block chords or an arpeggio; a repeated chord is struck once and held or faded instead of every bar; pick the bar where chords enter and the bar where drums enter (drag the 🎹 / 🥁 flags on the ruler). Simple drum loops.
 8. **Export:** MIDI, chord sheet (.txt), corrected vocal WAV, vocal + piano mix WAV, and a project JSON file.
 
 ## Run locally

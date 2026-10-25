@@ -754,6 +754,173 @@ await step('3/4, 2/4 ve 6/8 ölçülerinde de akor/voicing üretilir', () => {
   return out.join(' · ');
 });
 
+// ---------------------------------------------------------------- toplu seçim / bölme / kaydırma / akor sesi / giriş ölçüsü
+const barsOf = (dd) => { const o = {}; for (const c of dd.chords) (o[c.bar] ||= []).push(Core.chordName(c.chord, c.flats)); return o; };
+
+await step('Akor sesi 1: aynı akor üst üste gelince tek vuruş (hold / fade), en fazla N ölçü; "off" eskisi gibi', () => {
+  const g4 = Core.makeGrid({ bpm: 120, meter: '4/4' });
+  const mk = (bar, root, q) => ({ chord: { root, q: 'min' }, bar, section: 'a', q0: (bar - 1) * 4, q1: bar * 4, voicing: { bass: 36 + root, notes: [55 + root, 59 + root, 62 + root] } });
+  const chords = [mk(1, 0), mk(2, 0), mk(3, 0), mk(4, 0), mk(5, 5)];
+  const kinds = (ev) => ev.map((e) => [e.t / g4.barSec, +(e.dur / g4.barSec).toFixed(2)]);
+  const off = Core.pianoEvents(chords, g4, { repeat: 'off' });
+  assert.equal(off.length, 5 * 4, 'off: her ölçüde 4 nota (bas + 3)');
+  const hold = Core.pianoEvents(chords, g4, { repeat: 'hold', holdBars: 2 });
+  // 1-2 tek vuruş, 3-4 tek vuruş, 5 ayrı → 3 vuruş × 4 nota
+  assert.equal(hold.length, 3 * 4);
+  const bassHits = hold.filter((e) => e.midi === 36).map((e) => [e.t / g4.barSec, e.dur / g4.barSec]);
+  assert.deepEqual(bassHits, [[0, 2], [2, 2]], 'C akoru 1. ve 3. ölçü başında basılır, 2 ölçü sürer');
+  assert.ok(hold.every((e) => !e.fade));
+  const hold4 = Core.pianoEvents(chords, g4, { repeat: 'hold', holdBars: 4 });
+  assert.deepEqual(hold4.filter((e) => e.midi === 36).map((e) => e.dur / g4.barSec), [4]);
+  const fade = Core.pianoEvents(chords, g4, { repeat: 'fade', holdBars: 2 });
+  const f0 = fade.find((e) => e.midi === 36);
+  assert.ok(f0.fade && f0.hold < f0.dur && f0.rel > 0.8, 'fade: tuş erken bırakılır, uzun sönme');
+  assert.ok(!fade.find((e) => e.midi === 41).fade, 'tek ölçülük akor fade olmaz');
+  const mid = Core.parseMidi(Core.exportMidi(Object.assign(JSON.parse(JSON.stringify(proj)), { piano: { style: 'piano-chord', repeat: 'hold', holdBars: 2, rate: '1/8' } }), d));
+  assert.ok(mid.tracks[2].notes.length > 0);
+  // gerçek projede: ardışık aynı akorlar azalır, süre toplamı korunur
+  const dOff = Core.derive(proj, st);
+  const real = Core.pianoEvents(dOff.chords, dOff.g, { repeat: 'hold', holdBars: 2 }), realOff = Core.pianoEvents(dOff.chords, dOff.g, { repeat: 'off' });
+  assert.ok(real.length <= realOff.length);
+  return `off ${off.length} nota · hold ${hold.length} (bas: ${JSON.stringify(bassHits)}) · hold4 ${hold4.length} · fade bas hold ${f0.hold.toFixed(2)} s rel ${f0.rel.toFixed(2)} s`;
+});
+
+await step('Akor sesi 2: arpej (yukarı-aşağı, hız, tutulan akorda kesintisiz, fade kısılır) + synth render (zarf, perde, fade)', () => {
+  const g4 = Core.makeGrid({ bpm: 120, meter: '4/4' });
+  const ch = (bar) => ({ chord: { root: 0, q: 'maj' }, bar, section: 'a', q0: (bar - 1) * 4, q1: bar * 4, voicing: { bass: 36, notes: [52, 55, 60] } });
+  const chords = [ch(1), ch(2)];
+  const arp = Core.pianoEvents(chords, g4, { pattern: 'arp', repeat: 'off', rate: '1/8', inst: 'piano' });
+  assert.equal(arp.length, 16, '2 ölçü × 8 sekizlik');
+  assert.deepEqual(arp.slice(0, 8).map((e) => e.midi), [36, 52, 55, 60, 55, 52, 36, 52], 'bas → yukarı → aşağı');
+  assert.ok(arp.every((e) => e.arp));
+  const arp16 = Core.pianoEvents(chords, g4, { pattern: 'arp', repeat: 'off', rate: '1/16', inst: 'synth' });
+  assert.equal(arp16.length, 32);
+  const hold = Core.pianoEvents(chords, g4, { pattern: 'arp', repeat: 'hold', rate: '1/8' });
+  assert.deepEqual(hold.slice(6, 10).map((e) => e.midi), [36, 52, 55, 60], 'tutulan akorda desen ölçü çizgisinde yeniden başlamaz (6. adımdan sonra 4 notalık döngü sürer)');
+  const fade = Core.pianoEvents(chords, g4, { pattern: 'arp', repeat: 'fade', rate: '1/8' });
+  assert.ok(fade[15].vel < fade[1].vel * 0.6, 'fade: desen yavaşça kısılır');
+  // piyano / synth arpej MIDI: program numaraları
+  const p2 = JSON.parse(JSON.stringify(proj)); p2.piano = { style: 'synth-arp', repeat: 'off', holdBars: 2, rate: '1/8' };
+  const pm = Core.parseMidi(Core.exportMidi(p2, Core.derive(p2, st)));
+  assert.ok(pm.tracks[2].notes.length > 30, 'arpej MIDI notaları');
+  // synth render: doğru perde, atak/zarf, fade sessizleşir
+  const sr = 22050, ev = [{ t: 0.1, dur: 1, midi: 69, vel: 100, q0: 0, q1: 1 }];
+  const x = Core.renderSynth(ev, sr, sr * 3, 1);
+  const pow = (arr, hz, a, b) => { let re = 0, im = 0; for (let i = a; i < b; i++) { const w = (2 * Math.PI * hz * i) / sr; re += arr[i] * Math.cos(w); im += arr[i] * Math.sin(w); } return Math.hypot(re, im); };
+  const [a0, b0] = [Math.round(0.5 * sr), Math.round(1 * sr)];
+  const p440 = pow(x, 440, a0, b0);
+  assert.ok(p440 > 3 * pow(x, 415.3, a0, b0) && p440 > 3 * pow(x, 466.2, a0, b0) && p440 > 1.5 * pow(x, 330, a0, b0), 'synth perdesi A4 (440 Hz)');
+  const f = 440;
+  const rmsAt = (arr, t) => { let a = 0; const i0 = Math.round(t * sr), W = Math.round(0.57 * sr); for (let i = i0; i < i0 + W; i++) a += arr[i] * arr[i]; return Math.sqrt(a / W); }; // 0,57 s ≈ iki vuruş: iki fark edilmiş testerenin vuruşmasını (~3,6 Hz) ortalar
+  assert.ok(rmsAt(x, 0.3) > 0.01 && rmsAt(x, 2.3) < 0.05 * rmsAt(x, 0.3), 'nota bitince söner');
+  const xf = Core.renderSynth([Object.assign({}, ev[0], { dur: 2, fade: true })], sr, sr * 4, 1);
+  assert.ok(rmsAt(xf, 1.4) < 0.4 * rmsAt(xf, 0.3), 'fade: sürerken kısılır');
+  const xs = Core.renderSynth([Object.assign({}, ev[0], { dur: 2 })], sr, sr * 4, 1);
+  assert.ok(rmsAt(xs, 1.4) > 0.6 * rmsAt(xs, 0.3), 'fadesiz: seviye sürer');
+  let pk = 0; for (const v of Core.renderSynth(Core.pianoEvents(Core.derive(proj, st).chords, g4, { inst: 'synth' }), sr, sr * 20, 1)) pk = Math.max(pk, Math.abs(v));
+  assert.ok(pk > 0.05 && pk < 1, `synth akor tepe seviyesi ${pk.toFixed(2)}`);
+  return `arpej 8'lik ${arp.length} / 16'lık ${arp16.length} nota · synth ${f.toFixed(0)} Hz · akor mix tepe ${pk.toFixed(2)}`;
+});
+
+await step('Akor girişi: akorlar seçilen ölçüden girer, o ölçü akor motoru için 1. ölçüdür; öncesinde akor/piyano yok; davul girişi', () => {
+  const p2 = JSON.parse(JSON.stringify(proj));
+  const base = Core.derive(p2, st);
+  assert.equal(base.chordStart, 1);
+  p2.chordStartBar = 3;
+  const d3 = Core.derive(p2, st);
+  assert.equal(d3.chordStart, 3);
+  assert.ok(d3.chords.every((c) => c.bar >= 3), 'ölçü 1-2 akorsuz');
+  assert.ok(Core.chordChart(p2, d3).split('\n').find((l) => l.startsWith('|')).startsWith('|  |  |'), 'şema: ilk ölçüler boş hücre (otomatik)');
+  assert.ok(Core.pianoEvents(d3.chords, d3.g, {}).every((e) => e.t >= 2 * d3.g.barSec - 1e-6), 'piyano 3. ölçüden önce çalmaz');
+  // 3. ölçü bölüm başı sayılır: ilk akor ev akoru (ton merkezi) tercihli
+  const home = Core.homeChord(d3.sections[0].tonic, d3.sections[0].mode);
+  assert.equal(d3.chords[0].chord.root, home.root, '3. ölçü = akorlar için 1. ölçü: ev akoruyla başlar');
+  // nakaratı da kapsayan başlangıç: ilk bölüm tamamen dışarıda
+  p2.chordStartBar = 6;
+  const d6 = Core.derive(p2, st);
+  assert.ok(d6.chords.every((c) => c.bar >= 6) && d6.chords.some((c) => c.section === 's1') && !d6.chords.some((c) => c.section === 's0'));
+  // kilitler başlangıçtan öncekini yok sayar
+  p2.chordStartBar = 3; p2.chordLocks = [{ bar: 1, half: null, chord: { root: 7, q: 'maj', bass: null } }];
+  assert.ok(Core.derive(p2, st).chords.every((c) => c.bar >= 3));
+  // davul: loop'un 1. ölçüsü giriş ölçüsünde
+  const L = Core.DRUM_LOOPS.find((l) => l.id === 'rock8');
+  const e1 = Core.drumEvents(L, d3.g, 8), e3 = Core.drumEvents(L, d3.g, 8, 3);
+  assert.equal(e3.length, e1.length * 6 / 8);
+  assert.ok(Math.abs(e3[0].t - 2 * d3.g.barSec) < 1e-9 && e3.find((e) => e.kind === 'S').q % 4 === 1);
+  const p3 = JSON.parse(JSON.stringify(proj)); p3.drums.startBar = 4;
+  const dr = Core.parseMidi(Core.exportMidi(p3, Core.derive(p3, st), L)).tracks.find((t) => /Davul/.test(t.name));
+  assert.ok(dr.notes.every((n) => n.q0 >= 12 - 1e-6 || n.tick >= 12 * 480 - 1), 'MIDI davul 4. ölçüden başlar');
+  return `ölçü 3: ilk akor ${Core.chordName(d3.chords[0].chord)} · ölçü 6: nakarat ilk · davul 3'ten: ${e3.length}/${e1.length} vuruş`;
+});
+
+await step('Şarkıyı kaydır: +2 ölçü boşluk — ölçü numaralı her şey ve notalar birlikte kayar; akorlar aynı; geri alınır; BPM değişse de ölçü olarak kalır', async () => {
+  const p2 = JSON.parse(JSON.stringify(proj));
+  p2.chordLocks = [{ bar: 5, half: null, chord: { root: 2, q: 'maj7', bass: null } }];
+  p2.changeMarks = [{ bar: 6, half: 1, kind: 'change' }];
+  p2.noteEdits = [{ t0: st.rawNotes[2].t0, t1: st.rawNotes[2].t1, q0to: (st.rawNotes[2].t0 - test.offsetSec) / g.spq + 0.5 }];
+  p2.chordStartBar = 4; p2.drums.startBar = 1;
+  const dA = Core.derive(p2, st);
+  const mapA = dA.timeMap;
+  Core.shiftSong(p2, 2);
+  assert.equal(p2.audio.leadBars, 2);
+  assert.ok(Math.abs(Core.effectiveOffset(p2) - (test.offsetSec - 2 * g.barSec)) < 1e-9, 'ofset 2 ölçü azaldı');
+  assert.deepEqual(p2.sections.map((x) => [x.startBar, x.endBar]), [[3, 6], [7, 10]]);
+  assert.equal(p2.chordLocks[0].bar, 7); assert.equal(p2.changeMarks[0].bar, 8);
+  assert.equal(p2.chordStartBar, 6, 'açıkça seçilmiş akor girişi şarkıyla kayar'); assert.equal(p2.drums.startBar, 1, '1. ölçüdeki davul girişi yerinde kalır');
+  const dB = Core.derive(p2, st);
+  assert.equal(dB.bars, dA.bars + 2);
+  dA.notes.forEach((n, i) => assert.ok(Math.abs(dB.notes[i].q0 - (n.q0 + 8)) < 1e-6, `nota ${i} 2 ölçü (8 çeyrek) kaydı`));
+  assert.equal(mapA.sig === dB.timeMap.sig, true, 'zaman haritası kayıttaki zamanda aynı (ses düzeltmesi yeniden render gerekmez)');
+  const A = barsOf(dA), B = barsOf(dB);
+  for (const bar of Object.keys(A)) assert.deepEqual(B[+bar + 2], A[bar], `ölçü ${bar} akoru ölçü ${+bar + 2}'de`);
+  assert.equal(dB.chords.find((c) => c.bar === 7).locked, true);
+  // BPM değişince boşluk yine 2 ÖLÇÜ (saniye değil)
+  const p3 = JSON.parse(JSON.stringify(p2)); p3.settings.bpm = 100;
+  assert.ok(Math.abs(Core.effectiveOffset(p3) - (test.offsetSec - 2 * Core.makeGrid(p3.settings).barSec)) < 1e-9);
+  // geri al
+  Core.shiftSong(p2, -2);
+  assert.equal(p2.audio.leadBars, 0);
+  assert.deepEqual(p2.sections.map((x) => [x.startBar, x.endBar]), [[1, 4], [5, 8]]);
+  assert.equal(p2.chordLocks[0].bar, 5); assert.equal(p2.chordStartBar, 4);
+  assert.ok(Math.abs(Core.derive(p2, st).notes[2].q0 - dA.notes[2].q0) < 1e-6);
+  return `başta 2 ölçü boşluk → ${dB.bars} ölçü; nakarat 7–10; akorlar aynı; −2 ile başlangıca döndü`;
+});
+
+await step('Nota bölme (çift tık): tek sanılan nota ikiye ayrılır, perdeler yeniden hesaplanır, düzenlemeler iki yarıya geçer, geri alınınca birleşir; yeniden analizde de uygulanır', () => {
+  const p2 = JSON.parse(JSON.stringify(proj));
+  p2.noteEdits = [];
+  const raw = st.rawNotes;
+  let k = raw.findIndex((n) => n.t1 - n.t0 > 0.8);
+  assert.ok(k >= 0, 'uzun nota yok');
+  const n = raw[k], hop = st.track.hopSec;
+  const t = Math.round(((n.t0 + n.t1) / 2) / hop) * hop;
+  // düzenleme: etiket + zaman kaydırma
+  const dBefore = Core.derive(p2, Object.assign({}, st, { rawNotes: raw }));
+  p2.noteEdits.push({ t0: n.t0, t1: n.t1, label: n.nearest + 2, q0to: dBefore.notes[k].q0 + 1 });
+  assert.ok(Core.addNoteSplit(p2, n, t, g.spq));
+  assert.equal(p2.noteEdits.length, 2, 'düzenleme iki yarıya çoğaldı');
+  assert.ok(Math.abs(p2.noteEdits[1].q0to - (dBefore.notes[k].q0 + 1 + (t - n.t0) / g.spq)) < 1e-9, 'ikinci yarı aynı kadar kayar');
+  const split = Core.applyNoteSplits(raw, st.track, p2.noteSplits);
+  assert.equal(split.length, raw.length + 1);
+  const [a, b] = [split[k], split[k + 1]];
+  assert.ok(Math.abs(a.t1 - t) < 1e-9 && Math.abs(b.t0 - t) < 1e-9 && a.t0 === n.t0 && b.t1 === n.t1);
+  assert.ok(Math.abs(a.median - n.median) < 0.5 && Math.abs(b.median - n.median) < 0.5, 'aynı perdede iki parça');
+  assert.ok(a.splitEnd === a.t1 && b.splitStart === b.t0 && a.splitStart == null);
+  const dS = Core.derive(p2, Object.assign({}, st, { rawNotes: split }));
+  assert.equal(dS.notes.length, raw.length + 1);
+  assert.equal(dS.notes[k].label, n.nearest + 2); assert.equal(dS.notes[k + 1].label, n.nearest + 2);
+  assert.ok(Math.abs(dS.notes[k + 1].q0 - dS.notes[k].q1) < 0.2 && dS.notes[k + 1].q0 > dS.notes[k].q0, 'ikinci parça birincinin hemen ardında');
+  // sınıra çok yakın bölme uygulanmaz; tekrar uygulanabilir
+  assert.equal(Core.applyNoteSplits(raw, st.track, [n.t0 + hop]).length, raw.length);
+  assert.equal(Core.applyNoteSplits(split.map((x) => x), st.track, p2.noteSplits).length, raw.length + 1, 'zaten bölünmüş nota tekrar bölünmez');
+  // geri al: düzenlemeler birleşir
+  assert.ok(Core.removeNoteSplit(p2, t, g.spq));
+  assert.equal(p2.noteSplits.length, 0); assert.equal(p2.noteEdits.length, 1);
+  assert.equal(p2.noteEdits[0].label, n.nearest + 2); assert.ok(Math.abs(p2.noteEdits[0].t1 - n.t1) < 1e-9);
+  assert.equal(Core.applyNoteSplits(raw, st.track, p2.noteSplits).length, raw.length);
+  return `nota ${k + 1}: ${(n.t1 - n.t0).toFixed(2)} s → ${(a.t1 - a.t0).toFixed(2)} + ${(b.t1 - b.t0).toFixed(2)} s · medyanlar ${a.median.toFixed(2)} / ${b.median.toFixed(2)}`;
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nTüm adımlar geçti.');

@@ -81,6 +81,12 @@
         <label>Kayıt ofseti (ms)<input type="number" id="inOffset" step="1" value="0"></label>
         <div id="audioInfo" class="hint"></div>
       </div>
+      <fieldset id="shiftBox">
+        <legend>Şarkıyı kaydır — başta boşluk bırak</legend>
+        <p class="hint">Bütün şarkıyı birlikte 1–2 ölçü kaydırır: ses, ölçü çizgileri, bölümler, akor kilitleri ve düzenlemeler birlikte gider. Başta boşluk (giriş) bırakmak ya da fazla boşluğu azaltmak için. Orijinal kayıt değişmez.</p>
+        <div class="row"><button data-shift="1" title="Şarkı 1 ölçü geç başlasın">+1 ölçü boşluk</button><button data-shift="2" title="Şarkı 2 ölçü geç başlasın">+2 ölçü boşluk</button><button data-shift="-1" title="Başta 1 ölçü boşluğu al">−1 ölçü</button><button data-shift="-2" title="Başta 2 ölçü boşluğu al">−2 ölçü</button></div>
+        <div id="shiftInfo" class="hint"></div>
+      </fieldset>
     </details>
 
     <details class="step" open>
@@ -128,6 +134,8 @@
         <tr><td><b>Sürükle</b> / <kbd>↑</kbd><kbd>↓</kbd></td><td><b>Notayı taşı</b></td><td class="hint">Yanlış nota söyledin: ses yeni yarım sese kayar, akorlar da yeni notayı kullanır.</td></tr>
         <tr><td><kbd>Shift</kbd>+sürükle</td><td><b>İnce akort</b></td><td class="hint">Nota doğru, biraz pes/tiz: yalnızca cent; nota ve akorlar aynı kalır.</td></tr>
         <tr><td><kbd>Alt</kbd>+sürükle</td><td><b>Etiketi düzelt</b></td><td class="hint">Program yanlış algıladı: ses aynı, yalnızca analizdeki nota değişir.</td></tr>
+        <tr><td>Boş yerde <b>sürükle</b></td><td><b>Birçok notayı seç</b></td><td class="hint">Seçili notalardan birini sürükle: hepsi birlikte taşınır (yukarı/aşağı = perde, sağa/sola = zaman). <kbd>Shift</kbd>+sürükle ya da <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+tık seçime ekler; <kbd>Ctrl</kbd>+<kbd>A</kbd> hepsini seçer.</td></tr>
+        <tr><td><b>Çift tık</b></td><td><b>Notayı böl</b></td><td class="hint">Program iki heceyi tek ses sandıysa notaya çift tıkla: o yerden ikiye bölünür, her parçanın perdesi yeniden hesaplanır.</td></tr>
       </table>
       <div id="editSummary"></div>
       <fieldset>
@@ -167,6 +175,8 @@
       <p class="hint">Akorlar <b>4. adımdaki ton</b> ve <b>5. adımdaki düzeltmelerden sonra duyduğun notalara</b> göre bulunur: notayı başka sese çektiysen (sürükle / ↑↓ / autotune'un scale'e çekmesi) yeni nota, zamanını kaydırdıysan (quantize / sağa-sola) yeni yeri kullanılır.</p>
       <label title="Süreli Viterbi bütün bölümü birlikte arar ve en iyi 3 alternatifi verir; ölçü ölçü motor her ölçüde yerel karar verir">Motor
         <select id="inEngine"><option value="viterbi">süreli Viterbi (bölüm boyunca, 3 alternatif)</option><option value="greedy">ölçü ölçü (eski)</option></select></label>
+      <div class="row"><label class="grow" title="Akor motoru bu ölçüyü 1. ölçü sayar; öncesinde akor ve piyano çalmaz. Zaman çizelgesinde cetveldeki 🎹 bayrağını sürükleyerek de ayarlanır"><b>🎹 Akorlar şu ölçüden girsin</b><input type="number" id="inChordStart" min="1" value="1"></label><button id="btnChordHere" title="Oynatma imlecinin (kırmızı çizgi) olduğu ölçü">İmleçten</button></div>
+      <div id="chordStartInfo" class="hint"></div>
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
         <button id="btnApplySug" title="Kilitlerin dışındaki akorları motorun şimdiki önerisine göre yeniden hesaplar">Motorun önerilerini uygula <span id="sugCount"></span></button></div>
       <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Bir akoru kilitlediğinde <b>diğer akorlar değişmez</b>; motor başka bir şey önerirse akorun altında turuncu <b>→</b> ile gösterilir, nedeni sağdaki panelde yazar. Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
@@ -228,7 +238,7 @@
           <button class="mute">M</button><button class="solo">S</button>
         </div>
         <div class="strip" data-track="piano">
-          <b>Piyano</b>
+          <b title="Piyano ya da synth klavye">Akor</b>
           <input type="range" min="-40" max="6" step="1" value="-6" class="vol" aria-label="Piyano ses seviyesi">
           <output>-6 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
@@ -240,6 +250,15 @@
           <button class="mute">M</button><button class="solo">S</button>
         </div>
       </div>
+      <div class="grid2">
+        <label title="Akorların hangi çalgıyla ve hangi desenle çalınacağı">Akor sesi<select id="inPianoStyle"><option value="piano-chord">Piyano — akor</option><option value="piano-arp">Piyano — arpej</option><option value="synth-chord">Synth klavye — akor</option><option value="synth-arp">Synth klavye — arpej</option></select></label>
+        <label id="arpWrap" title="Arpejde her notanın süresi" hidden>Arpej hızı<select id="inArpRate"><option value="1/4">1/4 (vuruş)</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
+      </div>
+      <div class="grid2">
+        <label title="Aynı akor art arda gelince her ölçüde yeniden basılması gerekmez">Aynı akor üst üste gelince<select id="inPianoRepeat"><option value="off">Her ölçüde yeniden bas</option><option value="hold">Bir kez bas, sürsün</option><option value="fade">Bir kez bas, sönsün (fade-out)</option></select></label>
+        <label id="holdWrap" title="Tek vuruşun en fazla kaç ölçü süreceği; sonra akor yeniden basılır">En fazla kaç ölçü sürsün<input type="number" id="inHoldBars" min="1" max="16" value="2"></label>
+      </div>
+      <p class="hint">Aynı akor art arda gelince ilk ölçünün başında bir kez basılır ve ikinci ölçüye sürer (ya da söner); arpejde desen kesintisiz devam eder (fade'de yavaşça kısılır).</p>
       <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
       <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
       <div id="pianoInfo" class="hint"></div>
@@ -250,6 +269,8 @@
       <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü her zaman 1. adımdan kendin de seçebilirsin; loop proje ölçüsüne göre seçilir.</p>
       <div id="meterEst"></div>
       <label class="chk"><input type="checkbox" id="inDrumsOn"> Oynatırken davul çalsın</label>
+      <div class="row"><label class="grow" title="Loop'un 1. ölçüsü bu ölçüdür; öncesinde davul çalmaz. Cetveldeki 🥁 bayrağını sürükleyerek de ayarlanır"><b>🥁 Davul şu ölçüden girsin</b><input type="number" id="inDrumStart" min="1" value="1"></label><button id="btnDrumHere" title="Oynatma imlecinin (kırmızı çizgi) olduğu ölçü">İmleçten</button></div>
+      <div id="drumStartInfo" class="hint"></div>
       <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>
         <button id="btnDrumPreview" title="Seçili loop'u 2 ölçü dinle">▶ Loop</button><button id="btnDrumStop">■</button></div>
       <div id="drumInfo"></div>
