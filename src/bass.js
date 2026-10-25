@@ -68,7 +68,7 @@ function fallbackTemplate(meter) {
 }
 function templatesFor(track, meter, type) {
   const gitarOk = type === 'synth' && track && track.synthGuitarTemplates; // gitar kalıpları synth'te kullanıcı isterse açılır
-  const list = [...BASS_TEMPLATES, ...((track && track.customTemplates) || [])].filter((t) => t.meter === meter && ((t.suits || BOTH).includes(type) || (gitarOk && SYNTH_HIDDEN_BY_DEFAULT.includes(t.id))));
+  const list = [...BASS_TEMPLATES, ...((track && track.customTemplates) || []).filter((t) => !t.temp)].filter((t) => t.meter === meter && ((t.suits || BOTH).includes(type) || (gitarOk && SYNTH_HIDDEN_BY_DEFAULT.includes(t.id))));
   return list.length ? list : [fallbackTemplate(meter)];
 }
 const onsetCount = (t) => t.slots.length;
@@ -852,6 +852,91 @@ function bassRegenSection(track, ctx, secId) {
   applyLoops(track, ctx);
 }
 
+// ---------------------------------------------------------------- TAP: ritmi vuruşlayarak kaydet → özel şablon → perdeleri DAW seçer
+// taps: [{q (şarkı başından çeyrek), dq (tuşun basılı kaldığı çeyrek), vel}]; gridSteps 2 = 8'lik, 1 = 16'lık ızgara
+// Ham mesafesi bir ızgara adımından kısa iki vuruş birleşir; başlangıç ızgaraya yuvarlanır, uzunluk bırakma anından (≥ bir ızgara adımı)
+function tapQuantize(taps, o) {
+  const gq = o.gridSteps * STEP_Q, barQ = o.barQ;
+  const lo = o.firstBar * barQ, hi = (o.lastBar + 1) * barQ;
+  const sorted = taps.slice().sort((a, b) => a.q - b.q);
+  const merged = [];
+  for (const t of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && t.q - last.q < gq - 1e-9) { last.dq = Math.max(last.dq, t.q + (t.dq || 0) - last.q); continue; } // birleştir
+    merged.push({ q: t.q, dq: t.dq || 0, vel: t.vel });
+  }
+  const starts = [];
+  for (const t of merged) {
+    const q0 = Math.round(t.q / gq) * gq;
+    if (q0 < lo - 1e-9 || q0 >= hi - 1e-9) continue;
+    if (starts.length && Math.abs(starts[starts.length - 1].q0 - q0) < 1e-9) continue; // yuvarlayınca aynı yere düşenler
+    starts.push({ q0, dq: Math.max(gq, Math.round(t.dq / gq) * gq), vel: t.vel });
+  }
+  const perBar = new Map();
+  starts.forEach((t, k) => {
+    const bar = Math.floor(t.q0 / barQ + 1e-9), nextStart = k + 1 < starts.length ? starts[k + 1].q0 : Infinity;
+    const end = Math.min(t.q0 + t.dq, nextStart, (bar + 1) * barQ);
+    const len = Math.max(1, Math.round((end - t.q0) / STEP_Q));
+    if (!perBar.has(bar)) perBar.set(bar, []);
+    perBar.get(bar).push({ step: Math.round((t.q0 - bar * barQ) / STEP_Q), len, vel: t.vel });
+  });
+  return perBar;
+}
+function tapTemplate(id, name, meter, onsets, extra) {
+  const slots = onsets.map((x) => ({ step: x.step, len: x.len })).sort((a, b) => a.step - b.step);
+  return Object.assign({ id, name, family: 'custom', meter, steps: stepsOf(meter), window: [0, 1], suits: BOTH, slots, custom: true }, extra || {});
+}
+// kaydedilen vuruşları ölçülere uygula. mode: 'asPlayed' (her ölçü kendi ritmi) | 'loop' (ilk 1–2 vuruşlu ölçü seçili aralıkta döngü)
+function bassApplyTaps(track, ctx, perBar, o = {}) {
+  ensureBars(track, ctx);
+  const bars = [...perBar.keys()].sort((a, b) => a - b);
+  if (!bars.length) return { ok: false, reason: 'Hiç vuruş yakalanmadı.' };
+  const a = o.firstBar ?? bars[0], z = o.lastBar ?? bars[bars.length - 1];
+  for (const L of (track.loops || []).slice()) if (overlapsLoop(L, { sourceStart: a, sourceLength: z - a + 1, targetStart: a, targetEnd: z })) bassBreakLoop(track, ctx, L.id); // yeniden vuruş yalnızca seçili ölçüleri değiştirir
+  // eski geçici şablonları temizle
+  const used = (id) => track.bars.some((b) => b.recipe && b.recipe.templateId === id);
+  const motifs = planMotifs(track, ctx);
+  const apply = (i) => {
+    const b = track.bars[i];
+    const id = `tap-${i}-${Math.random().toString(36).slice(2, 6)}`;
+    track.customTemplates.push(tapTemplate(id, `Tap ${i + 1}. ölçü`, ctx.meter, perBar.get(i), { temp: true }));
+    b.source = 'tapped'; b.locked = false; b.recipe = { templateId: id, slots: [] };
+    generateBar(track, ctx, i, motifs, { prevMidi: prevNote(track, i), nextFirst: nextFixedFirst(track, i) });
+    b.source = 'tapped';
+  };
+  if (o.mode === 'loop') {
+    const len = Math.min(o.loopBars === 2 ? 2 : 1, bars.length);
+    const src = bars.slice(0, len);
+    if (src.some((x, k) => x !== src[0] + k)) return { ok: false, reason: 'Döngü için vuruşlu ölçüler art arda olmalı.' };
+    src.forEach(apply);
+    if (z > src[len - 1]) {
+      const r = bassMakeLoop(track, ctx, { sourceStart: src[0], sourceLength: len, targetStart: src[len - 1] + 1, targetEnd: z, mode: o.loopMode || 'follow-chords' });
+      if (!r.ok) return r;
+    } else src.forEach((i) => { track.bars[i].locked = true; });
+  } else for (const i of bars) if (i >= a && i <= z) apply(i);
+  track.customTemplates = track.customTemplates.filter((t) => !t.temp || used(t.id));
+  applyTies(track, ctx, a - 1, z + 1);
+  return { ok: true, bars: bars.filter((i) => i >= a && i <= z).length };
+}
+// gecikme kalibrasyonu: her vuruşun en yakın tıka (±maxDev sn) farkının medyanı; en az 4 eşleşme gerekir
+function tapOffset(clicks, taps, maxDev = 0.3) {
+  const d = [];
+  for (const t of taps) { let best = null; for (const c of clicks) if (best == null || Math.abs(t - c) < Math.abs(t - best)) best = c; if (best != null && Math.abs(t - best) <= maxDev) d.push(t - best); }
+  if (d.length < 4) return { ok: false, n: d.length };
+  d.sort((a, b) => a - b);
+  const m = d.length % 2 ? d[(d.length - 1) / 2] : (d[d.length / 2 - 1] + d[d.length / 2]) / 2;
+  const mad = d.map((x) => Math.abs(x - m)).sort((a, b) => a - b)[Math.floor(d.length / 2)];
+  return { ok: true, n: d.length, offsetMs: Math.round(m * 1000), madMs: Math.round(mad * 1000) };
+}
+// bir ölçüyü adlandırılmış şablon olarak sakla (üretici bundan sonra onu da seçebilir)
+function bassSaveTemplate(track, ctx, i, name) {
+  const b = track.bars[i]; if (!b || !b.notes.length) return null;
+  const rec = recipeOf(b), nm = String(name || '').trim() || `Şablon ${track.customTemplates.filter((t) => t.saved).length + 1}`;
+  const t = tapTemplate('user-' + hash32(nm + b.index + Date.now()).toString(36), nm, ctx.meter, rec.slots.map((s) => ({ step: s.step, len: s.len })), { saved: true });
+  track.customTemplates.push(t);
+  return t;
+}
+
 // ---------------------------------------------------------------- 8) OYNATMA: tek bir dizi nota olayı (saniye) + filtre otomasyonu
 function bassEvents(track, g, bars) {
   const ev = [];
@@ -910,6 +995,7 @@ const Bass = {
   rngFor, hash32, pickW, barEnergy, PHRASE_SHAPE, planMotifs, generateBar, barSig, recipeOf, applyTies, applyLoops, ensureBars,
   bassSync, bassGenerateAll, bassNewSeed, bassReroll, bassDensity, bassCopyForward, bassRefit, bassClear, bassLock, bassLockRange, bassLockSection, bassSetPedal,
   BASS_PRESET_NAMES, bassSwitchType, bassRegenSection, bassRegenRange, bassMakeLoop, bassBreakLoop, loopCopyOf, bassAddNote, bassDeleteNote, bassUpdateNote, resolvePedalPc, pedalFor,
+  tapQuantize, tapTemplate, tapOffset, bassApplyTaps, bassSaveTemplate,
   bassEvents, filterAutomation, cutoffHz, newHistory, historyPush, historyUndo, historyRedo, bassMidi, noteKey, barKey, nearestPc, foldInto, homeRoot,
 };
 Object.assign(C, { Bass });

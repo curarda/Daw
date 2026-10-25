@@ -44,3 +44,12 @@ Written before the code, from reading the app. The bass plugs into what exists; 
 ## Phases
 
 1. Foundation. 2. Movement and control. 3. Tap rhythm. 4. Style profiles. Each phase is committed after its checks pass.
+
+## Phase 3 notes — tap-the-rhythm recording (as built)
+
+- **Flow:** select bars in the bass lane → *Kaydet* → one bar of count-in clicks, then the metronome runs over the selected range while the other tracks play (bass is muted). Tap with **B** (key down = onset, key up = length) or the on-screen pad. The count-in is scheduled on the audio clock; the phase switches to "recording" when the audio clock reaches the range start. Taps during the count-in are collected too, but anything that rounds outside the range is dropped. Esc cancels without touching the track; the recording ends on its own after the last selected bar.
+- **Timing:** key time (`event.timeStamp`) → audio time via `AudioContext.getOutputTimestamp()` (fallback: `currentTime` minus the elapsed wall time and `outputLatency`) → song seconds. The `latencyMs` setting is subtracted. **Calibrate** plays 8 clicks at 100 BPM; the median offset of the taps to their nearest click (±300 ms window, at least 4 matches) becomes `latencyMs`.
+- **Quantising:** grid 8th or 16th. Raw taps closer than one grid step merge into one onset (the merged length spans both); onsets that round to the same step collapse; a note lasts until key-up, clipped at the next onset and the bar line (minimum one 16th).
+- **Modes:** *as played* rewrites only bars that received taps (rhythm template = the played pattern, pitches still come from the generator, so chord edits re-pitch it and Generate keeps the rhythm). *Loop a phrase* records 1 or 2 bars from the selection start, locks them as the loop source and fills the rest of the selection with a follow-chords loop copy.
+- **Templates:** *Seçili ölçüyü şablon olarak sakla* stores the selected bar's rhythm as a named custom template (shown as the "Özel" family chip; the generator may also pick it under "Otomatik"). Temporary per-bar tap templates are garbage-collected when no bar uses them.
+- **Not done:** no MIDI-keyboard tapping (browser keyboard / pad only).

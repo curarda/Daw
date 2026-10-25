@@ -257,3 +257,5 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 #bassPanel .gsub select { width: auto; max-width: 160px; }
 #bassPanel label > select { margin-top: 2px; }
 #bassPanel .st-warn, #bsBarMenu .st-warn { margin: 4px 0; }
+#bsTapPad { min-width: 110px; }
+#bsTapPad.hit { background: var(--accent2); border-color: var(--accent2); color: #fff; }

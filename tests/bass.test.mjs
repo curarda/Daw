@@ -497,6 +497,77 @@ await step('Katman: bölüm içi kayıt ofseti, bölüm bazlı aile ve yoğunluk
   const t0 = Date.now(); const big = mkSong({ bars: 128, chords: prog }); const bt = newTrack({ seed: 1 }); B.bassGenerateAll(bt, big.ctx); assert.ok(Date.now() - t0 < 1000);
 });
 
+await step('Tap ritmi: ızgaraya yuvarlama (8\'lik / 16\'lık), yakın vuruşların birleşmesi, bırakmadan uzunluk, ölçülere dağılım, aralık dışı atılır', () => {
+  const q = (taps, o) => B.tapQuantize(taps.map(([q0, dq]) => ({ q: q0, dq })), Object.assign({ gridSteps: 1, barQ: 4, firstBar: 0, lastBar: 3 }, o));
+  const flat = (m) => [...m.entries()].map(([b, v]) => `${b}:` + v.map((x) => `${x.step}/${x.len}`).join(',')).join(' ');
+  assert.equal(flat(q([[0.02, 0.2], [0.27, 0.2], [1.0, 0.5], [1.49, 0.4]])), '0:0/1,1/1,4/2,6/2', '16\'lık: 0, 0.25, 1.0, 1.5');
+  assert.equal(flat(q([[0.02, 0.2], [0.55, 0.2], [1.1, 0.3], [1.65, 0.4]], { gridSteps: 2 })), '0:0/2,2/2,4/2,6/2', '8\'lik: en yakın yarım vuruş (0.55 → 0.5, 1.1 → 1.0, 1.65 → 1.5)');
+  assert.equal(flat(q([[0.02, 0.2], [0.3, 0.2], [1.1, 0.5], [1.49, 0.4]], { gridSteps: 2 })), '0:0/2,4/4', '8\'lik: 0.5\'ten yakın ham vuruşlar birleşir');
+  // birleştirme: ham mesafe bir ızgara adımından (0.25) kısa
+  assert.equal(flat(q([[0, 0.1], [0.2, 0.1], [0.26, 0.1]])), '0:0/1,1/1', '0.2 birleşir, 0.26 ayrı');
+  assert.equal(flat(q([[0, 0.1], [0.4, 0.1]], { gridSteps: 2 })), '0:0/2', '8\'lik: 0.4 < 0.5 → birleşir');
+  // uzunluk: bırakma anından, en az bir ızgara adımı; sonraki vuruş ve ölçü sonunda kesilir
+  assert.equal(flat(q([[0, 1.0], [2, 0.01]])), '0:0/4,8/1', 'bırakma 1 vuruş = 4 adım; çok kısa → bir ızgara adımı');
+  assert.equal(flat(q([[0, 3], [1, 0.1]])), '0:0/4,4/1', 'sonraki vuruşta kesilir');
+  assert.equal(flat(q([[3.5, 2]])), '0:14/2', 'ölçü sonunda kesilir');
+  assert.equal(flat(q([[3.9, 0.2], [4.1, 0.3], [20, 1], [-2, 1]])), '1:0/2', '3.9 ve 4.1 birleşir → 4.0 sonraki ölçünün başı, uzunluk birleşik; aralık dışı atılır');
+  assert.equal(flat(q([[1, 0.5], [5, 0.5]], { firstBar: 1, lastBar: 1 })), '1:4/2', 'seçili aralığın dışındaki vuruş atılır');
+});
+
+await step('Tap uygulama: özel şablon + perdeleri akor izi seçer; kaynak tapped; Generate ritmi korur; akor düzenlenince yeniden perdelenir; yeniden vuruş yalnızca seçili ölçüleri değiştirir; döngü kipi', () => {
+  const song = mkSong({ bars: 16, chords: prog });
+  const t = newTrack({ seed: 3 }); B.bassGenerateAll(t, song.ctx);
+  const rhythm = (b) => b.notes.map((x) => x.startBeat + ':' + x.durationBeats).join(',');
+  const onsets = new Map([[4, [{ step: 0, len: 4 }, { step: 6, len: 2 }, { step: 8, len: 4 }]], [5, [{ step: 0, len: 2 }, { step: 4, len: 2 }, { step: 8, len: 2 }, { step: 12, len: 4 }]]]);
+  const others = barsJson(t).filter((_, i) => i !== 4 && i !== 5);
+  const r = B.bassApplyTaps(t, song.ctx, onsets, { mode: 'asPlayed', firstBar: 4, lastBar: 5 });
+  assert.ok(r.ok && r.bars === 2);
+  assert.deepEqual(barsJson(t).filter((_, i) => i !== 4 && i !== 5), others, 'yalnızca seçili ölçüler değişti');
+  for (const i of [4, 5]) { assert.equal(t.bars[i].source, 'tapped'); assert.deepEqual(t.bars[i].notes.map((x) => x.startBeat / 0.25), onsets.get(i).map((x) => x.step), 'ritim vuruşlardan'); }
+  assert.equal(mod12(t.bars[4].notes[0].midi), 9, 'perdeler akordan: Am'); assert.equal(mod12(t.bars[5].notes[0].midi), 5, 'F');
+  const tpl = t.customTemplates.find((x) => x.id === t.bars[4].templateId); assert.ok(tpl && tpl.slots.length === 3 && tpl.meter === '4/4', 'özel şablon projede');
+  // Generate ritmi korur (perdeler yeniden çizilebilir), tapped kalır
+  const rh = [rhythm(t.bars[4]), rhythm(t.bars[5])];
+  B.bassNewSeed(t, song.ctx, 4242); assert.deepEqual([rhythm(t.bars[4]), rhythm(t.bars[5])], rh, 'yeni tohumda ritim aynı'); assert.ok(t.bars[4].source === 'tapped' && t.bars[5].source === 'tapped');
+  // akor değişince yeniden perdelenir, ritim aynı
+  const song2 = mkSong({ bars: 16, chords: (b) => (b === 5 ? [2, 'm'] : prog(b)) });
+  B.bassSync(t, song2.ctx); assert.equal(mod12(t.bars[4].notes[0].midi), 2, 'yeni akor Dm'); assert.equal(rhythm(t.bars[4]).split(',').length, 3);
+  assert.deepEqual(t.bars[4].notes.map((x) => x.startBeat / 0.25), [0, 6, 8], 'ritim korunur');
+  // yeniden vuruş yalnızca seçili ölçüler: 5. ölçüyü yeniden vur
+  const keep = JSON.stringify(t.bars[5].notes);
+  B.bassApplyTaps(t, song.ctx, new Map([[4, [{ step: 0, len: 8 }]]]), { mode: 'asPlayed', firstBar: 4, lastBar: 4 });
+  assert.equal(JSON.stringify(t.bars[5].notes), keep, 'komşu tapped ölçü dokunulmadı'); assert.equal(t.bars[4].notes.length, 1);
+  assert.ok(t.customTemplates.filter((x) => x.temp).every((x) => t.bars.some((b) => b.recipe && b.recipe.templateId === x.id)), 'kullanılmayan tap şablonları temizlenir');
+  // döngü kipi: 1 vuruşlu ölçü seçili aralığa döngü (akora uy)
+  const l = newTrack({ seed: 3 }); B.bassGenerateAll(l, song.ctx);
+  const lr = B.bassApplyTaps(l, song.ctx, new Map([[0, [{ step: 0, len: 6 }, { step: 6, len: 2 }, { step: 8, len: 8 }]]]), { mode: 'loop', firstBar: 0, lastBar: 7, loopBars: 1 });
+  assert.ok(lr.ok); assert.equal(l.loops.length, 1); assert.equal(l.loops[0].mode, 'follow-chords'); assert.deepEqual([l.loops[0].sourceStart, l.loops[0].sourceLength, l.loops[0].targetStart, l.loops[0].targetEnd], [0, 1, 1, 7]);
+  for (let i = 1; i <= 7; i++) { assert.equal(l.bars[i].source, 'loop'); assert.deepEqual(l.bars[i].notes.map((x) => x.startBeat / 0.25), [0, 6, 8]); assert.equal(mod12(l.bars[i].notes[0].midi), mod12(song.ctx.segs(i)[0].chord.root)); }
+  assert.equal(l.bars[0].source, 'tapped'); assert.ok(l.bars[0].locked);
+  // iki ölçülük döngü
+  const l2 = newTrack({ seed: 3 }); B.bassGenerateAll(l2, song.ctx);
+  const l2r = B.bassApplyTaps(l2, song.ctx, new Map([[0, [{ step: 0, len: 8 }, { step: 8, len: 8 }]], [1, [{ step: 0, len: 4 }, { step: 4, len: 12 }]]]), { mode: 'loop', firstBar: 0, lastBar: 7, loopBars: 2, loopMode: 'exact' });
+  assert.ok(l2r.ok); assert.deepEqual([l2.loops[0].sourceLength, l2.loops[0].targetStart, l2.loops[0].mode], [2, 2, 'exact']); assert.deepEqual(l2.bars[4].notes, l2.bars[0].notes);
+  // adlandırılmış şablon: saklanır ve üretici onu seçebilir
+  const saved = B.bassSaveTemplate(t, song.ctx, 5, 'Benim ritmim'); assert.ok(saved && saved.saved && saved.slots.length === 4 && saved.name === 'Benim ritmim');
+  assert.ok(B.templatesFor(t, '4/4', 'bass-guitar').some((x) => x.id === saved.id), 'kayıtlı şablon havuzda'); assert.ok(!B.templatesFor(t, '4/4', 'bass-guitar').some((x) => x.temp));
+  const pick = newTrack({ seed: 1, customTemplates: [saved] }); B.ensureBars(pick, song.ctx); for (const k of Object.keys(pick.sections)) { pick.sections[k].templateFamily = 'custom'; }
+  B.bassGenerateAll(pick, song.ctx); assert.ok(pick.bars.every((b) => b.templateId === saved.id), 'aile "custom": yalnızca kayıtlı şablon');
+  const re = JSON.parse(JSON.stringify(t)); assert.deepEqual(re.customTemplates, t.customTemplates, 'şablonlar projeyle kaydedilir');
+});
+
+await step('Tap gecikme kalibrasyonu: medyan fark, aykırı vuruş etkisiz, en az 4 eşleşme, uzak vuruşlar sayılmaz', () => {
+  const clicks = [0, 0.6, 1.2, 1.8, 2.4, 3.0, 3.6, 4.2];
+  let r = B.tapOffset(clicks, clicks.map((c) => c + 0.05));
+  assert.ok(r.ok); assert.equal(r.offsetMs, 50); assert.equal(r.n, 8); assert.equal(r.madMs, 0);
+  const noisy = clicks.map((c, i) => c + 0.04 + (i % 2 ? 0.01 : -0.01));
+  noisy[3] += 0.2; // aykırı
+  r = B.tapOffset(clicks, noisy); assert.ok(r.ok); assert.ok(Math.abs(r.offsetMs - 40) <= 10, 'medyan aykırıdan etkilenmez: ' + r.offsetMs);
+  assert.equal(B.tapOffset(clicks, [0.01, 0.62, 1.2]).ok, false, '3 vuruş yetmez');
+  const sparse = [0, 2, 4, 6, 8]; assert.equal(B.tapOffset(sparse, sparse.map((c) => c + 0.5)).ok, false, 'tıktan 0.3 sn uzak vuruşlar eşleşmez');
+  r = B.tapOffset(clicks, clicks.map((c) => c - 0.03)); assert.equal(r.offsetMs, -30, 'erken basan negatif gecikme');
+});
+
 console.log(results.join('\n'));
 if (failures) { console.log(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nBas testleri geçti.');

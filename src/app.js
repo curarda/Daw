@@ -539,7 +539,8 @@ const Player = {
     this.gA.gain.value = corr ? 0 : 1;
     this.gB.gain.value = corr ? 1 : 0;
   },
-  async play() {
+  // o.from: başlangıç sn · o.countIn: başlamadan önce beklenecek sn (tap kaydı sayımı) · o.onStart(ses saati) · o.noBass: bas çalmasın · o.click: metronomu zorla
+  async play(o = {}) {
     if (!S.d) return;
     try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
     this.stop(true);
@@ -550,8 +551,9 @@ const Player = {
     if (ins !== 'piano') { status('Gitar partisi hazırlanıyor…', 'busy'); await tick(); gtr = guitarTrack(Tone.getContext().rawContext.sampleRate); }
     const T = this.transport();
     T.cancel(0);
-    const g = S.d.g, off = S.d.off, from = S.pos;
-    const now = Tone.now() + 0.12;
+    const g = S.d.g, off = S.d.off, from = o.from ?? S.pos;
+    const now = Tone.now() + 0.12 + (o.countIn || 0);
+    if (o.onStart) o.onStart(now);
     if (S.audio) {
       for (const p of [this.pA, this.pB]) {
         if (!p.loaded) continue;
@@ -567,12 +569,12 @@ const Player = {
       T.schedule((time) => this.sampler.triggerAttackRelease(name, end - st, time, e.vel / 127), st);
     }
     if (gtr) this.startGuitar(gtr.data, Tone.getContext().rawContext.sampleRate, now, from, false);
-    if (S.proj.bass.enabled && S.proj.bass.bars.some((b) => b.notes.length)) scheduleBassPlay(T, from, g, bCtx());
+    if (S.proj.bass.enabled && !o.noBass && S.proj.bass.bars.some((b) => b.notes.length)) scheduleBassPlay(T, from, g, bCtx());
     if (S.proj.drums.on) {
       const L = currentLoop();
       for (const e of C.drumEvents(L, g, S.d.bars)) if (e.t >= from - 0.01) T.schedule((time) => this.hitDrum(e, time), e.t);
     }
-    if (S.proj.mixer.click) {
+    if (o.click ?? S.proj.mixer.click) {
       const endQ = S.d.bars * g.barQ;
       for (let q = Math.ceil(from / g.spq / g.clickQ - 1e-6) * g.clickQ; q < endQ; q += g.clickQ) {
         const kind = C.clickKind(g, q % g.barQ, S.proj.settings.clickFeel);

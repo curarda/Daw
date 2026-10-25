@@ -351,6 +351,7 @@ function sectionPanelHtml() {
   const set = t.sections[sec.id]; if (!set) return '';
   const synth = t.instrumentType === 'synth';
   const fams = [['auto', 'Otomatik'], ['drone', 'Drone'], ['walk', 'Yürüyüş'], ['drive', 'Sürüş'], ['roll', 'Yuvarlanma']];
+  if ((t.customTemplates || []).some((x) => x.saved)) fams.push(['custom', 'Özel']);
   const opts = (S.d.sections || []).map((s) => `<option value="${esc(s.id)}"${s.id === sec.id ? ' selected' : ''}>${esc(s.name)} (${s.startBar}–${s.endBar})</option>`).join('');
   const ped = set.pedal ? `⚓ ${set.pedal.kind === 'pitch' ? set.pedal.pitchClass : set.pedal.degree}. derece` : 'yok';
   return `<label>Bölüm<select data-bs="sec">${opts}</select></label>
@@ -478,6 +479,7 @@ function bsSelectChange(el) {
   else if (k === 'seed') bsDo((t, ctx) => { t.seed = (parseInt(el.value, 10) || 1) | 0; Bs.bassGenerateAll(t, ctx); }, 'Tohum değişti; kilitsiz ölçüler yeniden üretildi.');
   else if (k === 'rlo' || k === 'rhi') bsDo((t, ctx) => { const lo = k === 'rlo' ? +v : t.range.low, hi = k === 'rhi' ? +v : t.range.high; t.range = { low: Math.min(lo, hi - 12), high: Math.max(hi, lo + 12) }; Bs.bassGenerateAll(t, ctx); });
   else if (k === 'on') { bTrack().enabled = el.checked; drawBass(); renderBass(); if (Player.playing) Player.play(); }
+  else if (bassTapChange(el)) { /* tap alanı */ }
   else if (typeof bassLearnChange === 'function') bassLearnChange(el);
 }
 $('#bassPanel').addEventListener('change', (e) => { if (e.target.dataset.bs && e.target.type !== 'range') bsSelectChange(e.target); });
@@ -513,5 +515,172 @@ $('#bassPanel').addEventListener('change', (e) => {
 // bas satırı çalan olay sayısı ve seçim ipucu panelin dışında da güncellenir
 $('#bsBarMenu').addEventListener('input', () => {});
 
+// ---------------------------------------------------------------- TAP İLE RİTİM KAYDI
+// Seçili ölçülere bir ölçülük sayım + metronomla B tuşu (ya da ekrandaki pedle) ritim vurulur; vuruşlar ızgaraya yuvarlanır,
+// perdeler üreticiden gelir (yalnızca ritim kaydedilir). Zaman: tuş anı → ses saati (getOutputTimestamp, yoksa currentTime), gecikme ayarı çıkarılır.
+BS.tap = { phase: 'idle', taps: [], down: null, from: 0, startAt: 0, a: 0, z: 0, recBars: [0, 0], timer: null, calib: null, saveName: '', last: null };
+const tapCfg = () => bTrack().tap;
+function audioTimeOf(perfMs) {
+  const rc = Tone.getContext().rawContext;
+  const ts = rc.getOutputTimestamp ? rc.getOutputTimestamp() : null;
+  if (ts && ts.performanceTime > 0 && ts.contextTime > 0) return ts.contextTime + (perfMs - ts.performanceTime) / 1000;
+  return rc.currentTime - (performance.now() - perfMs) / 1000 - (rc.outputLatency || 0);
+}
+// ses saatinden şarkı saniyesine (kayıt başlangıcına göre) ve gecikme düzeltmesi
+const tapSongSec = (audioT) => BS.tap.from + (audioT - BS.tap.startAt) - tapCfg().latencyMs / 1000;
+function tapRange() {
+  const g = S.d.g, t = tapCfg(), bars = selBars();
+  const a = bars[0], z = bars[bars.length - 1];
+  const recZ = t.mode === 'loop' ? Math.min(z, a + (t.loopBars === 2 ? 2 : 1) - 1) : z;
+  return { a, z, recZ, g };
+}
+async function tapStart(opts = {}) {
+  const T = BS.tap;
+  if (T.phase !== 'idle') return;
+  if (!S.d) { status('Önce bir akor izi gerekli.', 'err'); return; }
+  if (!BS.sel) { status('Önce bas şeridinde kaydedilecek ölçüleri seç (Shift: aralık).', 'err'); return; }
+  const { a, z, recZ, g } = tapRange();
+  T.a = a; T.z = z; T.recBars = [a, recZ]; T.taps = []; T.down = null; T.last = null; T.armed = false;
+  T.phase = 'count'; renderBass();
+  const countSec = g.barSec, fromSec = a * g.barSec, recSec = (recZ - a + 1) * g.barSec;
+  await Player.play({
+    from: fromSec, countIn: countSec, noBass: true, click: true,
+    onStart: (now) => {
+      T.startAt = now; T.from = fromSec; T.armed = true;
+      // sayım tıkları: transport'tan önce, ses saatinde
+      const pulses = Math.round(g.barQ / g.pulseQ);
+      for (let k = 0; k < pulses; k++) Player.click.triggerAttackRelease(CLICK_HZ[k === 0 ? 'down' : 'weak'], 0.03, now - countSec + k * g.pulseQ * g.spq);
+    },
+  });
+  if (!Player.playing) { T.phase = 'idle'; renderBass(); return; }
+  clearInterval(T.timer);
+  const endAudio = T.startAt + recSec;
+  // evre ses saatine bağlı: sayım bitince 'rec'; sayımdaki erken vuruşlar toplanır, aralık dışı olanlar yuvarlamada atılır
+  T.timer = setInterval(() => {
+    const now = Tone.getContext().rawContext.currentTime;
+    if (T.phase === 'count' && now >= T.startAt) { T.phase = 'rec'; renderBass(); }
+    if (now >= endAudio + 0.1) tapFinish();
+  }, 40);
+  if (opts.auto) tapAuto(opts.auto); // sınama: sahte vuruşlar
+}
+// tuş basıldı/bırakıldı (perfMs: event.timeStamp)
+function tapDown(perfMs) {
+  const T = BS.tap;
+  if (T.calib && T.calib.running) { T.calib.taps.push(audioTimeOf(perfMs)); return; }
+  if (!(T.phase === 'rec' || (T.phase === 'count' && T.armed)) || T.down) return;
+  const sec = tapSongSec(audioTimeOf(perfMs)), q = sec / S.d.g.spq;
+  T.down = { q, vel: 96 };
+  const pad = $('#bsTapPad'); if (pad) pad.classList.add('hit');
+}
+function tapUp(perfMs) {
+  const T = BS.tap;
+  const pad = $('#bsTapPad'); if (pad) pad.classList.remove('hit');
+  if (!(T.phase === 'rec' || T.phase === 'count') || !T.down) return;
+  const q1 = tapSongSec(audioTimeOf(perfMs)) / S.d.g.spq;
+  T.taps.push({ q: T.down.q, dq: Math.max(0, q1 - T.down.q), vel: T.down.vel });
+  T.down = null;
+}
+// kaydı bitir: yuvarla ve uygula (asPlayed: yalnızca vuruşlu ölçüler değişir)
+function tapFinish(rawTaps) {
+  const T = BS.tap, t = tapCfg();
+  clearInterval(T.timer); T.timer = null;
+  if (T.down) tapUp(performance.now());
+  const taps = rawTaps || T.taps;
+  Player.stop();
+  T.phase = 'idle';
+  const g = S.d.g;
+  const perBar = Bs.tapQuantize(taps, { gridSteps: t.grid === '8n' ? 2 : 1, barQ: g.barQ, firstBar: T.recBars[0], lastBar: T.recBars[1] });
+  T.last = { count: taps.length, bars: [...perBar.keys()].sort((x, y) => x - y) };
+  if (!perBar.size) { status('Hiç vuruş yakalanmadı — kayıt uygulanmadı. Yeniden dene ya da gecikme ayarını kontrol et.', 'err'); renderBass(); return; }
+  let res;
+  bsDo((tr, ctx) => {
+    res = Bs.bassApplyTaps(tr, ctx, perBar, { mode: t.mode, firstBar: T.a, lastBar: T.z, loopBars: t.loopBars, loopMode: 'follow-chords' });
+  });
+  if (res && !res.ok) { BS.hist.undo.pop(); status('Uygulanamadı: ' + res.reason, 'err'); } else status(`${taps.length} vuruş → ${res.bars} ölçüye yazıldı (ritim senin, perdeler üreticiden; Generate yalnızca perdeleri yeniden seçer).`);
+  renderBass(); drawBass();
+}
+function tapCancel() { const T = BS.tap; clearInterval(T.timer); T.timer = null; T.phase = 'idle'; T.down = null; T.calib = null; Player.stop(); renderBass(); }
+// gecikme kalibrasyonu: 100 BPM'de 8 tık, B ile eşlik et; medyan fark gecikme ayarına yazılır
+async function tapCalibrate() {
+  const T = BS.tap;
+  if (T.phase !== 'idle') return;
+  try { await Player.ensure(); } catch (e) { status(e.message, 'err'); return; }
+  Player.stop(true);
+  const rc = Tone.getContext().rawContext, lead = 0.6, clicks = [];
+  for (let k = 0; k < 8; k++) { const at = Tone.now() + lead + k * 0.6; clicks.push(at); Player.click.triggerAttackRelease(CLICK_HZ[k % 4 ? 'weak' : 'down'], 0.03, at); }
+  void rc;
+  T.calib = { running: true, taps: [], clicks };
+  status('Kalibrasyon: 8 tık duyacaksın — her tıkla birlikte B\'ye bas (ya da pede dokun).');
+  renderBass();
+  setTimeout(() => tapCalibDone(), (lead + 8 * 0.6) * 1000 + 400);
+}
+function tapCalibDone(forceClicks, forceTaps) {
+  const T = BS.tap, c = T.calib;
+  if (!c && !forceClicks) return;
+  const r = Bs.tapOffset(forceClicks || c.clicks, forceTaps || c.taps);
+  T.calib = null;
+  if (!r.ok) status(`Kalibrasyon başarısız: yalnızca ${r.n} vuruş tıklara yakındı (en az 4 gerekir). Yeniden dene.`, 'err');
+  else { tapCfg().latencyMs = r.offsetMs; status(`Gecikme ${r.offsetMs} ms olarak ayarlandı (${r.n} vuruş, sapma ±${r.madMs} ms).`); }
+  renderBass();
+  return r;
+}
+// sınama: kayıt başladıktan sonra sahte vuruşları gerçek ses saatine göre tuş olayları gibi besler
+function tapAuto(list) {
+  const T = BS.tap, rc = Tone.getContext().rawContext;
+  for (const [sec, hold] of list) {
+    const d = (T.startAt + sec - rc.currentTime) * 1000;
+    setTimeout(() => { tapDown(performance.now()); setTimeout(() => tapUp(performance.now()), Math.max(10, hold * 1000)); }, Math.max(0, d));
+  }
+}
+document.addEventListener('keydown', (e) => {
+  if (e.target.closest && e.target.closest('input,select,textarea')) return;
+  if ((e.key === 'b' || e.key === 'B') && !e.ctrlKey && !e.metaKey && !e.altKey && (BS.tap.phase !== 'idle' || (BS.tap.calib && BS.tap.calib.running))) { e.preventDefault(); if (!e.repeat) tapDown(e.timeStamp); }
+  if (e.key === 'Escape' && BS.tap.phase !== 'idle') tapCancel();
+}, true);
+document.addEventListener('keyup', (e) => { if ((e.key === 'b' || e.key === 'B') && BS.tap.phase !== 'idle') tapUp(e.timeStamp); }, true);
+document.addEventListener('pointerdown', (e) => { if (e.target.closest && e.target.closest('#bsTapPad')) { e.preventDefault(); tapDown(e.timeStamp); } });
+document.addEventListener('pointerup', () => { if (BS.tap.phase !== 'idle' && BS.tap.down) tapUp(performance.now()); });
+function bassTapHtml() {
+  const t = tapCfg(), T = BS.tap, bars = selBars();
+  const rec = T.phase !== 'idle';
+  const lastMsg = T.last ? `<div class="hint">Son kayıt: ${T.last.count} vuruş · ölçüler ${T.last.bars.map((i) => i + 1).join(', ') || '—'}</div>` : '';
+  const sel = bars.length ? `${bars[0] + 1}${bars.length > 1 ? '–' + (bars[bars.length - 1] + 1) : ''}. ölçü` : 'ölçü seçilmedi';
+  const sb = bars.length === 1 && bTrack().bars[bars[0]] && bTrack().bars[bars[0]].notes.length;
+  const body = `<div class="hint">Bas şeridinde ölçü(ler) seç → Kaydet → 1 ölçü sayım + metronom, sonra ritmi <b>B</b> tuşuyla (ya da ped) vur. Esc iptal.</div>
+    <div class="gsub"><span>Izgara</span>${bchip('tgrid', '16n', '16\'lık', t.grid === '16n')}${bchip('tgrid', '8n', '8\'lik', t.grid === '8n')}<span>Mod</span>${bchip('tmode', 'asPlayed', 'Çaldığım gibi', t.mode === 'asPlayed')}${bchip('tmode', 'loop', 'Bir kalıbı döngüle', t.mode === 'loop')}${t.mode === 'loop' ? `${bchip('tbars', 1, '1 ölçü', t.loopBars !== 2)}${bchip('tbars', 2, '2 ölçü', t.loopBars === 2)}` : ''}</div>
+    <div class="gsub"><span>Gecikme</span><input type="number" data-bs="tlat" min="-300" max="500" step="5" value="${t.latencyMs}" style="width:64px"> <span class="hint">ms</span>${bchip('tcalib', 'c', T.calib ? 'Dinleniyor…' : 'Kalibre et', !!T.calib, rec ? ' disabled' : '')}</div>
+    <div class="row">${rec ? `<button class="accent small" data-bk="tapStop">${T.phase === 'count' ? 'Sayım… (iptal)' : 'Bitir'}</button>` : `<button class="accent small" data-bk="tapStart">⏺ Kaydet (${sel})</button>`}<button id="bsTapPad" class="small" type="button" title="B tuşu ile aynı">🥁 Vuruş (B)</button></div>
+    ${T.phase === 'count' ? '<div class="hint">Sayım… hazır ol.</div>' : T.phase === 'rec' ? '<div class="st-warn">● Kayıt — vur!</div>' : ''}${lastMsg}
+    <div class="gsub"><span>Şablon</span><input type="text" data-bs="tname" placeholder="Şablon adı" value="${esc(T.saveName)}" style="width:130px">${bchip('tsave', 's', 'Seçili ölçüyü şablon olarak sakla', false, sb ? '' : ' disabled')}</div>`;
+  return bgrow('Ritim kaydı (tap)', body);
+}
+function bassTapAction(k, v) {
+  const t = tapCfg();
+  switch (k) {
+    case 'tgrid': t.grid = v; break;
+    case 'tmode': t.mode = v; break;
+    case 'tbars': t.loopBars = +v; break;
+    case 'tcalib': tapCalibrate(); return true;
+    case 'tapStart': tapStart(); return true;
+    case 'tapStop': if (BS.tap.phase === 'rec') tapFinish(); else tapCancel(); return true;
+    case 'tsave': {
+      const i = selBars()[0], nm = BS.tap.saveName;
+      let tpl = null;
+      bsDo((tr, ctx) => { tpl = Bs.bassSaveTemplate(tr, ctx, i, nm); });
+      if (tpl) { BS.tap.saveName = ''; status(`"${tpl.name}" şablonu saklandı — bölüm panelinde "Özel" ailesinden seçilebilir.`); } else { BS.hist.undo.pop(); status('Bu ölçüde nota yok.', 'err'); }
+      return true;
+    }
+    default: return false;
+  }
+  renderBass();
+  return true;
+}
+// sayısal / metin alanları (panel 'change' olayı)
+function bassTapChange(el) {
+  if (el.dataset.bs === 'tlat') { tapCfg().latencyMs = Math.max(-300, Math.min(500, Math.round(+el.value || 0))); renderBass(); return true; }
+  if (el.dataset.bs === 'tname') { BS.tap.saveName = el.value; return true; }
+  return false;
+}
+
 // sınamalar için
-window.__dawAPI.bass = { makeVoices: makeBassVoices, hit: bassHit, renderOffline: renderBassOffline, BS, loadDemo: loadDemoSong, ctx: bCtx };
+window.__dawAPI.bass = { makeVoices: makeBassVoices, hit: bassHit, renderOffline: renderBassOffline, BS, loadDemo: loadDemoSong, ctx: bCtx, tap: { start: tapStart, finish: tapFinish, down: tapDown, up: tapUp, auto: tapAuto, calibDone: tapCalibDone, audioTimeOf } };

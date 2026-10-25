@@ -912,6 +912,77 @@ try {
     return `16 ölçü, tohum ${snapB.seed}; elle nota, pedal, döngü, tür değişimi, MIDI (${pb.tracks.find((t) => t.name === 'Bas').notes.length} nota), mix, kayıt-yükleme`;
   });
 
+  await step('Bas tap kaydı: sayım + metronom, B tuşu, gerçek ses saatinden ızgaraya yuvarlama, gecikme ayarı, döngü kipi, şablon saklama, kalibrasyon', async () => {
+    await S(() => { window.confirm = () => true; });
+    await page.click('#bassPanel [data-bk=demo]'); await waitStatus(/Demo şarkı yüklendi/);
+    await S(() => { document.querySelector('#inZoom').value = 18; document.querySelector('#inZoom').dispatchEvent(new Event('input')); });
+    const bass = () => S(() => JSON.parse(JSON.stringify(window.__daw.proj.bass)));
+    const laneXY = async (bar, y = 25) => { const bx = await page.locator('#bsCv').boundingBox(); const x = await page.evaluate((b) => { const s = window.__daw, sc = document.querySelector('#tlScroll'); return 46 + (b + 0.5) * s.d.g.barQ * s.view.pxPerQ - sc.scrollLeft; }, bar); return [bx.x + x, bx.y + y]; };
+    const phase = () => S(() => window.__dawAPI.bass.BS.tap.phase);
+    const idle = () => page.waitForFunction(() => window.__dawAPI.bass.BS.tap.phase === 'idle', null, { timeout: 20000 });
+    const onsets = (b) => b.notes.map((n) => n.startBeat);
+    const qs = [0, 1, 1.5, 2.75, 3]; // 16'lık adımlar: 0, 4, 6, 11, 12
+    const spq = await S(() => window.__daw.d.g.spq);
+    const secs = (shift = 0) => qs.map((q) => [q * spq + shift, 0.12]);
+    // seçim yokken uyarı
+    await S(() => window.__dawAPI.bass.tap.start()); await waitStatus(/kaydedilecek ölçüleri seç/);
+    // 1) asPlayed, 3. ölçü (index 2)
+    const before = await bass();
+    await page.mouse.click(...(await laneXY(2)));
+    await S(() => { window.__tapP = window.__dawAPI.bass.tap.start({ auto: [[0, 0.12], [1 * window.__daw.d.g.spq, 0.12], [1.5 * window.__daw.d.g.spq, 0.12], [2.75 * window.__daw.d.g.spq, 0.12], [3 * window.__daw.d.g.spq, 0.12]] }); });
+    assert.equal(await phase(), 'count', 'başlarken sayım evresi');
+    await page.waitForFunction(() => window.__dawAPI.bass.BS.tap.phase === 'rec', null, { timeout: 8000 });
+    assert.equal(await S(() => window.__dawAPI.bass.BS.tap.from), await S(() => 2 * window.__daw.d.g.barSec), 'kayıt seçili ölçünün başından');
+    await idle(); await waitStatus(/vuruş → 1 ölçüye yazıldı/);
+    let tb = await bass();
+    assert.deepEqual(onsets(tb.bars[2]), qs, 'ritim vuruşlardan: ' + JSON.stringify(onsets(tb.bars[2])));
+    assert.equal(tb.bars[2].source, 'tapped');
+    tb.bars.forEach((b, i) => { if (i !== 2) assert.equal(JSON.stringify(b.notes), JSON.stringify(before.bars[i].notes), 'diğer ölçüler aynı: ' + i); });
+    assert.equal(tb.bars[2].notes[0].midi % 12, await S(() => window.__dawAPI.bass.ctx().segs(2)[0].chord.root), 'perde akoru izler (ölçü başı akor kökü)');
+    // 2) gecikme ayarı: 150 ms geç basılan aynı ritim, +150 ms gecikmeyle aynı yere düşer
+    await page.fill('#bassPanel [data-bs=tlat]', '150'); await page.locator('#bassPanel [data-bs=tlat]').dispatchEvent('change');
+    assert.equal((await bass()).tap.latencyMs, 150);
+    await S(() => window.__dawAPI.bass.tap.start({ auto: [[0.15, 0.12], [1 * window.__daw.d.g.spq + 0.15, 0.12], [2 * window.__daw.d.g.spq + 0.15, 0.12], [3 * window.__daw.d.g.spq + 0.15, 0.12]] }));
+    await page.waitForFunction(() => window.__dawAPI.bass.BS.tap.phase === 'rec', null, { timeout: 8000 }); await idle();
+    tb = await bass(); assert.deepEqual(onsets(tb.bars[2]), [0, 1, 2, 3], 'gecikme düzeltilmiş: ' + JSON.stringify(onsets(tb.bars[2])));
+    await page.fill('#bassPanel [data-bs=tlat]', '0'); await page.locator('#bassPanel [data-bs=tlat]').dispatchEvent('change');
+    // 3) B tuşu gerçek kayıtta vuruş toplar; Esc iptal eder ve hiçbir şeyi değiştirmez
+    const snap = JSON.stringify((await bass()).bars.map((b) => b.notes));
+    await S(() => window.__dawAPI.bass.tap.start());
+    await page.waitForFunction(() => window.__dawAPI.bass.BS.tap.phase === 'rec', null, { timeout: 8000 });
+    await page.keyboard.down('b'); await page.waitForTimeout(120); await page.keyboard.up('b');
+    assert.equal(await S(() => window.__dawAPI.bass.BS.tap.taps.length), 1, 'B tuşu bir vuruş');
+    assert.equal(await S(() => { const t = window.__dawAPI.bass.BS.tap.taps[0]; return t.dq > 0.1; }), true, 'basılı kalma süresi ölçülür');
+    await page.keyboard.press('Escape'); assert.equal(await phase(), 'idle');
+    assert.equal(JSON.stringify((await bass()).bars.map((b) => b.notes)), snap, 'iptal: değişiklik yok');
+    assert.equal(await S(() => window.__daw.playing ?? false), false);
+    // 4) döngü kipi: 5–8. ölçü seçili, 1 ölçülük kalıp vurulur → 5. ölçü kaynak, 6–8 döngü kopyası
+    await page.mouse.click(...(await laneXY(4))); await page.keyboard.down('Shift'); await page.mouse.click(...(await laneXY(7))); await page.keyboard.up('Shift');
+    assert.deepEqual(await S(() => window.__dawAPI.bass.BS.sel), [4, 7]);
+    await page.click('#bassPanel [data-bk=tmode][data-bv=loop]');
+    await S(() => window.__dawAPI.bass.tap.start({ auto: [[0, 0.1], [1.5 * window.__daw.d.g.spq, 0.1], [2 * window.__daw.d.g.spq, 0.1], [3.5 * window.__daw.d.g.spq, 0.1]] }));
+    await page.waitForFunction(() => window.__dawAPI.bass.BS.tap.phase === 'rec', null, { timeout: 8000 }); await idle();
+    tb = await bass();
+    assert.deepEqual(onsets(tb.bars[4]), [0, 1.5, 2, 3.5]); assert.equal(tb.bars[4].locked, true);
+    for (const i of [5, 6, 7]) { assert.equal(tb.bars[i].source, 'loop'); assert.deepEqual(onsets(tb.bars[i]), [0, 1.5, 2, 3.5]); }
+    assert.equal(tb.loops.length, 1);
+    assert.equal(tb.bars[8].source !== 'loop', true, 'döngü yalnızca seçilen aralığa');
+    // 5) şablon sakla: seçili tek ölçü → özel aile çipi çıkar, şablon slotları kayıtla aynı
+    await page.mouse.click(...(await laneXY(2)));
+    await page.fill('#bassPanel [data-bs=tname]', 'Benim kalıbım'); await page.locator('#bassPanel [data-bs=tname]').dispatchEvent('change');
+    await page.click('#bassPanel [data-bk=tsave]');
+    tb = await bass(); const saved = tb.customTemplates.filter((t) => t.saved);
+    assert.equal(saved.length, 1); assert.equal(saved[0].name, 'Benim kalıbım'); assert.deepEqual(saved[0].slots.map((s) => s.step), [0, 4, 8, 12]);
+    assert.ok(await page.locator('#bassPanel [data-bk=fam][data-bv=custom]').count(), 'Özel şablon ailesi çipi');
+    // 6) kalibrasyon: tıklara 50 ms geç basılan 8 vuruş → +50 ms; yetersiz vuruş reddedilir
+    await S(() => { const c = [10, 10.6, 11.2, 11.8, 12.4, 13, 13.6, 14.2]; window.__dawAPI.bass.tap.calibDone(c, c.map((x) => x + 0.05)); });
+    assert.equal((await bass()).tap.latencyMs, 50);
+    await S(() => window.__dawAPI.bass.tap.calibDone([1, 2, 3], [1.01])); await waitStatus(/Kalibrasyon başarısız/);
+    assert.equal((await bass()).tap.latencyMs, 50, 'başarısız kalibrasyon ayarı değiştirmez');
+    // kayıt-yükleme için tap ayarları
+    return 'sayım→kayıt→yuvarlama, gecikme ±150 ms, B tuşu, Esc, döngü (5–8), şablon, kalibrasyon';
+  });
+
   await step('Zamanlama: notayı sağa sürükle (ızgaraya yapışır) → ses kayar; quantize; zamanı geri al; piyano tuşu çalar; T ile tap → tempo/ölçü/ızgara', async () => {
     page.once('dialog', (d) => d.accept());
     await page.click('#btnTest');
