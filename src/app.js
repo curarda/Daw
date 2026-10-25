@@ -413,7 +413,10 @@ function renderDrums() {
   // loop listesi (proje ölçüsü)
   const pool = C.loopsFor(set.meter), sel = $('#inDrumLoop');
   const bestId = sug && sug.best ? sug.best.loop.id : null;
-  const opts = `<option value="auto">Otomatik${bestId ? ` (öneri: ${esc(sug.best.loop.name)})` : ''}</option>` + pool.map((l) => `<option value="${l.id}">${esc(l.name)} · ${l.bpm[0]}–${l.bpm[1]} BPM</option>`).join('');
+  const opt = (l) => `<option value="${l.id}">${esc(C.loopLabel(l))} · ${l.bpm[0]}–${l.bpm[1]} BPM</option>`;
+  // numaralı kalıplar kategorilere göre (optgroup), numarasız ilk loop'lar "Diğer"de; kategori içinde numara sırası
+  const groups = Object.keys(C.DRUM_CATS).map((c) => [c, pool.filter((l) => l.cat === c).sort((a, b) => (a.no || 99) - (b.no || 99))]).filter(([, ls]) => ls.length);
+  const opts = `<option value="auto">Otomatik${bestId ? ` (öneri: ${esc(C.loopLabel(sug.best.loop))})` : ''}</option>` + groups.map(([c, ls]) => `<optgroup label="${esc(C.DRUM_CATS[c])}">${ls.map(opt).join('')}</optgroup>`).join('');
   if (sel.innerHTML !== opts) sel.innerHTML = opts;
   const want = S.proj.drums.loop && pool.some((l) => l.id === S.proj.drums.loop) ? S.proj.drums.loop : 'auto';
   sel.value = want;
@@ -422,13 +425,13 @@ function renderDrums() {
   let ih = '';
   if (sug) {
     const r = sug.ranked.find((x) => x.loop === L);
-    if (r) ih += `<div class="${sug.ok || want !== 'auto' ? 'adv-opt' : 'st-warn'}"><b>${esc(L.name)}</b> — ${esc(L.desc)}<div class="hint">${esc(r.why.join(' · '))} · puan ${r.score.toFixed(2)}</div></div>`;
+    if (r) ih += `<div class="${sug.ok || want !== 'auto' ? 'adv-opt' : 'st-warn'}"><b>${esc(C.loopLabel(L))}</b> — ${esc(L.desc)}<div class="hint">${esc(r.why.join(' · '))} · puan ${r.score.toFixed(2)}</div></div>`;
     if (!sug.ok) {
       ih += `<div class="st-warn adv-imp">⚠ <b>Bu melodiye uygun bir loop bulamadım.</b><ul>${sug.reasons.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
         En yakını çalıyor${want === 'auto' ? '' : ' (senin seçtiğin loop)'}. Yeni bir loop istemek için bu tarifi Claude'a gönder:
         <textarea id="drumRequest" rows="7" readonly>${esc(sug.request)}</textarea><button id="btnDrumCopy" class="small">Tarifi kopyala</button></div>`;
     } else if (sug.reasons.length) ih += sug.reasons.map((x) => `<div class="hint">ℹ ${esc(x)}</div>`).join('');
-    ih += `<details><summary class="hint">Tüm loop'ların puanı (${esc(set.meter)})</summary><ol class="drum-rank">${sug.ranked.map((x) => `<li>${esc(x.loop.name)} — ${x.score.toFixed(2)} <span class="hint">(vurgu ${x.accent.toFixed(2)}, tempo ${x.tempo.toFixed(2)}${x.feelOk ? '' : ', his uymuyor'})</span></li>`).join('')}</ol></details>`;
+    ih += `<details><summary class="hint">Tüm loop'ların puanı (${esc(set.meter)})</summary><ol class="drum-rank">${sug.ranked.map((x) => `<li>${esc(C.loopLabel(x.loop))} — ${x.score.toFixed(2)} <span class="hint">(vurgu ${x.accent.toFixed(2)}, tempo ${x.tempo.toFixed(2)}${x.feelOk ? '' : ', his uymuyor'})</span></li>`).join('')}</ol></details>`;
   }
   if ($('#drumInfo').dataset.h !== ih) { $('#drumInfo').innerHTML = ih; $('#drumInfo').dataset.h = ih; }
   $('#drumGrid').textContent = L ? C.loopGridText(L) : '';
@@ -492,7 +495,7 @@ const Player = {
     this.drumCh = new T.Channel(-8).toDestination();
     const rsr = T.getContext().sampleRate;
     this.drumBufs = {};
-    for (const k of ['K', 'S', 'H', 'O']) this.drumBufs[k] = toAudioBuffer(C.synthDrum(k, rsr), rsr);
+    for (const k of C.DRUM_KINDS) this.drumBufs[k] = toAudioBuffer(C.synthDrum(k, rsr), rsr);
     const piano = await loadPianoSamples();
     const urls = {};
     for (const s of piano.samples) urls[s.name] = new T.ToneAudioBuffer(s.buffer);
@@ -595,7 +598,7 @@ const Player = {
     src.start(time);
     this.drumHits = (this.drumHits || 0) + 1;
   },
-  async previewDrums(L, bars = 2) {
+  async previewDrums(L, bars = L && L.fill ? L.fill.every : 2) { // fill'li kalıpta fill'i de duyur
     if (!L) return;
     try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
     this.stop(true);
@@ -606,7 +609,7 @@ const Player = {
     T.start(Tone.now() + 0.1, 0);
     clearTimeout(this.previewTimer);
     this.previewTimer = setTimeout(() => { T.stop(); T.cancel(0); }, (bars * g.barSec + 1) * 1000);
-    status(`▶ ${L.name} · ${S.proj.settings.meter} · ${S.proj.settings.bpm} BPM`);
+    status(`▶ ${C.loopLabel(L)} · ${S.proj.settings.meter} · ${S.proj.settings.bpm} BPM`);
   },
   async previewChords(chords, tonic, mode, durs) {
     try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }

@@ -21,7 +21,7 @@ I wanted to hear how my own singing would sit over chords, and to get a chord pr
 4. **Sections and key:** mark sections and get key and mode suggestions for each one.
 5. **Pitch and timing correction:** optional autotune (TD-PSOLA) and quantization, both reversible.
 6. **Chord detection:** diatonic chords and common extensions, using a sequence model that favors fewer chord changes and avoids clashing notes.
-7. **Piano and drums:** piano from Salamander samples (with a built-in synthetic fallback offline), and simple drum loops.
+7. **Piano and drums:** piano from Salamander samples (with a built-in synthetic fallback offline), and a drum library of 57 loops: 45 numbered rhythm patterns (backbeat, motorik, train, Bo Diddley, post-punk / darkwave / synthwave grooves, the half-time family, 3/4 waltz and 6/8 patterns, with toms, clap, rim click, ride, fills and a laid-back snare) plus the original basic loops. The app suggests a loop from the meter, tempo and melody accents; you can pick any pattern by hand.
 8. **Export:** MIDI, chord sheet (.txt), corrected vocal WAV, vocal + piano mix WAV, and a project JSON file.
 
 ## Run locally

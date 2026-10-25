@@ -615,13 +615,14 @@ await step('Davul 2: loop kütüphanesi ve seçimi (ölçü + BPM + vurgu); uygu
   assert.ok(r3.ok); assert.equal(r3.best.loop.meter, '6/8');
   const r4 = pick(mel(100, 8, m44, 4), '4/4', 100, { clickFeel: 'halftime' });
   assert.equal(r4.best.loop.id, 'half', 'yarım zaman click deseni → yarım zaman loop');
-  // bulamadı: 4/4 için 200 BPM; 6/8 melodi ama proje 4/4 60 BPM
-  const n1 = pick(mel(200, 8, m44, 4), '4/4', 200);
+  // bulamadı: 4/4 için 260 BPM (hiçbir kalıbın aralığında değil); 6/8 melodi ama proje 4/4 60 BPM
+  const n1 = pick(mel(260, 8, m44, 4), '4/4', 260);
   assert.equal(n1.ok, false); assert.ok(n1.reasons.some((x) => /tempo aralığına uymuyor/.test(x)));
-  assert.match(n1.request, /Ölçü: 4\/4 · Tempo: 200 BPM/); assert.match(n1.request, /vurgu profili \(16 adım, 0–9\): [0-9.]{16}/);
+  assert.match(n1.request, /Ölçü: 4\/4 · Tempo: 260 BPM/); assert.match(n1.request, /vurgu profili \(16 adım, 0–9\): [0-9.]{16}/);
   const n2 = pick(mel(60, 8, [[0, 1, 67], [1, 1 / 3, 65], [4 / 3, 1 / 3, 64], [5 / 3, 1 / 3, 62]], 2), '4/4', 60);
-  assert.equal(n2.ok, false); assert.ok(n2.reasons.some((x) => /6\/8 ölçüsüne daha çok benziyor/.test(x)));
-  return `100 BPM 4/4 → ${r1.best.loop.name} · 3/4 → ${r2.best.loop.name} · 6/8 → ${r3.best.loop.name} · yarım zaman click → ${r4.best.loop.name} · 200 BPM → bulamadı: "${n1.reasons[0]}" · 6/8 melodi / 4/4 proje → bulamadı (${n2.reasons.length} neden)`;
+  // 4/4'te üçleme hisli kalıplar (dub, half-time shuffle…) artık var; yine de proje ölçüsünün melodiye uymadığı bildirilir
+  assert.ok(n2.reasons.some((x) => /6\/8 ölçüsüne daha çok benziyor/.test(x)));
+  return `100 BPM 4/4 → ${r1.best.loop.name} · 3/4 → ${r2.best.loop.name} · 6/8 → ${r3.best.loop.name} · yarım zaman click → ${r4.best.loop.name} · 260 BPM → bulamadı: "${n1.reasons[0]}" · 6/8 melodi / 4/4 proje → uyarı (${n2.reasons.length} neden)`;
 });
 
 await step('Davul 2b: 16\'lık senkoplu hızlı melodi (kullanıcının 156 BPM isteği) → itmeli 3+3+2 loop; ızgara kontrolü 16\'lıkları ve zamanlama sapmasını kaldırır, yanlış BPM\'i yakalar', () => {
@@ -639,7 +640,9 @@ await step('Davul 2b: 16\'lık senkoplu hızlı melodi (kullanıcının 156 BPM 
   // istekteki profil: yeni loop 4/4 loop'ları içinde vurguya en iyi uyan
   const prof = '7846052252152497'.split('').map(Number);
   const corr = (a, b) => { const n = a.length, ma = a.reduce((x, y) => x + y) / n, mb = b.reduce((x, y) => x + y) / n; let q = 0, sa = 0, sb2 = 0; for (let i = 0; i < n; i++) { q += (a[i] - ma) * (b[i] - mb); sa += (a[i] - ma) ** 2; sb2 += (b[i] - mb) ** 2; } return q / Math.sqrt(sa * sb2); };
-  const cs = Core.loopsFor('4/4').filter((l) => l.spb === 4).map((l) => [l.id, corr(prof, Array.from(Core.loopProfile(l)))]).sort((a, b) => b[1] - a[1]);
+  // karşılaştırma, push332'nin tasarlandığı ilk loop'lar arasında (sonradan eklenen 45 kalıp ayrıca elle seçilir)
+  const FIRST = ['rock8', 'four', 'half', 'ballad16', 'boombap', 'onedrop', 'push332', 'minimal'];
+  const cs = Core.loopsFor('4/4').filter((l) => l.spb === 4 && FIRST.includes(l.id)).map((l) => [l.id, corr(prof, Array.from(Core.loopProfile(l)))]).sort((a, b) => b[1] - a[1]);
   assert.equal(cs[0][0], 'push332');
   return `156 BPM z=${e.gridZ.toFixed(1)} (yanlış BPM'ler uyarılı) · seçilen: ${sug.best.loop.name} (vurgu ${sug.best.accent.toFixed(2)}) · istek profiliyle örtüşme ${cs[0][1].toFixed(2)} (eski en iyi ${cs[1][0]} ${cs[1][1].toFixed(2)})`;
 });
@@ -658,6 +661,76 @@ await step('Davul 3: vuruşlar, ses ve MIDI davul kanalı', () => {
   const dr = mid.tracks.find((t) => /Davul/.test(t.name));
   assert.ok(dr && dr.notes.length > 0 && dr.notes.every((n) => n.ch === 9 || n.channel === 9 || n.ch === undefined));
   return `2 ölçü rock: ${ev.length} vuruş · render: kick ${peakAt(0).toFixed(2)}, trampet ${peakAt(0.5).toFixed(2)} · MIDI "${dr.name}" ${dr.notes.length} nota`;
+});
+
+await step('Davul 4: 45 ritim kalıbı (A–E) — numara/ızgara bütünlüğü, elle sayılmış kalıplar, fill ve gecikme, yeni sesler, MIDI notaları', () => {
+  const byNo = new Map(); for (const L of Core.DRUM_LOOPS) if (L.no) { assert.ok(!byNo.has(L.no), 'yinelenen numara ' + L.no); byNo.set(L.no, L); }
+  assert.deepEqual([...byNo.keys()].sort((a, b) => a - b), Array.from({ length: 45 }, (_, i) => i + 1), '1–45 hepsi var');
+  byNo.forEach((L, n) => assert.equal(L.cat, n <= 7 ? 'A' : n <= 17 ? 'B' : n <= 25 ? 'C' : n <= 35 ? 'D' : 'E', 'kategori #' + n));
+  const meterOf = (n) => byNo.get(n).meter;
+  assert.ok([...Array(10).keys()].every((i) => meterOf(26 + i) === '3/4') && [...Array(10).keys()].every((i) => meterOf(36 + i) === '6/8') && [...Array(25).keys()].every((i) => meterOf(1 + i) === '4/4'));
+  for (const L of Core.DRUM_LOOPS) {
+    const n = { '4/4': L.spb * 4, '3/4': L.spb * 3, '2/4': L.spb * 2, '6/8': 6 }[L.meter];
+    for (const k of Core.LANES) if (L[k]) assert.ok(L[k].length === n && /^[Xxgo.]+$/.test(L[k]), `${L.id} ${k}`);
+    if (L.fill) for (const k in L.fill.lanes) assert.equal(L.fill.lanes[k].length, n, `${L.id} fill ${k}`);
+  }
+  // elle sayılmış karşılaştırmalar (ayrıştırıcıdan bağımsız); 4/4 = 16 adım, 3/4 = 12, 6/8 = 6, üçlemede 3/vuruş
+  const want = {
+    1: { K: 'x.......x.......', S: '....X.......X...', H: 'x.x.x.x.x.x.x.x.' },
+    6: { K: 'x.......x.......', T: 'X..X..X...X.X...' },
+    11: { K: '......x.....', S: '......X.....', H: 'x.xx.xx.xx.x' },
+    14: { K: 'x.x.x.x.x.x.x.x.', S: '....X.......X...' },
+    17: { K: 'x..x..x.x..x....', S: '....X.......X...', H: 'xxxxxxxxxxxxxxxx' },
+    22: { K: 'x.........x.....', R: '........X.......', S: '................' },
+    26: { K: 'x...........', S: '....X...X...', H: 'x...x...x...' },
+    31: { K: 'x...x...x...', C: '........X...', H: '..o...o...o.' },
+    33: { K: 'g........', D: 'x..x.xx..', P: '...x..x..' },
+    34: { K: 'x.........x.', S: '....X...X...', H: 'X.x.x.x.x.x.' },
+    36: { K: 'x.....', S: '...X..', H: 'xxxxxx' },
+    42: { K: 'x.....', S: '..X.X.' },
+    44: { K: '..x..x', S: 'X.XX.X' },
+  };
+  for (const [no, lanes] of Object.entries(want)) for (const [k, v] of Object.entries(lanes)) assert.equal(byNo.get(+no)[k] || '.'.repeat(v.length), v, `#${no} ${k}`);
+  assert.ok(/^\.+$/.test(byNo.get(8).H), 'tribal: hi-hat yok'); assert.ok(byNo.get(8).T && byNo.get(8).F);
+  assert.ok(/^\.+$/.test(byNo.get(23).S) && /X/.test(byNo.get(23).F), 'tom half-time: trampet yok, 3\'te floor tom');
+  assert.throws(() => Core.parsePattern('9', 16, 4, false, 'K'), /dışında/); assert.throws(() => Core.parsePattern('2z', 16, 4, false, 'K'), /anlaşılmadı/);
+  assert.equal(Core.parsePattern('x*4 g*& X2', 16, 4, false, 'S'), 'x.g.X.g.x.g.x.g.', 'sonraki jeton öncekini ezer (2. vuruş X)');
+  // fill: her 4. ölçüde; 4 ölçüde yalnızca 4. ölçüde tom'lar
+  const g4 = Core.makeGrid({ bpm: 100, meter: '4/4' });
+  const ev = Core.drumEvents(byNo.get(15), g4, 4), inBar = (b, k) => ev.filter((e) => e.kind === k && e.q >= b * 4 && e.q < b * 4 + 4);
+  assert.deepEqual([0, 1, 2, 3].map((b) => inBar(b, 'T').length), [0, 0, 0, 3]); assert.deepEqual([0, 1, 2, 3].map((b) => inBar(b, 'F').length), [0, 0, 0, 2]);
+  assert.deepEqual([0, 1, 2, 3].map((b) => inBar(b, 'S').length), [2, 2, 2, 1], "fill ölçüsünde trampet yalnızca 2'de");
+  assert.ok(ev.every((e, i) => i === 0 || ev[i - 1].q <= e.q), 'vuruşlar zamana göre sıralı');
+  // gecikme: #7'de trampet adımın %12'si kadar geriden, kick yerinde
+  const evl = Core.drumEvents(byNo.get(7), g4, 1);
+  assert.ok(Math.abs(evl.find((e) => e.kind === 'S').q - (1 + 0.12 * 0.25)) < 1e-9 && evl.find((e) => e.kind === 'K').q === 0);
+  // 6/8 ve 3/4 (üçleme) ölçüde vuruş zamanları
+  const g68 = Core.makeGrid({ bpm: 60, meter: '6/8' }), e68 = Core.drumEvents(byNo.get(44), g68, 1);
+  assert.equal(e68.filter((e) => e.kind === 'S').length, 4); assert.equal(e68.filter((e) => e.kind === 'K').length, 2);
+  const g34 = Core.makeGrid({ bpm: 120, meter: '3/4' }), ej = Core.drumEvents(byNo.get(33), g34, 1);
+  assert.deepEqual(ej.filter((e) => e.kind === 'D').map((e) => +e.q.toFixed(4)), [0, 1, 1.6667, 2], 'jazz waltz ride: 1, 2, 2a (üçleme), 3');
+  assert.deepEqual(ej.filter((e) => e.kind === 'P').map((e) => e.q), [1, 2]);
+  // sesler: her tür sonlu ve duyulur; GM davul haritasında
+  assert.deepEqual([...Core.DRUM_KINDS].sort(), ['C', 'D', 'F', 'H', 'K', 'O', 'P', 'R', 'S', 'T']);
+  const peaks = {};
+  for (const k of Core.DRUM_KINDS) { const x = Core.synthDrum(k, 44100); assert.ok(x.every(Number.isFinite), k); peaks[k] = Math.max(...x.map(Math.abs)); assert.ok(peaks[k] > 0.1 && peaks[k] < 1.2, k + ' ' + peaks[k]); assert.ok(Core.GM_DRUM[k] > 0); }
+  assert.ok(Core.synthDrum('F', 44100).length > Core.synthDrum('R', 44100).length, 'floor tom uzun, rim click kısa');
+  // her kalıp çalınabilir: olaylar sonlu, bilinen türlerde, ölçü içinde
+  for (const L of Core.DRUM_LOOPS) {
+    const gg = Core.makeGrid({ bpm: 100, meter: L.meter }), es = Core.drumEvents(L, gg, 4);
+    assert.ok(es.length > 0 && es.every((e) => Core.GM_DRUM[e.kind] && Number.isFinite(e.t) && e.vel > 0 && e.q >= 0 && e.q < 4 * gg.barQ), L.id);
+  }
+  // loop profili tom/clap/ride şeritlerini de sayar (tribal'de kick dışı vurgu da var)
+  assert.ok(Array.from(Core.loopProfile(byNo.get(8))).filter((v) => v > 0).length >= 4);
+  // MIDI: tom ve rim click notaları GM numaralarıyla davul izine girer
+  const p3 = JSON.parse(JSON.stringify(proj));
+  const mid8 = Core.parseMidi(Core.exportMidi(p3, Core.derive(p3, st), byNo.get(8))), dr8 = mid8.tracks.find((t) => /Davul/.test(t.name));
+  const pitches = new Set(dr8.notes.map((n) => n.midi ?? n.note ?? n.pitch));
+  assert.ok(pitches.has(36) && pitches.has(41) && pitches.has(47) && !pitches.has(42), 'tribal MIDI: kick + floor/rack tom, hi-hat yok: ' + [...pitches]);
+  assert.match(Core.loopGridText(byNo.get(15)), /Fill \(her 4\. ölçü\)[\s\S]*Tom\s+\|/); assert.match(Core.loopGridText(byNo.get(33)), /Ride\s+\|[\s\S]*Hat pedal\s+\|/);
+  assert.match(Core.loopGridText(byNo.get(7)), /Gecikme: Trampet/);
+  assert.equal(Core.loopGridText(Core.DRUM_LOOPS.find((l) => l.id === 'rock8')), 'Kick    |x...|....|x.x.|....|\nTrampet |....|X...|....|X...|\nHi-hat  |x.x.|x.x.|x.x.|x.x.|', 'eski görünüm bozulmadı');
+  return `45 numara + kategoriler · ${Core.DRUM_LOOPS.length} loop · fill (T/F yalnızca 4. ölçüde) · gecikme · 3 ölçü türü · ${Core.DRUM_KINDS.length} ses · tribal MIDI notaları ${[...pitches].join(',')}`;
 });
 
 await step('Zamanlama 1: zaman haritası + WSOLA — kaydırılan nota yerine oturur, perde ve nota sayısı değişmez', async () => {

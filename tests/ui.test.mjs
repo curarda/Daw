@@ -630,7 +630,7 @@ try {
     await page.selectOption('#inMeter', '3/4');
     assert.match(await page.textContent('#meterEst'), /Uygula: 4\/4/);
     const loops34 = await page.locator('#inDrumLoop option').allTextContents();
-    assert.ok(loops34.some((x) => /Vals/.test(x)) && !loops34.some((x) => /Rock/.test(x)), 'loop listesi proje ölçüsüne göre');
+    assert.ok(loops34.some((x) => /Vals/.test(x)) && !loops34.some((x) => /Rock \/ pop|Basic backbeat/.test(x)), 'loop listesi proje ölçüsüne göre');
     await page.click('#btnMeterApply');
     assert.equal(await page.inputValue('#inMeter'), '4/4');
     const auto = await page.textContent('#inDrumLoop option[value=auto]');
@@ -648,12 +648,25 @@ try {
     await page.click('#btnDrumPreview');
     await waitStatus(/▶ Yarım zaman/);
     await page.click('#btnDrumStop');
-    // uygun loop yok: 200 BPM
+    // 45 kalıp: kategorilere göre gruplanmış liste; tom'lu kalıp seçilince ızgarada tom şeritleri, ▶ Loop çalar
+    const groups = await page.locator('#inDrumLoop optgroup').evaluateAll((els) => els.map((e) => e.label));
+    assert.deepEqual(groups.slice(0, 3), ['4/4 · temel rock kalıpları', '4/4 · post-punk, darkwave, synthwave', '4/4 · half-time ailesi']);
+    assert.ok((await page.locator('#inDrumLoop option').allTextContents()).some((x) => /^8 · Tom-ağırlıklı tribal/.test(x)));
+    await page.selectOption('#inDrumLoop', 'tribal');
+    assert.match(await page.textContent('#drumGrid'), /Floor tom\s+\|[\s\S]*Tom\s+\|/);
+    assert.doesNotMatch(await page.textContent('#drumGrid'), /Hi-hat/);
+    const h1 = await S(() => window.__dawAPI.player().drumHits || 0);
+    await page.click('#btnDrumPreview');
+    await page.waitForFunction((h) => (window.__dawAPI.player().drumHits || 0) > h + 8, h1, { timeout: 15000 });
+    await page.click('#btnDrumStop');
+    await page.selectOption('#inDrumLoop', 'gated');
+    assert.match(await page.textContent('#drumGrid'), /Fill \(her 4\. ölçü\)/);
+    // uygun loop yok: 260 BPM
     await page.selectOption('#inDrumLoop', 'auto');
-    await page.fill('#inBpm', '200'); await page.dispatchEvent('#inBpm', 'change');
+    await page.fill('#inBpm', '260'); await page.dispatchEvent('#inBpm', 'change');
     const info = await page.textContent('#drumInfo');
     assert.match(info, /Bu melodiye uygun bir loop bulamadım/);
-    assert.match(await page.inputValue('#drumRequest'), /Tempo: 200 BPM/);
+    assert.match(await page.inputValue('#drumRequest'), /Tempo: 260 BPM/);
     if (shotDir) await page.locator('details.step:has(#drumInfo)').screenshot({ path: path.join(shotDir, 'drums-notfound.png') });
     await page.fill('#inBpm', '120'); await page.dispatchEvent('#inBpm', 'change');
     if (shotDir) await page.locator('details.step:has(#drumInfo)').screenshot({ path: path.join(shotDir, 'drums.png') });
@@ -662,7 +675,7 @@ try {
     assert.equal(await S(() => window.__daw.proj.mixer.drums.mute), true);
     await page.locator('.strip[data-track=drums] .mute').click();
     await page.uncheck('#inDrumsOn');
-    return `tahmin 4/4 · 3/4 seçilince "Uygula" → 4/4 · ${auto.trim()} · oynatmada davul çaldı · 200 BPM → bulamadım + tarif`;
+    return `tahmin 4/4 · 3/4 seçilince "Uygula" → 4/4 · ${auto.trim()} · oynatmada davul çaldı · 260 BPM → bulamadım + tarif`;
   });
 
   await step('Zamanlama: notayı sağa sürükle (ızgaraya yapışır) → ses kayar; quantize; zamanı geri al; piyano tuşu çalar; T ile tap → tempo/ölçü/ızgara', async () => {
