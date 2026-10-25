@@ -21,8 +21,9 @@ I wanted to hear how my own singing would sit over chords, and to get a chord pr
 4. **Sections and key:** mark sections and get key and mode suggestions for each one.
 5. **Pitch and timing correction:** optional autotune (TD-PSOLA) and quantization, both reversible. Drag on empty space to select many notes and move them together (pitch and time), double-click a note to split it in two when the detector heard one sound, and shift the whole song by 1–2 bars to leave an intro gap.
 6. **Chord detection:** diatonic chords and common extensions, using a sequence model that favors fewer chord changes and avoids clashing notes.
-7. **Chord sound and drums:** piano (Salamander samples, built-in synthetic fallback offline) or a synth keyboard, each as block chords or an arpeggio; a repeated chord is struck once and held or faded instead of every bar; pick the bar where chords enter and the bar where drums enter (drag the 🎹 / 🥁 flags on the ruler). Simple drum loops.
-8. **Export:** MIDI, chord sheet (.txt), corrected vocal WAV, vocal + piano mix WAV, and a project JSON file.
+7. **Chord sound and drums:** piano (Salamander samples, built-in synthetic fallback offline) or a synth keyboard, each as block chords or an arpeggio; a repeated chord is struck once and held or faded instead of every bar; pick the bar where chords enter and the bar where drums enter (drag the 🎹 / 🥁 flags on the ruler). Simple drum loops with fills at section changes, plus a bass line (locked to the kick, root–fifth, walking, …) chosen automatically from the drums and meter. Each section can have its own drum loop, bass and chord sound.
+8. **Fast demo:** one **✨ Demo yap** button estimates meter and tempo, confirms the keys, and switches on chords, drums and bass; **🔁 loop** a section and press **⟳** to hear the next drum loop, bass pattern or chord sound right away; **Ctrl+Z / Ctrl+Shift+Z** undo and redo everything except recording and mixer levels.
+9. **Export:** MIDI, chord sheet (.txt), corrected vocal WAV, vocal + piano mix WAV, and a project JSON file.
 
 ## Run locally
 

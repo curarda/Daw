@@ -956,6 +956,198 @@ try {
     return `synth arpej 1/16 çalarken ${hits} nota tetiklendi · mix WAV ${(mix.data.length / 1e6).toFixed(1)} MB · MIDI "${tr.name}": hold ${tr.notes.length} nota, off ${pm2.tracks[2].notes.length}`;
   });
 
+  // ---------------------------------------------------------------- bas, düzenleme, döngü, demo, geri alma
+  const hist = () => S(() => { const h = window.__dawAPI.hist(); return { u: h.undo.length, r: h.redo.length }; });
+  const pause = (ms = 650) => page.waitForTimeout(ms); // 0,5 sn içindeki değişiklikler tek geri alma adımında birleşir
+
+  await step('Genel geri alma (Ctrl+Z / Ctrl+Shift+Z / düğmeler): sürükleme tek adım; akor girişi, şarkıyı kaydır, nota bölme geri alınır; ses yeni yüklenince geçmiş sıfırlanır', async () => {
+    const tl = await resetTest();
+    assert.equal(await page.isDisabled('#btnUndo'), true, 'yeni ses: geri alınacak şey yok');
+    const e0 = await effs();
+    await pause();
+    await marquee(tl, 0, 3);
+    await pause();
+    const sel = await S(() => window.__daw.sel.ids.map((id) => window.__daw.d.notes.findIndex((n) => n.id === id)));
+    const b1 = await noteBox(sel[1]);
+    await page.mouse.move(tl.x + (b1.x0 + b1.x1) / 2, tl.y + b1.y); await page.mouse.down();
+    await page.mouse.move(tl.x + (b1.x0 + b1.x1) / 2, tl.y + b1.y - 2 * b1.rowH, { steps: 12 });
+    await page.mouse.up();
+    const e1 = await effs();
+    assert.deepEqual(await hist(), { u: 1, r: 0 }, 'bir sürükleme = tek geri alma adımı');
+    assert.equal(await page.isDisabled('#btnUndo'), false);
+    await page.keyboard.down('Control'); await page.keyboard.press('z'); await page.keyboard.up('Control');
+    await page.waitForFunction(() => window.__dawAPI.hist().undo.length === 0, null, { timeout: 5000 });
+    assert.deepEqual(await effs(), e0, 'Ctrl+Z: notalar eski yerinde');
+    assert.deepEqual(await hist(), { u: 0, r: 1 });
+    await page.keyboard.down('Control'); await page.keyboard.down('Shift'); await page.keyboard.press('z'); await page.keyboard.up('Shift'); await page.keyboard.up('Control');
+    await page.waitForFunction(() => window.__dawAPI.hist().redo.length === 0, null, { timeout: 5000 });
+    assert.deepEqual(await effs(), e1, 'Ctrl+Shift+Z: yeniden');
+    // akor girişi + kaydırma → düğmelerle geri al
+    await pause();
+    await page.fill('#inChordStart', '3'); await page.dispatchEvent('#inChordStart', 'change');
+    await pause();
+    await page.click('[data-shift="2"]');
+    assert.equal(await S(() => window.__daw.proj.audio.leadBars), 2);
+    await pause();
+    await page.click('#btnUndo');
+    await page.waitForFunction(() => window.__daw.proj.audio.leadBars === 0, null, { timeout: 5000 });
+    assert.equal(await S(() => window.__daw.proj.chordStartBar), 3);
+    await page.click('#btnUndo');
+    await page.waitForFunction(() => window.__daw.proj.chordStartBar === 1, null, { timeout: 5000 });
+    assert.equal(await page.inputValue('#inChordStart'), '1', 'sayı kutusu da geri döndü');
+    await pause();
+    // nota bölme geri alınır (yeniden bölütleme)
+    const before = await S(() => window.__daw.d.notes.length);
+    const idx = await S(() => { const ns = window.__daw.d.notes; let b = 0; ns.forEach((n, i) => { if (n.q1 - n.q0 > ns[b].q1 - ns[b].q0) b = i; }); return b; });
+    await S(`(() => { const n = window.__daw.d.notes[${idx}]; document.querySelector('#tlScroll').scrollLeft = Math.max(0, 46 + n.q0 * window.__daw.view.pxPerQ - 200); })()`);
+    await pause(200);
+    const bx = await noteBox(idx);
+    await page.mouse.dblclick(tl.x + (bx.x0 + bx.x1) / 2, tl.y + bx.y);
+    await page.waitForFunction((n) => window.__daw.d.notes.length === n + 1, before, { timeout: 5000 });
+    await pause();
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction((n) => window.__daw.d.notes.length === n, before, { timeout: 5000 });
+    assert.equal(await S(() => window.__daw.proj.noteSplits.length), 0);
+    await page.keyboard.press('Control+Shift+z');
+    await page.waitForFunction((n) => window.__daw.d.notes.length === n + 1, before, { timeout: 5000 });
+    // yeni ses → geçmiş sıfırlanır
+    await resetTest();
+    assert.deepEqual(await hist(), { u: 0, r: 0 });
+    assert.equal(await page.isDisabled('#btnUndo'), true);
+    return 'sürükleme tek adım · Ctrl+Z / Ctrl+Shift+Z · düğmeler · akor girişi, kaydırma, bölme geri alınır · yeni ses geçmişi sıfırlar';
+  });
+
+  await step('Bas: panel, kalıp seçimi, çalarken bas çalar; ⟳ Başka (bas / davul / akor sesi) seçeneği değiştirip hemen çalar', async () => {
+    await resetTest();
+    assert.equal(await S(() => window.__daw.proj.bass.on), false);
+    assert.match(await page.textContent('#bassInfo'), /Otomatik: /);
+    const opts = await page.$$eval('#inBassPattern option', (o) => o.map((x) => x.value));
+    assert.deepEqual(opts.slice(0, 4), ['auto', 'kick', 'pop', 'rootfifth']);
+    await page.check('#inBassOn');
+    await page.selectOption('#inBassPattern', 'pop');
+    const ev = await S(() => window.__dawAPI.arrangement().bass);
+    assert.ok(ev.length > 20 && ev.every((e) => e.midi >= 28 && e.midi <= 55));
+    const h0 = await S(() => window.__dawAPI.player().bassHits || 0);
+    await page.click('#btnPlay');
+    await page.waitForFunction((h) => (window.__dawAPI.player().bassHits || 0) > h + 3, h0, { timeout: 20000 });
+    await page.click('#btnPlay');
+    // ⟳ bas
+    const p0 = await S(() => window.__daw.proj.bass.pattern);
+    await page.click('#btnBassNext');
+    const p1 = await S(() => window.__daw.proj.bass.pattern);
+    assert.notEqual(p1, p0); assert.match(await page.textContent('#status'), /^Bas: /);
+    await page.waitForFunction(() => window.__dawAPI.player().playing, null, { timeout: 10000 });
+    // ⟳ davul: sıradaki loop, davul açılır
+    const l0 = await S(() => window.__daw.proj.drums.loop);
+    await page.click('#btnDrumNext');
+    const l1 = await S(() => ({ loop: window.__daw.proj.drums.loop, on: window.__daw.proj.drums.on }));
+    assert.notEqual(l1.loop, l0); assert.equal(l1.on, true); assert.match(await page.textContent('#status'), /^Davul: /);
+    // ⟳ akor sesi: dört seçenek sırayla
+    const st0 = await S(() => window.__daw.proj.piano.style);
+    await page.click('#btnStyleNext');
+    const st1 = await S(() => window.__daw.proj.piano.style);
+    assert.notEqual(st1, st0); assert.equal(await page.inputValue('#inPianoStyle'), st1);
+    const seen = new Set([st0, st1]);
+    for (let i = 0; i < 3; i++) { await page.click('#btnStyleNext'); seen.add(await S(() => window.__daw.proj.piano.style)); }
+    assert.equal(seen.size, 4, 'dört akor sesi sırayla geziliyor');
+    await page.click('#btnPlay');
+    // mix WAV ve MIDI bas içerir
+    const mid = await download('#btnExpMidi');
+    const pm = Core.parseMidi(new Uint8Array(mid.data));
+    assert.ok(pm.tracks.some((t) => t.name === 'Bas' && t.notes.length > 20) && pm.tracks.some((t) => /Davul/.test(t.name)));
+    const mix = await download('#btnExpMix');
+    assert.equal(mix.data.slice(0, 4).toString(), 'RIFF');
+    await page.uncheck('#inBassOn');
+    return `bas ${ev.length} nota; ⟳ bas ${p0} → ${p1}, davul ${l0} → ${l1.loop}, akor sesi ${[...seen].join(' / ')} · MIDI "Bas" + davul izi`;
+  });
+
+  await step('Bölüm düzenlemesi: bölüme tıkla → davul / bas / akor sesi genel ayardan farklı; geçişte fill; ⟳ bölüm için; döngü seçili bölümü çalar ve baştan sarar', async () => {
+    const tl = await resetTest();
+    await page.check('#inDrumsOn'); await page.check('#inBassOn');
+    const secId = await S(() => window.__daw.d.sections[0].id);
+    // bölüm şeridine tıkla → denetçide düzenleme alanı
+    await page.mouse.click(tl.x + 46 + 120, tl.y + 22 + 13);
+    assert.equal(await S(() => window.__daw.sel.type), 'section');
+    assert.equal(await page.locator('#inspector fieldset.arr').count(), 1);
+    // davul: bu bölümde yok
+    await page.selectOption('#inspector select[data-kind=drums]', 'off');
+    const sec1 = await S(() => { const d = window.__daw.d; return [d.sections[0].startBar, d.sections[0].endBar, d.sections[1].startBar]; });
+    let arr = await S(() => window.__dawAPI.arrangement());
+    const bar = (e) => Math.floor((e.q ?? e.q0) / 4) + 1;
+    assert.ok(arr.drums.every((e) => bar(e) > sec1[1]), 'verse: davul yok, nakarat: var');
+    assert.ok(arr.drums.length > 0);
+    // davul bu bölümde sade loop; geçişte fill
+    await page.selectOption('#inspector select[data-kind=drums]', 'minimal');
+    arr = await S(() => window.__dawAPI.arrangement());
+    const fills = arr.drums.filter((e) => e.fill);
+    assert.ok(fills.length === 4 && fills.every((e) => bar(e) === sec1[1]), 'bölüm geçişinde (verse son ölçüsü) 4 vuruşluk fill: ' + fills.length);
+    await page.uncheck('#inDrumFills');
+    assert.equal((await S(() => window.__dawAPI.arrangement().drums.filter((e) => e.fill).length)), 0, 'fill kapatılabilir');
+    await page.check('#inDrumFills');
+    // bas: bu bölümde yarım notalar; akor sesi: bu bölümde synth arpej
+    await page.selectOption('#inspector select[data-kind=bass]', 'half');
+    await page.selectOption('#inspector select[data-kind=piano]', 'synth-arp');
+    arr = await S(() => window.__dawAPI.arrangement());
+    assert.ok(arr.piano.filter((e) => bar({ q: e.q0 }) <= sec1[1]).every((e) => e.inst === 'synth' && e.arp));
+    assert.ok(arr.piano.filter((e) => bar({ q: e.q0 }) > sec1[1]).every((e) => e.inst === 'piano'));
+    const bassV = arr.bass.filter((e) => bar(e) <= sec1[1]), bassC = arr.bass.filter((e) => bar(e) > sec1[1]);
+    assert.ok(bassV.length > 0 && bassV.length < bassC.length * 1.2 && new Set(bassV.map((e) => e.q0 % 4)).size <= 2, 'verse: yarım notalı bas (ölçüde en çok 2 vuruş)');
+    // ⟳ bu bölüm için
+    await page.click('#inspector button[data-act=arrNext][data-kind=bass]');
+    assert.match(await page.textContent('#status'), /^Bas \(bu bölüm\): /);
+    // genel ayara dön
+    for (const k of ['drums', 'bass', 'piano']) await page.selectOption(`#inspector select[data-kind=${k}]`, '');
+    assert.equal(await S(() => window.__daw.proj.sections[0].arr === undefined), true);
+    // döngü: bölümü seç → 🔁 → bölge bölüm; bir sonraki bölüme tıklayınca bölge ona geçer
+    await page.click('#btnLoop');
+    let lp = await S(() => ({ ...window.__daw.loop }));
+    assert.equal(lp.on, true); assert.ok(Math.abs(lp.from - 0) < 1e-6 && Math.abs(lp.to - sec1[1] * 2) < 1e-6, JSON.stringify(lp));
+    await page.mouse.click(tl.x + 46 + (sec1[2] - 1) * 4 * 44 + 100, tl.y + 22 + 13);
+    lp = await S(() => ({ ...window.__daw.loop }));
+    assert.ok(Math.abs(lp.from - (sec1[2] - 1) * 2) < 1e-6, 'döngü seçilen bölümü izler: ' + JSON.stringify(lp));
+    // dar bir bölgeyle sarma testi: 1,2 s (önce çalmayı durdur: ⟳ düğmeleri çalmaya başlatmıştı)
+    await S(() => { window.__dawAPI.stop(); });
+    await S(() => { const l = window.__daw.loop; l.from = 0.4; l.to = 1.6; window.__daw.pos = 0.4; });
+    await page.click('#btnPlay');
+    const seen = await S(async () => {
+      const out = [];
+      for (let i = 0; i < 38; i++) { await new Promise((r) => setTimeout(r, 100)); out.push(window.__daw.pos); }
+      return out;
+    });
+    await page.click('#btnPlay');
+    assert.ok(Math.max(...seen) < 1.7 && Math.min(...seen) >= 0.39, 'imleç bölgede kalır: ' + Math.min(...seen) + '…' + Math.max(...seen));
+    assert.ok(seen.some((v, i) => i && v < seen[i - 1] - 0.5), 'bölge sonunda baştan sarar');
+    await page.click('#btnLoop');
+    assert.equal(await S(() => window.__daw.loop.on), false);
+    await page.uncheck('#inDrumsOn'); await page.uncheck('#inBassOn');
+    return `verse: davul yok → sade loop + ${fills.length} vuruşluk fill · bas yarım notalar · akor sesi synth arpej · döngü ${seen.length} örnek, ${Math.min(...seen).toFixed(2)}…${Math.max(...seen).toFixed(2)} s`;
+  });
+
+  await step('✨ Demo yap: ölçü + ton + akor + davul + bas tek tuşla, çalar; verse sade / nakarat dolu; tek Ctrl+Z ile geri', async () => {
+    await resetTest();
+    const pre = await S(() => ({ drums: window.__daw.proj.drums.on, bass: window.__daw.proj.bass.on, secs: window.__daw.proj.sections.map((s) => s.tonic) }));
+    assert.equal(pre.drums, false); assert.equal(pre.bass, false); assert.deepEqual(pre.secs, [null, null]);
+    await pause();
+    await page.click('#btnDemo');
+    await page.waitForFunction(() => window.__dawAPI.player().playing, null, { timeout: 20000 });
+    const st = await page.textContent('#status');
+    assert.match(st, /Demo hazır/); assert.match(st, /ton: Verse C# Frig, Nakarat B Dorian/); assert.match(st, /davul: /); assert.match(st, /bas: /);
+    const r = await S(() => { const p = window.__daw.proj; return { drums: p.drums.on, bass: p.bass.on, loop: p.drums.loop, fills: p.drums.fills, secs: p.sections.map((s) => [s.tonic != null, s.arr || null]), ev: window.__dawAPI.arrangement() }; });
+    assert.equal(r.drums, true); assert.equal(r.bass, true); assert.equal(r.fills, true);
+    assert.ok(r.secs.every(([k]) => k), 'tonlar onaylandı');
+    assert.ok(r.secs[0][1] && r.secs[0][1].bass === 'half', 'verse: sade bas'); assert.equal(r.secs[1][1], null, 'nakarat: genel ayar');
+    assert.ok(r.ev.drums.length > 0 && r.ev.bass.length > 0 && r.ev.drums.some((e) => e.fill));
+    await page.waitForFunction(() => window.__daw.pos > 0.4, null, { timeout: 15000 });
+    await page.click('#btnPlay');
+    // tek adımda geri
+    assert.equal((await hist()).u, 1, 'demo tek geri alma adımı');
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(() => !window.__daw.proj.bass.on, null, { timeout: 5000 });
+    const z = await S(() => { const p = window.__daw.proj; return { drums: p.drums.on, bass: p.bass.on, secs: p.sections.map((s) => [s.tonic, !!s.arr]) }; });
+    assert.deepEqual(z, { drums: false, bass: false, secs: [[null, false], [null, false]] });
+    return `davul ${r.loop}, ${r.ev.drums.length} vuruş (fill var), bas ${r.ev.bass.length} nota; Ctrl+Z ile hepsi geri`;
+  });
+
   await step('Piyano örnekleri: birinci kaynak (github.io) engelliyse jsDelivr aynasından yüklenir; ikisi de yoksa yedek + "Tekrar dene"', async () => {
     const wav = Buffer.from(Core.encodeWav([Core.synthPianoSample(69, 44100, 0.5)], 44100));
     const p2 = await context.newPage();

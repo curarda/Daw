@@ -921,6 +921,92 @@ await step('Nota bölme (çift tık): tek sanılan nota ikiye ayrılır, perdele
   return `nota ${k + 1}: ${(n.t1 - n.t0).toFixed(2)} s → ${(a.t1 - a.t0).toFixed(2)} + ${(b.t1 - b.t0).toFixed(2)} s · medyanlar ${a.median.toFixed(2)} / ${b.median.toFixed(2)}`;
 });
 
+await step('Bas: kalıplar (4/4, 3/4, 2/4, 6/8), kick\'e kilitli, yürüyen bas yaklaşması, otomatik seçim, aralık, render ve MIDI "Bas" izi', () => {
+  const mk = (g, bars) => bars.map(([bar, root, bass]) => ({ chord: { root, q: 'maj' }, bar, section: 'a', q0: (bar - 1) * g.barQ, q1: bar * g.barQ, voicing: { bass, notes: [bass + 16, bass + 19, bass + 24] } }));
+  const g4 = Core.makeGrid({ bpm: 120, meter: '4/4' });
+  const ch = mk(g4, [[1, 0, 36], [2, 7, 43]]);
+  const ev = (id, g = g4, c = ch, o = {}) => Core.bassEvents(c, g, Object.assign({ patternFor: () => id }, o));
+  const whole = ev('whole');
+  assert.equal(whole.length, 2); assert.ok(Math.abs(whole[0].dur - 2 * 0.96) < 1e-6, 'uzun kök ölçü boyunca');
+  assert.deepEqual(ev('eighths').slice(0, 8).map((e) => e.midi), Array(8).fill(36));
+  const rf = ev('rootfifth').slice(0, 4).map((e) => e.midi);
+  assert.deepEqual(rf, [36, 43, 36, 43], 'kök – beşli');
+  assert.deepEqual(ev('pop').slice(0, 4).map((e) => e.q0), [0, 1.5, 2.5, 3]);
+  // yürüyen bas: son nota bir sonraki akorun (G=43) yarım ses yanı
+  const walk = ev('walk').slice(0, 4);
+  assert.deepEqual(walk.slice(0, 3).map((e) => e.midi), [36, 40, 43], 'kök, üçlü (majör), beşli');
+  assert.ok(Math.abs(walk[3].midi - 43) === 1, 'yaklaşma notu bir sonraki köke yarım ses: ' + walk[3].midi);
+  // kick'e kilitli: rock8 kick'leri 1 ve 3'te → kök yalnızca orada
+  const rock8 = Core.DRUM_LOOPS.find((l) => l.id === 'rock8');
+  const k3 = ev('kick', g4, ch, { loopFor: () => rock8 }).filter((e) => e.q0 < 4).map((e) => e.q0);
+  assert.deepEqual(k3, [0, 2, 2.5], 'rock8: kick adımları (x.......x.x.....) → 0, 2, 2.5');
+  assert.deepEqual(ev('kick').map((e) => e.q0), [0, 4], 'loop yoksa uzun kök');
+  // 3/4 vals, 2/4, 6/8
+  for (const [meter, expect] of [['3/4', [0, 1, 2]], ['2/4', [0, 1]], ['6/8', [0, 1, 1.5, 2.5]]]) {
+    const gm = Core.makeGrid({ bpm: 100, meter }), cm = mk(gm, [[1, 0, 36]]);
+    const id = meter === '3/4' ? 'waltz' : meter === '2/4' ? 'rootfifth' : 'rootfifth';
+    const e = ev(id, gm, cm).map((x) => x.q0);
+    assert.deepEqual(e, expect, meter);
+    assert.ok(ev(id, gm, cm).every((x) => x.q0 + (x.q1 - x.q0) <= gm.barQ + 1e-9 + 0), meter + ' ölçü dışına taşmaz');
+    assert.deepEqual(Core.bassPool(meter).includes('waltz'), meter === '3/4');
+  }
+  // yarım ölçü akorlarda: deseni ikinci yarısı ikinci akorda
+  const half = [{ chord: { root: 0, q: 'maj' }, bar: 1, half: 0, section: 'a', q0: 0, q1: 2, voicing: { bass: 36, notes: [52, 55, 60] } }, { chord: { root: 7, q: 'maj' }, bar: 1, half: 1, section: 'a', q0: 2, q1: 4, voicing: { bass: 43, notes: [59, 62, 67] } }];
+  const he = ev('rootfifth', g4, half);
+  assert.deepEqual(he.map((e) => [e.q0, e.midi]), [[0, 36], [1, 43], [2, 43], [3, 50]]);
+  assert.ok(he.every((e) => e.midi >= 28 && e.midi <= 55), 'bas aralığı');
+  // otomatik seçim
+  assert.equal(Core.suggestBass(rock8, '4/4').id, 'kick');
+  assert.equal(Core.suggestBass(Core.DRUM_LOOPS.find((l) => l.id === 'four'), '4/4').id, 'eighths');
+  assert.equal(Core.suggestBass(Core.DRUM_LOOPS.find((l) => l.id === 'ballad16'), '4/4').id, 'half');
+  assert.equal(Core.suggestBass(null, '3/4').id, 'waltz'); assert.equal(Core.suggestBass(null, '6/8').id, 'half');
+  // gerçek proje: tüm akorlar için bas, aralık
+  const dd = Core.derive(proj, st);
+  const be = Core.bassEvents(dd.chords, dd.g, { patternFor: () => 'pop' });
+  assert.ok(be.length > dd.chords.length * 2 && be.every((e) => e.midi >= 28 && e.midi <= 55 && e.dur > 0));
+  assert.ok(Math.abs(be[0].midi - dd.chords[0].voicing.bass) % 12 === 0 || be[0].midi === dd.chords[0].voicing.bass, 'ilk bas nota akorun bas notası');
+  // render: perde + zarf
+  const sr = 22050, x = Core.renderBass([{ t: 0.1, dur: 1, midi: 45, vel: 100 }], sr, sr * 2, 1);
+  const pow = (hz) => { let re = 0, im = 0; for (let i = Math.round(0.3 * sr); i < Math.round(0.9 * sr); i++) { const w = (2 * Math.PI * hz * i) / sr; re += x[i] * Math.cos(w); im += x[i] * Math.sin(w); } return Math.hypot(re, im); };
+  assert.ok(pow(110) > 3 * pow(116.5) && pow(110) > 3 * pow(103.8), 'bas perdesi A2 (110 Hz)');
+  let tail = 0, body = 0; for (let i = Math.round(1.5 * sr); i < sr * 2; i++) tail = Math.max(tail, Math.abs(x[i])); for (let i = Math.round(0.4 * sr); i < Math.round(0.6 * sr); i++) body = Math.max(body, Math.abs(x[i]));
+  assert.ok(body > 0.02 && tail < 0.02 * body, 'nota bitince söner');
+  // MIDI
+  const mid = Core.parseMidi(Core.exportMidi(proj, dd, null, be));
+  const bt = mid.tracks.find((t) => t.name === 'Bas');
+  assert.ok(bt && bt.notes.length === be.length && bt.notes.every((n) => n.midi >= 28 && n.midi <= 55));
+  return `pop ${be.length} nota · kick kalıbı ${JSON.stringify(k3)} · walk ${walk.map((e) => e.midi).join(',')} · MIDI "Bas" ${bt.notes.length} nota`;
+});
+
+await step('Düzenleme: bölüm başına davul loop\'u, geçişlerde fill, bölüm başına akor sesi (piyano + synth), davul girişi', () => {
+  const g4 = Core.makeGrid({ bpm: 120, meter: '4/4' });
+  const L = (id) => Core.DRUM_LOOPS.find((l) => l.id === id);
+  const plan = (b) => (b <= 4 ? L('minimal') : b <= 8 ? L('rock8') : null);
+  const ev = Core.arrangeDrums(g4, 10, 1, plan, null);
+  const bars = (e) => Math.floor(e.q / 4) + 1;
+  assert.ok(ev.filter((e) => bars(e) <= 4).every((e) => e.kind !== 'S'), 'verse: sade loop trampetsiz');
+  assert.ok(ev.filter((e) => bars(e) > 4 && bars(e) <= 8).some((e) => e.kind === 'S'), 'nakarat: rock8 trampet var');
+  assert.ok(ev.every((e) => bars(e) <= 8), 'plan null → davul yok');
+  const evStart = Core.arrangeDrums(g4, 10, 3, plan, null);
+  assert.ok(Math.min(...evStart.map((e) => e.q)) >= 8 - 1e-9, 'davul girişi 3. ölçü');
+  // fill: 4. ölçünün son vuruşu trampet 16'lıkları, önceki loop vuruşları o vuruşta silinir
+  const withFill = Core.arrangeDrums(g4, 10, 1, plan, (b) => b === 4 || b === 8);
+  const b4 = withFill.filter((e) => bars(e) === 4);
+  const last = b4.filter((e) => e.q >= 15 - 1e-9);
+  assert.equal(last.length, 4); assert.ok(last.every((e) => e.kind === 'S' && e.fill));
+  assert.ok(last[3].vel > last[0].vel, 'fill giderek güçlenir');
+  assert.ok(!b4.some((e) => e.q >= 15 - 1e-9 && e.q < 16 && e.kind === 'H'), 'son vuruşta hi-hat yok');
+  assert.equal(withFill.filter((e) => bars(e) === 5).length, ev.filter((e) => bars(e) === 5).length, 'fill yalnızca geçiş ölçüsünde');
+  const g68 = Core.makeGrid({ bpm: 80, meter: '6/8' });
+  assert.equal(Core.arrangeDrums(g68, 2, 1, () => Core.DRUM_LOOPS.find((l) => l.id === 'ballad68'), (b) => b === 1).filter((e) => e.fill).length, 3, '6/8 fill: 3 vuruş');
+  // bölüm başına akor sesi
+  const dd = Core.derive(proj, st);
+  const px = Core.arrangePiano(dd.chords, dd.g, (id) => Core.pianoOpts({ style: id === 's1' ? 'synth-arp' : 'piano-chord', repeat: 'hold' }));
+  assert.ok(px.filter((e) => e.t < 4 * dd.g.barSec).every((e) => e.inst === 'piano' && !e.arp));
+  assert.ok(px.filter((e) => e.t >= 4 * dd.g.barSec).every((e) => e.inst === 'synth' && e.arp));
+  return `fill: ${last.map((e) => e.vel.toFixed(2)).join(' → ')} · piyano ${px.filter((e) => e.inst === 'piano').length} / synth arpej ${px.filter((e) => e.inst === 'synth').length} olay`;
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nTüm adımlar geçti.');

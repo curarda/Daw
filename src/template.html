@@ -23,11 +23,14 @@
     <button id="btnPlay" title="Boşluk tuşu">▶ Çal</button>
     <button id="btnStop" title="Başa sar">■</button>
     <span id="posReadout" class="mono">1 · 1</span>
+    <button id="btnLoop" title="Seçili bölümü (ya da imleçten 4 ölçüyü) döngüde çal; ⟳ düğmeleriyle alternatifleri hemen dinle">🔁 Döngü</button>
     <button id="btnAB" class="ab" title="Orijinal / düzeltilmiş vokal">A/B: Düzeltilmiş</button>
     <span id="pianoBadge" class="tag" title="Oynatma ve mix'te kullanılan piyano">Piyano: yükleniyor…</span>
   </div>
   <div class="group">
+    <button id="btnDemo" class="accent" title="Ölçü + ton + akorlar + davul + bas tek tuşla; sonra çalar">✨ Demo yap</button>
     <button id="btnTest" class="accent">Test melodisi üret</button>
+    <button id="btnUndo" title="Geri al (Ctrl+Z)" disabled>↶</button><button id="btnRedo" title="Yinele (Ctrl+Shift+Z)" disabled>↷</button>
     <button id="btnNew">Yeni</button>
     <button id="btnOpen">Proje aç</button>
     <button id="btnSave">Proje kaydet</button>
@@ -249,9 +252,15 @@
           <output>-8 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
         </div>
+        <div class="strip" data-track="bass">
+          <b>Bas</b>
+          <input type="range" min="-40" max="6" step="1" value="-5" class="vol" aria-label="Bas ses seviyesi">
+          <output>-5 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
       </div>
       <div class="grid2">
-        <label title="Akorların hangi çalgıyla ve hangi desenle çalınacağı">Akor sesi<select id="inPianoStyle"><option value="piano-chord">Piyano — akor</option><option value="piano-arp">Piyano — arpej</option><option value="synth-chord">Synth klavye — akor</option><option value="synth-arp">Synth klavye — arpej</option></select></label>
+        <label title="Akorların hangi çalgıyla ve hangi desenle çalınacağı">Akor sesi <button id="btnStyleNext" class="small" title="Sıradaki akor sesini dene ve hemen dinle">⟳</button><select id="inPianoStyle"><option value="piano-chord">Piyano — akor</option><option value="piano-arp">Piyano — arpej</option><option value="synth-chord">Synth klavye — akor</option><option value="synth-arp">Synth klavye — arpej</option></select></label>
         <label id="arpWrap" title="Arpejde her notanın süresi" hidden>Arpej hızı<select id="inArpRate"><option value="1/4">1/4 (vuruş)</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
       </div>
       <div class="grid2">
@@ -272,9 +281,18 @@
       <div class="row"><label class="grow" title="Loop'un 1. ölçüsü bu ölçüdür; öncesinde davul çalmaz. Cetveldeki 🥁 bayrağını sürükleyerek de ayarlanır"><b>🥁 Davul şu ölçüden girsin</b><input type="number" id="inDrumStart" min="1" value="1"></label><button id="btnDrumHere" title="Oynatma imlecinin (kırmızı çizgi) olduğu ölçü">İmleçten</button></div>
       <div id="drumStartInfo" class="hint"></div>
       <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>
-        <button id="btnDrumPreview" title="Seçili loop'u 2 ölçü dinle">▶ Loop</button><button id="btnDrumStop">■</button></div>
+        <button id="btnDrumPreview" title="Seçili loop'u 2 ölçü dinle">▶ Loop</button><button id="btnDrumStop">■</button><button id="btnDrumNext" title="Sıradaki loop'u (puan sırasıyla) dene ve hemen dinle">⟳ Başka</button></div>
+      <label class="chk" title="Bir bölümün son vuruşunda trampet fill'i; sonraki bölüm hemen başlıyorsa"><input type="checkbox" id="inDrumFills" checked> Bölüm geçişlerinde davul fill'i</label>
       <div id="drumInfo"></div>
       <pre id="drumGrid" class="drum-grid"></pre>
+    </details>
+
+    <details class="step" open>
+      <summary><b>8c</b> Bas</summary>
+      <p class="hint">Akorların altına bas hattı: davulun kick'ine kilitli kök, pop, kök–beşli, sekizlik, yarım notalar, uzun kök, yürüyen bas, vals. "Otomatik" davul loop'una ve ölçüye göre seçer. Bölüm başına farklısı için bölüme tıklayıp "Bu bölümün düzenlemesi"ni kullan.</p>
+      <label class="chk"><input type="checkbox" id="inBassOn"> Oynatırken bas çalsın</label>
+      <div class="row"><label class="grow">Bas kalıbı<select id="inBassPattern"></select></label><button id="btnBassNext" title="Sıradaki kalıbı dene ve hemen dinle">⟳ Başka</button></div>
+      <div id="bassInfo" class="hint"></div>
     </details>
 
     <details class="step" open>
