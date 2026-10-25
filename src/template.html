@@ -245,6 +245,12 @@
           <output>-4 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
         </div>
+        <div class="strip" data-track="bass">
+          <b>Bas</b>
+          <input type="range" min="-40" max="6" step="1" value="-4" class="vol" aria-label="Bas ses seviyesi">
+          <output>-4 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
       </div>
       <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
       <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
@@ -274,13 +280,19 @@
       <div id="gPresets"></div>
     </details>
 
+    <details class="step" open id="bassStep">
+      <summary><b>8d</b> Bas (üretilen bas hattı)</summary>
+      <p class="hint">Akor izinden ve bölümlerin tonundan bas hattı üretir; ses analiz edilmez, hiçbir nota elle yazılmaz. Beğenmediğin ölçüleri kilitle, zarla ya da şeritte düzenle. Bas şeridi zaman çizelgesinin altında.</p>
+      <div id="bassPanel"></div>
+    </details>
+
     <details class="step" open>
       <summary><b>9</b> Dışa aktarım</summary>
       <div class="grid2">
         <button id="btnExpMidi">MIDI (akor + melodi)</button>
         <button id="btnExpChart">Akor şeması (.txt)</button>
         <button id="btnExpVocal">Düzeltilmiş vokal WAV</button>
-        <button id="btnExpMix">Vokal + piyano / gitar (+ davul) WAV</button>
+        <button id="btnExpMix">Vokal + piyano / gitar / bas (+ davul) WAV</button>
       </div>
     </details>
   </aside>
@@ -297,6 +309,7 @@
       <span class="legend"><i class="lg in"></i>scale içi <i class="lg out"></i>scale dışı <i class="lg raw"></i>ham perde <i class="lg cor"></i>düzeltilmiş perde</span>
     </div>
     <div id="tlScroll"><div id="tlInner"><canvas id="tl"></canvas></div></div>
+    <div id="bassLane"><canvas id="bsCv" aria-label="Bas şeridi"></canvas><div id="bsBarMenu"></div></div>
     <div id="inspector"><p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p></div>
   </section>
 </main>

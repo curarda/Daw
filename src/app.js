@@ -153,11 +153,13 @@ function refresh() {
   S.proj.mixer.drums = S.proj.mixer.drums || { vol: -8, mute: false, solo: false };
   S.proj.mixer.guitar = S.proj.mixer.guitar || { vol: -4, mute: false, solo: false };
   S.proj.guitar = C.normalizeGuitarState(S.proj.guitar, S.proj.settings.meter);
+  bassNormalize();
   if (S.proj.chordPins && S.proj.chordPins.length && S.proj.chordPinsSig !== pinSig()) S.proj.chordPins = []; // başka bir şey değişti: yeniden hesapla
   // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
   const style = window.StyleUI ? window.StyleUI.scorer() : null;
   S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0, style, engineOverride: S.drag ? 'greedy' : null });
   S.d.styleActive = !!style;
+  bassSyncUI();
   const nl = S.proj.chordLocks.length;
   $('#lockCount').textContent = nl ? `(${nl})` : ''; $('#btnUnlockAll').disabled = !nl;
   const nmk = (S.proj.changeMarks || []).length;
@@ -175,6 +177,7 @@ function refresh() {
   renderInfo();
   renderDrums();
   renderGuitar();
+  renderBass();
   renderTaps();
   layoutTimeline();
   draw();
@@ -497,6 +500,7 @@ const Player = {
     this.snare = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.02 }, volume: -12 }).toDestination();
     this.drumCh = new T.Channel(-8).toDestination();
     this.guitarCh = new T.Channel(-4).toDestination();
+    this.bassCh = new T.Channel(-4).toDestination();
     const rsr = T.getContext().sampleRate;
     this.drumBufs = {};
     for (const k of C.DRUM_KINDS) this.drumBufs[k] = toAudioBuffer(C.synthDrum(k, rsr), rsr);
@@ -519,15 +523,18 @@ const Player = {
     const m = S.proj.mixer;
     if (!this.ready) return;
     const mg = m.guitar || (m.guitar = { vol: -4, mute: false, solo: false });
-    const anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || mg.solo;
+    const mb = m.bass || (m.bass = { vol: -4, mute: false, solo: false });
+    const anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || mg.solo || mb.solo;
     this.vocalCh.volume.value = m.vocal.vol;
     this.pianoCh.volume.value = m.piano.vol;
     this.drumCh.volume.value = m.drums.vol;
     this.guitarCh.volume.value = mg.vol;
+    this.bassCh.volume.value = mb.vol;
     this.vocalCh.mute = m.vocal.mute || (anySolo && !m.vocal.solo);
     this.pianoCh.mute = m.piano.mute || (anySolo && !m.piano.solo);
     this.drumCh.mute = m.drums.mute || (anySolo && !m.drums.solo);
     this.guitarCh.mute = mg.mute || (anySolo && !mg.solo);
+    this.bassCh.mute = mb.mute || (anySolo && !mb.solo);
     const corr = m.ab !== 'original';
     this.gA.gain.value = corr ? 0 : 1;
     this.gB.gain.value = corr ? 1 : 0;
@@ -560,6 +567,7 @@ const Player = {
       T.schedule((time) => this.sampler.triggerAttackRelease(name, end - st, time, e.vel / 127), st);
     }
     if (gtr) this.startGuitar(gtr.data, Tone.getContext().rawContext.sampleRate, now, from, false);
+    if (S.proj.bass.enabled && S.proj.bass.bars.some((b) => b.notes.length)) scheduleBassPlay(T, from, g, bCtx());
     if (S.proj.drums.on) {
       const L = currentLoop();
       for (const e of C.drumEvents(L, g, S.d.bars)) if (e.t >= from - 0.01) T.schedule((time) => this.hitDrum(e, time), e.t);
@@ -608,6 +616,9 @@ const Player = {
     Tone.connect(src, this.guitarCh);
     try { src.start(when, Math.max(0, offsetSec)); } catch (e) { /* tampon sonundan sonra: çalacak bir şey yok */ }
     if (loop) this.gAud = src; else this.gSrc = src;
+  },
+  stopBass() {
+    if (this.bassVoices) { const t = Tone.now(); for (const v of this.bassVoices) v.inst.panic(t); this.bassVoices = null; }
   },
   stopGuitar() {
     for (const k of ['gSrc', 'gAud']) if (this[k]) { try { this[k].stop(); } catch (e) { /* zaten bitti */ } this[k] = null; }
@@ -671,6 +682,7 @@ const Player = {
     this.pA.stop(); this.pB.stop();
     this.sampler.releaseAll();
     this.stopGuitar();
+    this.stopBass();
     this.playing = false;
     cancelAnimationFrame(this.raf);
     $('#btnPlay').textContent = '▶ Çal';
@@ -1170,6 +1182,7 @@ function draw() {
   // imleç
   const px = qToX(S.pos / g.spq);
   if (px >= TL.KW && px <= W) { c.strokeStyle = '#ff5a5f'; c.lineWidth = 1.5; c.beginPath(); c.moveTo(px, 0); c.lineTo(px, H); c.stroke(); c.lineWidth = 1; }
+  drawBass(); // bas şeridi aynı yatay kaydırma ve yakınlaştırmayı izler
 }
 function roundRect(c, x, y, w, h, r) {
   r = Math.min(r, w / 2, h / 2);
@@ -1379,7 +1392,7 @@ function seek(sec) {
   updateReadout(); draw();
   if (wasPlaying) Player.play();
 }
-function select(sel) { S.sel = sel; renderInspector(); renderSections(); draw(); }
+function select(sel) { S.sel = sel; if (sel) clearBassSel(); renderInspector(); renderSections(); draw(); }
 
 // ---------------------------------------------------------------- bölümler
 function addSection(name, a, b) {
@@ -1907,7 +1920,8 @@ function syncInputs() {
   $('#inQuantGrid').value = p.quant.grid; $('#inQuantStrength').value = p.quant.strength; $('#outQuantStrength').textContent = '%' + p.quant.strength;
   p.mixer.drums = p.mixer.drums || { vol: -8, mute: false, solo: false };
   p.mixer.guitar = p.mixer.guitar || { vol: -4, mute: false, solo: false };
-  for (const tr of ['vocal', 'piano', 'drums', 'guitar']) {
+  p.mixer.bass = p.mixer.bass || { vol: -4, mute: false, solo: false };
+  for (const tr of ['vocal', 'piano', 'drums', 'guitar', 'bass']) {
     const strip = document.querySelector(`.strip[data-track=${tr}]`), m = p.mixer[tr];
     strip.querySelector('.vol').value = m.vol; strip.querySelector('output').textContent = m.vol + ' dB';
     strip.querySelector('.mute').classList.toggle('on', m.mute); strip.querySelector('.solo').classList.toggle('on', m.solo);
@@ -2064,6 +2078,7 @@ $('#btnNew').onclick = () => {
   if (S.audio && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
   Player.stop(true);
   S.proj = C.newProject(); S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null;
   syncInputs(); refresh(); status('Yeni proje.');
 };
 $('#btnSave').onclick = () => saveProject();
@@ -2142,6 +2157,7 @@ async function openProject(file) {
   const audioData = p.audioData;
   delete p.audioData; delete p.savedAt;
   S.proj = mergeDefaults(C.newProject(), p);
+  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null;
   S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   if (audioData) {
     const w = C.decodeWav(C.base64ToBytes(audioData.wavBase64).buffer);
@@ -2154,18 +2170,19 @@ async function openProject(file) {
 }
 
 // ---------------------------------------------------------------- dışa aktarım
-function needData() { if (!S.d || !S.audio) { status('Önce ses kaydı/yükleme ve analiz gerekli.', 'err'); return false; } return true; }
+// noAudio: akor izi yeterli (demo şarkı, MIDI, şema, mix); vokal WAV ses ister
+function needData(noAudio) { if (!S.d || (!noAudio && !S.audio)) { status(noAudio ? 'Önce bir akor izi gerekli (analiz ya da demo şarkı).' : 'Önce ses kaydı/yükleme ve analiz gerekli.', 'err'); return false; } return true; }
 function alignedVocal(src, sr, lenSec) {
   const n = Math.round(lenSec * sr), out = new Float32Array(n), o = Math.round(S.d.off * sr);
   for (let i = 0; i < n; i++) { const j = i + o; if (j >= 0 && j < src.length) out[i] = src[j]; }
   return out;
 }
-const exportLenSec = () => Math.max(S.d.bars * S.d.g.barSec, S.audio.data.length / S.audio.sr - S.d.off) + 1.5;
+const exportLenSec = () => Math.max(S.d.bars * S.d.g.barSec, S.audio ? S.audio.data.length / S.audio.sr - S.d.off : 0) + 1.5;
 async function ensureRendered() {
   if (!renderReady()) { clearTimeout(renderTimer); await doRender(); }
 }
-$('#btnExpMidi').onclick = () => { if (!needData()) return; download(C.exportMidi(S.proj, S.d, S.proj.drums.on ? currentLoop() : null), 'akorlar-ve-melodi.mid', 'audio/midi'); status(`MIDI dışa aktarıldı (tempo, ölçü, bölüm işaretleri, melodi + ${{ piano: 'piyano', guitar: 'gitar', both: 'piyano + gitar' }[S.proj.guitar.instrument]} izi).`); };
-$('#btnExpChart').onclick = () => { if (!needData()) return; download(C.chordChart(S.proj, S.d), 'akor-semasi.txt', 'text/plain;charset=utf-8'); };
+$('#btnExpMidi').onclick = () => { if (!needData(true)) return; download(C.exportMidi(S.proj, S.d, S.proj.drums.on ? currentLoop() : null), 'akorlar-ve-melodi.mid', 'audio/midi'); status(`MIDI dışa aktarıldı (tempo, ölçü, bölüm işaretleri, melodi + ${{ piano: 'piyano', guitar: 'gitar', both: 'piyano + gitar' }[S.proj.guitar.instrument]} izi).`); };
+$('#btnExpChart').onclick = () => { if (!needData(true)) return; download(C.chordChart(S.proj, S.d), 'akor-semasi.txt', 'text/plain;charset=utf-8'); };
 $('#btnExpVocal').onclick = async () => {
   if (!needData()) return;
   await ensureRendered();
@@ -2174,26 +2191,28 @@ $('#btnExpVocal').onclick = async () => {
   status('Düzeltilmiş vokal WAV (1. ölçü başından hizalı) dışa aktarıldı.');
 };
 $('#btnExpMix').onclick = async () => {
-  if (!needData()) return;
-  await ensureRendered();
+  if (!needData(true)) return;
+  if (S.audio) await ensureRendered();
   await busy('Mix render ediliyor…', async () => {
     const piano = await loadPianoSamples();
     const sr = 44100, lenSec = exportLenSec(), n = Math.round(lenSec * sr);
-    const src = S.proj.mixer.ab === 'original' ? S.audio.data : S.corrected || S.audio.data;
-    const vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec);
+    const src = S.audio ? (S.proj.mixer.ab === 'original' ? S.audio.data : S.corrected || S.audio.data) : null;
+    const vocal = src ? alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec) : new Float32Array(n); // demo şarkıda ses kaydı yok
     const ins = S.proj.guitar.instrument;
     const ev = ins === 'guitar' ? [] : C.pianoEvents(S.d.chords, S.d.g);
     const pno = C.renderPiano(ev, piano.samples, sr, n, 0.35);
-    const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || m.guitar.solo;
+    const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || m.guitar.solo || m.bass.solo;
     const gv = m.vocal.mute || (anySolo && !m.vocal.solo) ? 0 : dbToGain(m.vocal.vol);
     const gp = m.piano.mute || (anySolo && !m.piano.solo) ? 0 : dbToGain(m.piano.vol);
     const gd = !S.proj.drums.on || m.drums.mute || (anySolo && !m.drums.solo) ? 0 : dbToGain(m.drums.vol);
     const drm = gd ? C.renderDrums(C.drumEvents(currentLoop(), S.d.g, S.d.bars), sr, n, 1) : null;
     const gg = ins === 'piano' || m.guitar.mute || (anySolo && !m.guitar.solo) ? 0 : dbToGain(m.guitar.vol);
     const gtrd = gg ? guitarTrack(sr).data : null;
+    const gb = !S.proj.bass.enabled || m.bass.mute || (anySolo && !m.bass.solo) ? 0 : dbToGain(m.bass.vol);
+    const bsd = gb ? await renderBassOffline(sr, n) : null;
     const mix = new Float32Array(n);
     let peak = 0;
-    for (let i = 0; i < n; i++) { mix[i] = vocal[i] * gv + pno[i] * gp + (drm ? drm[i] * gd : 0) + (gtrd && i < gtrd.length ? gtrd[i] * gg : 0); peak = Math.max(peak, Math.abs(mix[i])); }
+    for (let i = 0; i < n; i++) { mix[i] = vocal[i] * gv + pno[i] * gp + (drm ? drm[i] * gd : 0) + (gtrd && i < gtrd.length ? gtrd[i] * gg : 0) + (bsd && i < bsd.length ? bsd[i] * gb : 0); peak = Math.max(peak, Math.abs(mix[i])); }
     if (peak > 0.98) for (let i = 0; i < n; i++) mix[i] *= 0.98 / peak;
     download(new Blob([C.encodeWav([mix, mix], sr)], { type: 'audio/wav' }), 'vokal-piyano-mix.wav');
   });

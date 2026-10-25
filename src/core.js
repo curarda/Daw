@@ -1701,9 +1701,10 @@ function newProject() {
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
     chordLocks: [], chordPins: [], changeMarks: [],
-    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, guitar: { vol: -4, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
+    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, guitar: { vol: -4, mute: false, solo: false }, bass: { vol: -4, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
     drums: { on: false, loop: 'auto' },
     guitar: root.Core && root.Core.defaultGuitarState ? root.Core.defaultGuitarState('4/4') : null, // gitar katmanı (guitar.js): enstrüman seçimi, bölüm bazlı partiler, presetler
+    bass: root.Core && root.Core.Bass ? root.Core.Bass.defaultBassTrack() : null, // bas katmanı (bass.js): üretilen notalar, bölüm ayarları, döngüler, profiller
     quant: { grid: '1/8', strength: 100 }, taps: [],
   };
 }
@@ -2003,6 +2004,8 @@ function exportMidi(proj, d, drumLoop = null) {
   const gtr = ins !== 'piano' && root.Core && root.Core.guitarEvents
     ? root.Core.guitarEvents(root.Core.guitarSlotsFrom(d), g, (sl) => root.Core.guitarPartFor(proj.guitar, sl.section)).filter((e) => e.midi != null)
       .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) })) : [];
+  const bt = proj.bass && proj.bass.enabled && root.Core && root.Core.Bass ? proj.bass : null;
+  const bass = bt ? root.Core.Bass.bassEvents(bt, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + Math.max(0.05, (e.dur * (e.gate ?? 1)) / g.spq), midi: e.midi, vel: e.vel })) : [];
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
   const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
   return writeMidi({
@@ -2011,6 +2014,7 @@ function exportMidi(proj, d, drumLoop = null) {
       { name: 'Vokal (düzeltilmiş melodi)', channel: 0, program: 53, notes: vocal },
       ...(ins === 'guitar' ? [] : [{ name: 'Piyano akorları', channel: 1, program: 0, notes: piano, texts }]),
       ...(gtr.length ? [{ name: 'Gitar', channel: 2, program: 25, notes: gtr, ...(ins === 'guitar' ? { texts } : {}) }] : []),
+      ...(bass.length ? [{ name: 'Bas', channel: 3, program: proj.bass.instrumentType === 'synth' ? 38 : 33, notes: bass }] : []),
       ...(drumLoop && root.Core && root.Core.drumEvents ? [{ name: 'Davul — ' + drumLoop.name, channel: 9, program: 0,
         notes: root.Core.drumEvents(drumLoop, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + 0.1, midi: root.Core.GM_DRUM[e.kind], vel: Math.round(30 + 90 * e.vel) })) }] : []),
     ],

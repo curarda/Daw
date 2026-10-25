@@ -817,6 +817,101 @@ try {
     return `değişen alanlar: ${changes.map(([k, d]) => `${k}→${d.join('+')}`).join(' · ')} · 3/4 kalıpları ${JSON.stringify(pats34)} · 1. bölüm ${perSec[0]} / 2. bölüm (arpej) ${perSec[1]} olay · MIDI gitar izi`;
   });
 
+  await step('Bas: demo şarkı → Generate (aynı tohum = aynı notalar), şerit seçimi, kilit L, zar R (yalnızca o ölçü), geri al, elle nota, pedal, döngü, tip değişimi, mikser, MIDI, mix, kayıt-yükleme, kısayol çakışması yok', async () => {
+    await S(() => { window.confirm = () => true; });
+    await page.click('#bassPanel [data-bk=demo]');
+    await waitStatus(/Demo şarkı yüklendi/);
+    await S(() => { document.querySelector('#inZoom').value = 18; document.querySelector('#inZoom').dispatchEvent(new Event('input')); });
+    const bass = () => S(() => JSON.parse(JSON.stringify(window.__daw.proj.bass)));
+    const notesOf = async () => (await bass()).bars.map((b) => JSON.stringify(b.notes));
+    const laneXY = async (bar, y = 25) => { const bx = await page.locator('#bsCv').boundingBox(); const x = await page.evaluate((b) => { const s = window.__daw, sc = document.querySelector('#tlScroll'); return 46 + (b + 0.5) * s.d.g.barQ * s.view.pxPerQ - sc.scrollLeft; }, bar); return [bx.x + x, bx.y + y]; };
+    const shiftClick = async (x, y) => { await page.keyboard.down('Shift'); await page.mouse.click(x, y); await page.keyboard.up('Shift'); };
+    let t0 = await bass();
+    assert.equal(t0.bars.length, 16); assert.ok(t0.enabled && t0.bars.every((b) => b.notes.length > 0), 'demo: 16 ölçünün hepsinde nota');
+    // akor kökleri: yeni akorla başlayan ölçünün ilk notası kök (La minör demo)
+    assert.deepEqual([0, 4, 8, 12].map((i) => t0.bars[i].notes[0].midi % 12), [9, 9, 5, 5]);
+    const before = await notesOf();
+    await page.click('#bassPanel [data-bk=generate]'); assert.deepEqual(await notesOf(), before, 'aynı tohum aynı notalar');
+    const seed0 = (await bass()).seed;
+    await page.click('#bassPanel [data-bk=dice]'); const t1 = await bass(); assert.notEqual(t1.seed, seed0); assert.notDeepEqual(await notesOf(), before, 'yeni tohum yeni notalar');
+    await page.click('#bassPanel [data-bk=undo]'); assert.equal((await bass()).seed, seed0, 'geri al: eski tohum'); assert.deepEqual(await notesOf(), before);
+    // şerit: tıkla = ölçü seç; Shift = aralık; L kilit; R zar
+    await page.mouse.click(...(await laneXY(5)));
+    assert.deepEqual(await S(() => window.__dawAPI.bass.BS.sel), [5, 5]);
+    await page.keyboard.press('l'); assert.equal((await bass()).bars[5].locked, true); await page.keyboard.press('l'); assert.equal((await bass()).bars[5].locked, false);
+    const b6 = await notesOf();
+    await page.keyboard.press('r');
+    const after = await notesOf();
+    after.forEach((x, i) => { if (i !== 5) assert.equal(x, b6[i], 'zar yalnızca 6. ölçü: ' + (i + 1)); });
+    assert.notEqual(after[5], b6[5]); assert.equal((await bass()).bars[5].rerollCount, 1);
+    await page.keyboard.press('l'); const lockedNotes = (await notesOf())[5]; await page.keyboard.press('r'); assert.equal((await notesOf())[5], lockedNotes, 'kilitli ölçü zarlanmaz'); await page.keyboard.press('l');
+    await page.keyboard.press('Control+z'); // son geri alınabilir eylem: kilit aç → geri al ...
+    await shiftClick(...(await laneXY(6)));
+    assert.deepEqual(await S(() => window.__dawAPI.bass.BS.sel), [5, 6]);
+    // kısayol çakışması: zaman çizelgesinde bir akor seçilince bas seçimi kalkar (L / R yalnızca bas seçimi varken bas ölçüsüne işler)
+    await page.mouse.click(...(await laneXY(2))); assert.deepEqual(await S(() => window.__dawAPI.bass.BS.sel), [2, 2]);
+    const tl = await page.locator('#tl').boundingBox(), cx = await S(() => { const s = window.__daw, sc = document.querySelector('#tlScroll'); return 46 + (s.d.chords[3].q0 + s.d.chords[3].q1) / 2 * s.view.pxPerQ - sc.scrollLeft; });
+    await page.mouse.click(tl.x + cx, tl.y + 22 + 26 + 18);
+    assert.equal(await S(() => window.__dawAPI.bass.BS.sel), null, 'zaman çizelgesi seçimi bas seçimini kaldırır');
+    const lk = (await bass()).bars.map((b) => b.locked).join(); await page.keyboard.press('l'); assert.equal((await bass()).bars.map((b) => b.locked).join(), lk, 'bas seçimi yokken L basa dokunmaz');
+    // --- demo yeniden: elle düzenleme
+    await page.click('#bassPanel [data-bk=demo]'); await waitStatus(/Demo şarkı yüklendi/);
+    await S(() => { document.querySelector('#inZoom').value = 18; document.querySelector('#inZoom').dispatchEvent(new Event('input')); });
+    const bx = await page.locator('#bsCv').boundingBox();
+    const noteGeoB = (bar, midi, beat) => page.evaluate((a) => { const s = window.__daw, B = window.__dawAPI.bass.BS, sc = document.querySelector('#tlScroll'); return { x: 46 + (a.bar * s.d.g.barQ + a.beat) * s.view.pxPerQ - sc.scrollLeft, y: B.yOf(a.midi) }; }, { bar, midi, beat });
+    const g1 = await noteGeoB(3, 45, 1.0);
+    const nBefore = (await bass()).bars[3].notes.length;
+    await page.mouse.dblclick(bx.x + g1.x + 1, bx.y + g1.y);
+    let tb = await bass();
+    assert.equal(tb.bars[3].source, 'manual'); assert.equal(tb.bars[3].locked, true); assert.ok(tb.bars[3].notes.length === nBefore + 1, 'çift tık nota ekler');
+    const added = tb.bars[3].notes.findIndex((n) => n.midi === 45 && n.startBeat === 1);
+    assert.ok(added >= 0, 'eklenen nota La2 (45), 2. vuruş');
+    // taşı (sürükle): sağa 1 vuruş, yukarı 2 yarım ton
+    const ng = await noteGeoB(3, 45, 1.0); const px = await S(() => window.__daw.view.pxPerQ), rowH = await S(() => window.__dawAPI.bass.BS.rowH);
+    await page.mouse.move(bx.x + ng.x + 1.5, bx.y + ng.y); await page.mouse.down(); await page.mouse.move(bx.x + ng.x + 1.5 + px, bx.y + ng.y - 2 * rowH, { steps: 4 }); await page.mouse.up();
+    tb = await bass(); const moved = tb.bars[3].notes.find((n) => n.midi === 47 && n.startBeat === 2); assert.ok(moved, 'sürükle: +1 vuruş, +2 yarım ton: ' + JSON.stringify(tb.bars[3].notes.map((n) => [n.startBeat, n.midi])));
+    await page.keyboard.press('Delete'); assert.equal((await bass()).bars[3].notes.length, nBefore, 'Delete notayı siler');
+    await page.keyboard.press('Control+z'); assert.equal((await bass()).bars[3].notes.length, nBefore + 1, 'silme geri alındı');
+    // pedal: seçili ölçüler için derece 5
+    await page.mouse.click(...(await laneXY(8))); await shiftClick(...(await laneXY(10)));
+    await page.click('#bsBarMenu [data-bk=bar][data-bv=pedal]'); await page.click('#bsBarMenu [data-bk=pd][data-bv="5"]'); await page.click('#bsBarMenu [data-bk=pedalApply]');
+    tb = await bass();
+    for (const i of [8, 9, 10]) { const ch = await page.evaluate((b) => window.__daw.d.chords.filter((c) => c.bar === b + 1)[0].chord.root, i); assert.ok(tb.bars[i].notes.every((n) => n.midi % 12 === (ch + 7) % 12), `pedal 5. ölçü ${i + 1}`); assert.equal(tb.bars[i].pedal.degree, 5); }
+    // zar ve yeni tohum pedalı korur
+    await page.click('#bassPanel [data-bk=dice]'); tb = await bass(); assert.ok([8, 9, 10].every((i) => tb.bars[i].pedal && tb.bars[i].notes.every((n) => n.midi % 12 === (tb.bars[i].notes[0].midi % 12))));
+    // döngü: 1–2. ölçü kaynak, hedef 3–8
+    await page.mouse.click(...(await laneXY(0))); await shiftClick(...(await laneXY(1)));
+    await page.click('#bsBarMenu [data-bk=bar][data-bv=loop]'); await page.fill('#bsBarMenu [data-bs=loopEnd]', '8'); await page.dispatchEvent('#bsBarMenu [data-bs=loopEnd]', 'change'); await page.click('#bsBarMenu [data-bk=lm][data-bv=exact]'); await page.click('#bsBarMenu [data-bk=loopMake]');
+    tb = await bass(); assert.equal(tb.loops.length, 1); assert.ok(tb.bars[0].locked && tb.bars[1].locked); for (let i = 2; i <= 7; i++) { assert.equal(tb.bars[i].source, 'loop'); assert.deepEqual(tb.bars[i].notes, tb.bars[i % 2].notes); }
+    const loopSnap = JSON.stringify(tb.bars.slice(0, 8).map((b) => b.notes));
+    await page.click('#bassPanel [data-bk=generate]'); assert.equal(JSON.stringify((await bass()).bars.slice(0, 8).map((b) => b.notes)), loopSnap, 'Generate döngüye dokunmaz');
+    await page.mouse.click(...(await laneXY(3))); await page.click('#bsBarMenu [data-bk=bar][data-bv=breakloop]'); tb = await bass(); assert.equal(tb.loops.length, 0); assert.equal(JSON.stringify(tb.bars.slice(0, 8).map((b) => b.notes)), loopSnap, 'döngü çözülünce notalar aynı');
+    // tür değişimi: synth, preset listesi, kilitli ölçüler korunur
+    const lockedBefore = JSON.stringify(tb.bars[1].notes);
+    await page.click('#bassPanel [data-bk=type][data-bv=synth]'); tb = await bass();
+    assert.equal(tb.instrumentType, 'synth'); assert.deepEqual(tb.range, { low: 24, high: 52 }); assert.equal(JSON.stringify(tb.bars[1].notes), lockedBefore, 'kilitli ölçü korundu');
+    assert.ok((await page.locator('#bassPanel [data-bs=preset] option').allTextContents()).includes('Acid squelch'));
+    // synth: hipnotik, süzgeç, süpürme
+    await page.click('#bassPanel [data-bk=hyp]'); assert.equal((await bass()).sections[(await S(() => window.__daw.d.sections[0].id))].hypnotic, true);
+    await page.click('#bassPanel [data-bk=sweep][data-bv="4"]'); await page.click('#bassPanel [data-bk=type][data-bv="bass-guitar"]');
+    // mikser: bas kanalı
+    await page.locator('.strip[data-track=bass] .mute').click(); assert.equal(await S(() => window.__daw.proj.mixer.bass.mute), true); await page.locator('.strip[data-track=bass] .mute').click();
+    // MIDI + mix WAV: bas izi var, bas mix'e girer
+    const mid = await download('#btnExpMidi'); const pm = Core.parseMidi(mid.data); assert.ok(pm.tracks.some((t) => t.name === 'Bas' && t.notes.length > 20), 'ana MIDI: Bas izi');
+    const bm = await download('#bassPanel [data-bk=exportMidi]'); const pb = Core.parseMidi(bm.data); assert.equal(pb.tracks.find((t) => t.name === 'Bas').notes.length, (await bass()).bars.reduce((a, b) => a + b.notes.length, 0), 'bas .mid: nota başına bir olay');
+    const rmsWav = (wav) => { const d = Core.decodeWav(wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength)).data; let e = 0; for (const v of d) e += v * v; return Math.sqrt(e / d.length); };
+    const withB = await download('#btnExpMix'); await S(() => { window.__daw.proj.bass.enabled = false; });
+    const noB = await download('#btnExpMix'); await S(() => { window.__daw.proj.bass.enabled = true; });
+    assert.ok(rmsWav(withB.data) > rmsWav(noB.data) * 1.02 + 1e-5, `bas mix'e girer: ${rmsWav(withB.data).toFixed(4)} > ${rmsWav(noB.data).toFixed(4)}`);
+    // kayıt-yükleme: tohum, kilitler, pedal, elle notalar, profil, bölüm ayarları
+    const snapB = await bass();
+    const pj = await download('#btnSave'); const f3 = path.join(here, '..', '.tmp-bas.json'); writeFileSync(f3, pj.data);
+    await page.click('#btnNew'); await page.setInputFiles('#fileProject', f3); await waitStatus(/Proje açıldı/);
+    const back = await bass(); rmSync(f3, { force: true });
+    assert.equal(back.seed, snapB.seed); assert.deepEqual(back.bars.map((b) => [b.locked, b.source, JSON.stringify(b.notes), JSON.stringify(b.pedal || null)]), snapB.bars.map((b) => [b.locked, b.source, JSON.stringify(b.notes), JSON.stringify(b.pedal || null)])); assert.deepEqual(back.sections, snapB.sections); assert.equal(back.styleProfileId, snapB.styleProfileId);
+    return `16 ölçü, tohum ${snapB.seed}; elle nota, pedal, döngü, tür değişimi, MIDI (${pb.tracks.find((t) => t.name === 'Bas').notes.length} nota), mix, kayıt-yükleme`;
+  });
+
   await step('Zamanlama: notayı sağa sürükle (ızgaraya yapışır) → ses kayar; quantize; zamanı geri al; piyano tuşu çalar; T ile tap → tempo/ölçü/ızgara', async () => {
     page.once('dialog', (d) => d.accept());
     await page.click('#btnTest');

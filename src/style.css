@@ -249,3 +249,11 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 .gstep.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
 .gdis { opacity: 0.45; pointer-events: none; }
 #gPresets .row input[type=text] { flex: 1; width: auto; }
+
+/* bas paneli (8d) ve bas şeridi */
+#bassLane { border-top: 1px solid var(--line); background: #101217; }
+#bsCv { display: block; cursor: default; }
+#bsBarMenu { padding: 6px 10px 8px; border-top: 1px solid var(--line); background: var(--panel); }
+#bassPanel .gsub select { width: auto; max-width: 160px; }
+#bassPanel label > select { margin-top: 2px; }
+#bassPanel .st-warn, #bsBarMenu .st-warn { margin: 4px 0; }
