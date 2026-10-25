@@ -151,6 +151,8 @@ function refresh() {
   S.proj.quant = S.proj.quant || { grid: '1/8', strength: 100 };
   S.proj.taps = S.proj.taps || [];
   S.proj.mixer.drums = S.proj.mixer.drums || { vol: -8, mute: false, solo: false };
+  S.proj.mixer.guitar = S.proj.mixer.guitar || { vol: -4, mute: false, solo: false };
+  S.proj.guitar = C.normalizeGuitarState(S.proj.guitar, S.proj.settings.meter);
   if (S.proj.chordPins && S.proj.chordPins.length && S.proj.chordPinsSig !== pinSig()) S.proj.chordPins = []; // başka bir şey değişti: yeniden hesapla
   // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
   const style = window.StyleUI ? window.StyleUI.scorer() : null;
@@ -172,6 +174,7 @@ function refresh() {
   renderInspector();
   renderInfo();
   renderDrums();
+  renderGuitar();
   renderTaps();
   layoutTimeline();
   draw();
@@ -493,6 +496,7 @@ const Player = {
     this.click = new T.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 }, volume: -16 }).toDestination();
     this.snare = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.02 }, volume: -12 }).toDestination();
     this.drumCh = new T.Channel(-8).toDestination();
+    this.guitarCh = new T.Channel(-4).toDestination();
     const rsr = T.getContext().sampleRate;
     this.drumBufs = {};
     for (const k of C.DRUM_KINDS) this.drumBufs[k] = toAudioBuffer(C.synthDrum(k, rsr), rsr);
@@ -514,13 +518,16 @@ const Player = {
   applyMixer() {
     const m = S.proj.mixer;
     if (!this.ready) return;
-    const anySolo = m.vocal.solo || m.piano.solo || m.drums.solo;
+    const mg = m.guitar || (m.guitar = { vol: -4, mute: false, solo: false });
+    const anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || mg.solo;
     this.vocalCh.volume.value = m.vocal.vol;
     this.pianoCh.volume.value = m.piano.vol;
     this.drumCh.volume.value = m.drums.vol;
+    this.guitarCh.volume.value = mg.vol;
     this.vocalCh.mute = m.vocal.mute || (anySolo && !m.vocal.solo);
     this.pianoCh.mute = m.piano.mute || (anySolo && !m.piano.solo);
     this.drumCh.mute = m.drums.mute || (anySolo && !m.drums.solo);
+    this.guitarCh.mute = mg.mute || (anySolo && !mg.solo);
     const corr = m.ab !== 'original';
     this.gA.gain.value = corr ? 0 : 1;
     this.gB.gain.value = corr ? 1 : 0;
@@ -531,6 +538,9 @@ const Player = {
     this.stop(true);
     this.updateBuffers();
     this.applyMixer();
+    const ins = S.proj.guitar.instrument; // 'piano' | 'guitar' | 'both'
+    let gtr = null;
+    if (ins !== 'piano') { status('Gitar partisi hazırlanıyor…', 'busy'); await tick(); gtr = guitarTrack(Tone.getContext().rawContext.sampleRate); }
     const T = this.transport();
     T.cancel(0);
     const g = S.d.g, off = S.d.off, from = S.pos;
@@ -542,13 +552,14 @@ const Player = {
         if (bo >= 0) { if (bo < p.buffer.duration) p.start(now, bo); } else p.start(now - bo, 0);
       }
     }
-    for (const e of C.pianoEvents(S.d.chords, g)) {
+    for (const e of ins === 'guitar' ? [] : C.pianoEvents(S.d.chords, g)) {
       const end = e.t + e.dur;
       if (end <= from + 0.01) continue;
       const st = Math.max(e.t, from);
       const name = Tone.Frequency(e.midi, 'midi').toNote();
       T.schedule((time) => this.sampler.triggerAttackRelease(name, end - st, time, e.vel / 127), st);
     }
+    if (gtr) this.startGuitar(gtr.data, Tone.getContext().rawContext.sampleRate, now, from, false);
     if (S.proj.drums.on) {
       const L = currentLoop();
       for (const e of C.drumEvents(L, g, S.d.bars)) if (e.t >= from - 0.01) T.schedule((time) => this.hitDrum(e, time), e.t);
@@ -588,6 +599,29 @@ const Player = {
     const t = Tone.now() + 0.03;
     for (const m of [slot.voicing.bass, ...slot.voicing.notes]) this.sampler.triggerAttackRelease(Tone.Frequency(m, 'midi').toNote(), dur, t, m === slot.voicing.bass ? 0.6 : 0.5);
     status(`▶ ${C.chordName(chord)}`);
+  },
+  // gitar: parti tek bir tampona render edilir (saf JS), çalma tamponu tutar; mix WAV aynı tamponu kullanır
+  startGuitar(data, sr, when, offsetSec, loop) {
+    const ctx = Tone.getContext().rawContext, src = ctx.createBufferSource();
+    src.buffer = toAudioBuffer(data, sr);
+    if (loop) { src.loop = true; src.loopEnd = data.length / sr; }
+    Tone.connect(src, this.guitarCh);
+    try { src.start(when, Math.max(0, offsetSec)); } catch (e) { /* tampon sonundan sonra: çalacak bir şey yok */ }
+    if (loop) this.gAud = src; else this.gSrc = src;
+  },
+  stopGuitar() {
+    for (const k of ['gSrc', 'gAud']) if (this[k]) { try { this[k].stop(); } catch (e) { /* zaten bitti */ } this[k] = null; }
+    GT.auditioning = false; syncGuitarButtons();
+  },
+  async auditionGuitar() {
+    try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
+    this.stop(true);
+    this.applyMixer();
+    const sr = Tone.getContext().rawContext.sampleRate;
+    const a = guitarAudition(sr);
+    this.startGuitar(a.data, sr, Tone.now() + 0.05, 0, true);
+    GT.auditioning = true; syncGuitarButtons();
+    status(`▶ Gitar önizleme · ${a.real ? 'projenin akorları' : 'Am–F–C–G'} · ${S.proj.settings.meter} · ${S.proj.settings.bpm} BPM (2 ölçü döngü)`);
   },
   // tek davul vuruşu: önceden sentezlenmiş örnek, hıza göre kazanç
   hitDrum(e, time) {
@@ -636,6 +670,7 @@ const Player = {
     T.stop(); T.cancel(0);
     this.pA.stop(); this.pB.stop();
     this.sampler.releaseAll();
+    this.stopGuitar();
     this.playing = false;
     cancelAnimationFrame(this.raf);
     $('#btnPlay').textContent = '▶ Çal';
@@ -1871,7 +1906,8 @@ function syncInputs() {
   p.quant = p.quant || { grid: '1/8', strength: 100 };
   $('#inQuantGrid').value = p.quant.grid; $('#inQuantStrength').value = p.quant.strength; $('#outQuantStrength').textContent = '%' + p.quant.strength;
   p.mixer.drums = p.mixer.drums || { vol: -8, mute: false, solo: false };
-  for (const tr of ['vocal', 'piano', 'drums']) {
+  p.mixer.guitar = p.mixer.guitar || { vol: -4, mute: false, solo: false };
+  for (const tr of ['vocal', 'piano', 'drums', 'guitar']) {
     const strip = document.querySelector(`.strip[data-track=${tr}]`), m = p.mixer[tr];
     strip.querySelector('.vol').value = m.vol; strip.querySelector('output').textContent = m.vol + ' dB';
     strip.querySelector('.mute').classList.toggle('on', m.mute); strip.querySelector('.solo').classList.toggle('on', m.solo);
@@ -2128,7 +2164,7 @@ const exportLenSec = () => Math.max(S.d.bars * S.d.g.barSec, S.audio.data.length
 async function ensureRendered() {
   if (!renderReady()) { clearTimeout(renderTimer); await doRender(); }
 }
-$('#btnExpMidi').onclick = () => { if (!needData()) return; download(C.exportMidi(S.proj, S.d, S.proj.drums.on ? currentLoop() : null), 'akorlar-ve-melodi.mid', 'audio/midi'); status('MIDI dışa aktarıldı (tempo, ölçü, bölüm işaretleri, melodi + piyano izi).'); };
+$('#btnExpMidi').onclick = () => { if (!needData()) return; download(C.exportMidi(S.proj, S.d, S.proj.drums.on ? currentLoop() : null), 'akorlar-ve-melodi.mid', 'audio/midi'); status(`MIDI dışa aktarıldı (tempo, ölçü, bölüm işaretleri, melodi + ${{ piano: 'piyano', guitar: 'gitar', both: 'piyano + gitar' }[S.proj.guitar.instrument]} izi).`); };
 $('#btnExpChart').onclick = () => { if (!needData()) return; download(C.chordChart(S.proj, S.d), 'akor-semasi.txt', 'text/plain;charset=utf-8'); };
 $('#btnExpVocal').onclick = async () => {
   if (!needData()) return;
@@ -2145,22 +2181,26 @@ $('#btnExpMix').onclick = async () => {
     const sr = 44100, lenSec = exportLenSec(), n = Math.round(lenSec * sr);
     const src = S.proj.mixer.ab === 'original' ? S.audio.data : S.corrected || S.audio.data;
     const vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec);
-    const ev = C.pianoEvents(S.d.chords, S.d.g);
+    const ins = S.proj.guitar.instrument;
+    const ev = ins === 'guitar' ? [] : C.pianoEvents(S.d.chords, S.d.g);
     const pno = C.renderPiano(ev, piano.samples, sr, n, 0.35);
-    const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo || m.drums.solo;
+    const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || m.guitar.solo;
     const gv = m.vocal.mute || (anySolo && !m.vocal.solo) ? 0 : dbToGain(m.vocal.vol);
     const gp = m.piano.mute || (anySolo && !m.piano.solo) ? 0 : dbToGain(m.piano.vol);
     const gd = !S.proj.drums.on || m.drums.mute || (anySolo && !m.drums.solo) ? 0 : dbToGain(m.drums.vol);
     const drm = gd ? C.renderDrums(C.drumEvents(currentLoop(), S.d.g, S.d.bars), sr, n, 1) : null;
+    const gg = ins === 'piano' || m.guitar.mute || (anySolo && !m.guitar.solo) ? 0 : dbToGain(m.guitar.vol);
+    const gtrd = gg ? guitarTrack(sr).data : null;
     const mix = new Float32Array(n);
     let peak = 0;
-    for (let i = 0; i < n; i++) { mix[i] = vocal[i] * gv + pno[i] * gp + (drm ? drm[i] * gd : 0); peak = Math.max(peak, Math.abs(mix[i])); }
+    for (let i = 0; i < n; i++) { mix[i] = vocal[i] * gv + pno[i] * gp + (drm ? drm[i] * gd : 0) + (gtrd && i < gtrd.length ? gtrd[i] * gg : 0); peak = Math.max(peak, Math.abs(mix[i])); }
     if (peak > 0.98) for (let i = 0; i < n; i++) mix[i] *= 0.98 / peak;
     download(new Blob([C.encodeWav([mix, mix], sr)], { type: 'audio/wav' }), 'vokal-piyano-mix.wav');
   });
-  status(`Vokal + piyano${S.proj.drums.on ? ' + davul' : ''} mix WAV dışa aktarıldı.`);
+  status(`Vokal + ${{ piano: 'piyano', guitar: 'gitar', both: 'piyano + gitar' }[S.proj.guitar.instrument]}${S.proj.drums.on ? ' + davul' : ''} mix WAV dışa aktarıldı.`);
 };
 
+/*__GUITARUI__*/
 // ---------------------------------------------------------------- başlangıç
 setEditMode('sound'); // varsayılan: notayı sürükleyerek taşı
 syncInputs();

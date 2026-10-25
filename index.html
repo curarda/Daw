@@ -232,6 +232,35 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
 #drumRequest { width: 100%; box-sizing: border-box; font: 11px/1.4 ui-monospace, Menlo, Consolas, monospace; background: #111318; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
 .drum-rank { margin: 4px 0 0 16px; padding: 0; font-size: 12px; }
 .tapbox { border-top: 1px dashed #ffd16655; margin-top: 8px; padding-top: 6px; }
+
+/* gitar paneli (8c) */
+.grow-l { margin: 8px 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: rgba(255, 255, 255, 0.02); }
+.gtitle { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px; }
+.gsub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 4px 0; }
+.gsub > span { color: var(--muted); font-size: 11px; min-width: 56px; }
+.gchip { padding: 3px 9px; border-radius: 999px; font-size: 12px; line-height: 1.3; }
+.gchip small { opacity: 0.75; }
+.gchip.on { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+.gchips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.gpre { display: inline-flex; }
+.gpre .gchip:first-child { border-radius: 999px 0 0 999px; }
+.gpre .gchip.gx { border-radius: 0 999px 999px 0; border-left: 0; padding: 3px 7px; color: var(--muted); }
+.gsl { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; margin: 3px 0; }
+.gsl input { order: 2; flex-basis: 100%; margin: 0; }
+.gsl output { order: 1; color: var(--text); font-size: 11px; }
+.gsteps { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 6px 0; }
+.gbeat { display: flex; gap: 3px; padding-right: 8px; border-right: 1px dashed var(--line); }
+.gbeat:last-child { border-right: 0; }
+.gstep { width: 30px; height: 38px; padding: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 16px; line-height: 1; border-radius: 6px; user-select: none; touch-action: manipulation; }
+.gstep small { font-size: 9px; height: 10px; color: var(--muted); }
+.gstep.t-rest { color: var(--muted); }
+.gstep.t-D { background: #25345a; border-color: #3d5a9c; }
+.gstep.t-U { background: #2a4a3b; border-color: #3f8062; }
+.gstep.t-dead { background: #4a3a24; border-color: #8a6a3a; }
+.gstep.acc { box-shadow: inset 0 -3px 0 var(--warn); }
+.gstep.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gdis { opacity: 0.45; pointer-events: none; }
+#gPresets .row input[type=text] { flex: 1; width: auto; }
 </style>
 </head>
 <body>
@@ -461,6 +490,12 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
           <output>-8 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
         </div>
+        <div class="strip" data-track="guitar">
+          <b>Gitar</b>
+          <input type="range" min="-40" max="6" step="1" value="-4" class="vol" aria-label="Gitar ses seviyesi">
+          <output>-4 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
       </div>
       <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
       <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
@@ -478,13 +513,25 @@ div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6px; padding: 6px 8p
       <pre id="drumGrid" class="drum-grid"></pre>
     </details>
 
+    <details class="step" open id="guitarStep">
+      <summary><b>8c</b> Gitar (ritim katmanı)</summary>
+      <p class="hint">Akor zaman çizelgesinden gitar partisi üretir. Altı katmanı (vuruş modu, ritim kalıbı, voicing, süsleme, nota süresi, ton/FX) ayrı ayrı seçip birleştirirsin; her seçim anında sese yansır. Ses, Karplus-Strong ile tarayıcıda üretilir (örnek dosyası yok, çevrimdışı çalışır).</p>
+      <div class="row"><span class="grow">Çalan enstrüman</span>
+        <span class="seg" id="gInstr"><label><input type="radio" name="gInstr" value="piano"><span>Piyano</span></label><label><input type="radio" name="gInstr" value="guitar"><span>Gitar</span></label><label><input type="radio" name="gInstr" value="both"><span>İkisi</span></label></span></div>
+      <div class="row"><label class="grow">Parti şu bölüm için<select id="gTarget"></select></label></div>
+      <div id="gSecInfo"></div>
+      <div id="guitarPanel"></div>
+      <div class="row"><button id="btnGAudition" title="Seçili kombinasyonu 2 ölçülük döngüde çalar (projedeki gerçek akorlarla; akor yoksa Am–F–C–G)">▶ Dinle (2 ölçü döngü)</button><button id="btnGStop">■</button></div>
+      <div id="gPresets"></div>
+    </details>
+
     <details class="step" open>
       <summary><b>9</b> Dışa aktarım</summary>
       <div class="grid2">
         <button id="btnExpMidi">MIDI (akor + melodi)</button>
         <button id="btnExpChart">Akor şeması (.txt)</button>
         <button id="btnExpVocal">Düzeltilmiş vokal WAV</button>
-        <button id="btnExpMix">Vokal + piyano (+ davul) WAV</button>
+        <button id="btnExpMix">Vokal + piyano / gitar (+ davul) WAV</button>
       </div>
     </details>
   </aside>
@@ -2210,8 +2257,9 @@ function newProject() {
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
     chordLocks: [], chordPins: [], changeMarks: [],
-    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
+    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, guitar: { vol: -4, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
     drums: { on: false, loop: 'auto' },
+    guitar: root.Core && root.Core.defaultGuitarState ? root.Core.defaultGuitarState('4/4') : null, // gitar katmanı (guitar.js): enstrüman seçimi, bölüm bazlı partiler, presetler
     quant: { grid: '1/8', strength: 100 }, taps: [],
   };
 }
@@ -2506,14 +2554,19 @@ function blankChart(proj, d) {
 function exportMidi(proj, d, drumLoop = null) {
   const g = d.g;
   const vocal = d.notes.filter((n) => n.effMidi != null).map((n) => ({ q0: n.q0, q1: n.q1, midi: n.effMidi, vel: 96 }));
+  const ins = proj.guitar && proj.guitar.instrument ? proj.guitar.instrument : 'piano'; // piyano / gitar / ikisi
   const piano = pianoEvents(d.chords, g).map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
+  const gtr = ins !== 'piano' && root.Core && root.Core.guitarEvents
+    ? root.Core.guitarEvents(root.Core.guitarSlotsFrom(d), g, (sl) => root.Core.guitarPartFor(proj.guitar, sl.section)).filter((e) => e.midi != null)
+      .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) })) : [];
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
   const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
   return writeMidi({
     quarterBpm: g.quarterBpm, meter: proj.settings.meter, markers,
     tracks: [
       { name: 'Vokal (düzeltilmiş melodi)', channel: 0, program: 53, notes: vocal },
-      { name: 'Piyano akorları', channel: 1, program: 0, notes: piano, texts },
+      ...(ins === 'guitar' ? [] : [{ name: 'Piyano akorları', channel: 1, program: 0, notes: piano, texts }]),
+      ...(gtr.length ? [{ name: 'Gitar', channel: 2, program: 25, notes: gtr, ...(ins === 'guitar' ? { texts } : {}) }] : []),
       ...(drumLoop && root.Core && root.Core.drumEvents ? [{ name: 'Davul — ' + drumLoop.name, channel: 9, program: 0,
         notes: root.Core.drumEvents(drumLoop, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + 0.1, midi: root.Core.GM_DRUM[e.kind], vel: Math.round(30 + 90 * e.vel) })) }] : []),
     ],
@@ -5472,6 +5525,8 @@ function refresh() {
   S.proj.quant = S.proj.quant || { grid: '1/8', strength: 100 };
   S.proj.taps = S.proj.taps || [];
   S.proj.mixer.drums = S.proj.mixer.drums || { vol: -8, mute: false, solo: false };
+  S.proj.mixer.guitar = S.proj.mixer.guitar || { vol: -4, mute: false, solo: false };
+  S.proj.guitar = C.normalizeGuitarState(S.proj.guitar, S.proj.settings.meter);
   if (S.proj.chordPins && S.proj.chordPins.length && S.proj.chordPinsSig !== pinSig()) S.proj.chordPins = []; // başka bir şey değişti: yeniden hesapla
   // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
   const style = window.StyleUI ? window.StyleUI.scorer() : null;
@@ -5493,6 +5548,7 @@ function refresh() {
   renderInspector();
   renderInfo();
   renderDrums();
+  renderGuitar();
   renderTaps();
   layoutTimeline();
   draw();
@@ -5814,6 +5870,7 @@ const Player = {
     this.click = new T.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 }, volume: -16 }).toDestination();
     this.snare = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.02 }, volume: -12 }).toDestination();
     this.drumCh = new T.Channel(-8).toDestination();
+    this.guitarCh = new T.Channel(-4).toDestination();
     const rsr = T.getContext().sampleRate;
     this.drumBufs = {};
     for (const k of C.DRUM_KINDS) this.drumBufs[k] = toAudioBuffer(C.synthDrum(k, rsr), rsr);
@@ -5835,13 +5892,16 @@ const Player = {
   applyMixer() {
     const m = S.proj.mixer;
     if (!this.ready) return;
-    const anySolo = m.vocal.solo || m.piano.solo || m.drums.solo;
+    const mg = m.guitar || (m.guitar = { vol: -4, mute: false, solo: false });
+    const anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || mg.solo;
     this.vocalCh.volume.value = m.vocal.vol;
     this.pianoCh.volume.value = m.piano.vol;
     this.drumCh.volume.value = m.drums.vol;
+    this.guitarCh.volume.value = mg.vol;
     this.vocalCh.mute = m.vocal.mute || (anySolo && !m.vocal.solo);
     this.pianoCh.mute = m.piano.mute || (anySolo && !m.piano.solo);
     this.drumCh.mute = m.drums.mute || (anySolo && !m.drums.solo);
+    this.guitarCh.mute = mg.mute || (anySolo && !mg.solo);
     const corr = m.ab !== 'original';
     this.gA.gain.value = corr ? 0 : 1;
     this.gB.gain.value = corr ? 1 : 0;
@@ -5852,6 +5912,9 @@ const Player = {
     this.stop(true);
     this.updateBuffers();
     this.applyMixer();
+    const ins = S.proj.guitar.instrument; // 'piano' | 'guitar' | 'both'
+    let gtr = null;
+    if (ins !== 'piano') { status('Gitar partisi hazırlanıyor…', 'busy'); await tick(); gtr = guitarTrack(Tone.getContext().rawContext.sampleRate); }
     const T = this.transport();
     T.cancel(0);
     const g = S.d.g, off = S.d.off, from = S.pos;
@@ -5863,13 +5926,14 @@ const Player = {
         if (bo >= 0) { if (bo < p.buffer.duration) p.start(now, bo); } else p.start(now - bo, 0);
       }
     }
-    for (const e of C.pianoEvents(S.d.chords, g)) {
+    for (const e of ins === 'guitar' ? [] : C.pianoEvents(S.d.chords, g)) {
       const end = e.t + e.dur;
       if (end <= from + 0.01) continue;
       const st = Math.max(e.t, from);
       const name = Tone.Frequency(e.midi, 'midi').toNote();
       T.schedule((time) => this.sampler.triggerAttackRelease(name, end - st, time, e.vel / 127), st);
     }
+    if (gtr) this.startGuitar(gtr.data, Tone.getContext().rawContext.sampleRate, now, from, false);
     if (S.proj.drums.on) {
       const L = currentLoop();
       for (const e of C.drumEvents(L, g, S.d.bars)) if (e.t >= from - 0.01) T.schedule((time) => this.hitDrum(e, time), e.t);
@@ -5909,6 +5973,29 @@ const Player = {
     const t = Tone.now() + 0.03;
     for (const m of [slot.voicing.bass, ...slot.voicing.notes]) this.sampler.triggerAttackRelease(Tone.Frequency(m, 'midi').toNote(), dur, t, m === slot.voicing.bass ? 0.6 : 0.5);
     status(`▶ ${C.chordName(chord)}`);
+  },
+  // gitar: parti tek bir tampona render edilir (saf JS), çalma tamponu tutar; mix WAV aynı tamponu kullanır
+  startGuitar(data, sr, when, offsetSec, loop) {
+    const ctx = Tone.getContext().rawContext, src = ctx.createBufferSource();
+    src.buffer = toAudioBuffer(data, sr);
+    if (loop) { src.loop = true; src.loopEnd = data.length / sr; }
+    Tone.connect(src, this.guitarCh);
+    try { src.start(when, Math.max(0, offsetSec)); } catch (e) { /* tampon sonundan sonra: çalacak bir şey yok */ }
+    if (loop) this.gAud = src; else this.gSrc = src;
+  },
+  stopGuitar() {
+    for (const k of ['gSrc', 'gAud']) if (this[k]) { try { this[k].stop(); } catch (e) { /* zaten bitti */ } this[k] = null; }
+    GT.auditioning = false; syncGuitarButtons();
+  },
+  async auditionGuitar() {
+    try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
+    this.stop(true);
+    this.applyMixer();
+    const sr = Tone.getContext().rawContext.sampleRate;
+    const a = guitarAudition(sr);
+    this.startGuitar(a.data, sr, Tone.now() + 0.05, 0, true);
+    GT.auditioning = true; syncGuitarButtons();
+    status(`▶ Gitar önizleme · ${a.real ? 'projenin akorları' : 'Am–F–C–G'} · ${S.proj.settings.meter} · ${S.proj.settings.bpm} BPM (2 ölçü döngü)`);
   },
   // tek davul vuruşu: önceden sentezlenmiş örnek, hıza göre kazanç
   hitDrum(e, time) {
@@ -5957,6 +6044,7 @@ const Player = {
     T.stop(); T.cancel(0);
     this.pA.stop(); this.pB.stop();
     this.sampler.releaseAll();
+    this.stopGuitar();
     this.playing = false;
     cancelAnimationFrame(this.raf);
     $('#btnPlay').textContent = '▶ Çal';
@@ -7192,7 +7280,8 @@ function syncInputs() {
   p.quant = p.quant || { grid: '1/8', strength: 100 };
   $('#inQuantGrid').value = p.quant.grid; $('#inQuantStrength').value = p.quant.strength; $('#outQuantStrength').textContent = '%' + p.quant.strength;
   p.mixer.drums = p.mixer.drums || { vol: -8, mute: false, solo: false };
-  for (const tr of ['vocal', 'piano', 'drums']) {
+  p.mixer.guitar = p.mixer.guitar || { vol: -4, mute: false, solo: false };
+  for (const tr of ['vocal', 'piano', 'drums', 'guitar']) {
     const strip = document.querySelector(`.strip[data-track=${tr}]`), m = p.mixer[tr];
     strip.querySelector('.vol').value = m.vol; strip.querySelector('output').textContent = m.vol + ' dB';
     strip.querySelector('.mute').classList.toggle('on', m.mute); strip.querySelector('.solo').classList.toggle('on', m.solo);
@@ -7449,7 +7538,7 @@ const exportLenSec = () => Math.max(S.d.bars * S.d.g.barSec, S.audio.data.length
 async function ensureRendered() {
   if (!renderReady()) { clearTimeout(renderTimer); await doRender(); }
 }
-$('#btnExpMidi').onclick = () => { if (!needData()) return; download(C.exportMidi(S.proj, S.d, S.proj.drums.on ? currentLoop() : null), 'akorlar-ve-melodi.mid', 'audio/midi'); status('MIDI dışa aktarıldı (tempo, ölçü, bölüm işaretleri, melodi + piyano izi).'); };
+$('#btnExpMidi').onclick = () => { if (!needData()) return; download(C.exportMidi(S.proj, S.d, S.proj.drums.on ? currentLoop() : null), 'akorlar-ve-melodi.mid', 'audio/midi'); status(`MIDI dışa aktarıldı (tempo, ölçü, bölüm işaretleri, melodi + ${{ piano: 'piyano', guitar: 'gitar', both: 'piyano + gitar' }[S.proj.guitar.instrument]} izi).`); };
 $('#btnExpChart').onclick = () => { if (!needData()) return; download(C.chordChart(S.proj, S.d), 'akor-semasi.txt', 'text/plain;charset=utf-8'); };
 $('#btnExpVocal').onclick = async () => {
   if (!needData()) return;
@@ -7466,21 +7555,310 @@ $('#btnExpMix').onclick = async () => {
     const sr = 44100, lenSec = exportLenSec(), n = Math.round(lenSec * sr);
     const src = S.proj.mixer.ab === 'original' ? S.audio.data : S.corrected || S.audio.data;
     const vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec);
-    const ev = C.pianoEvents(S.d.chords, S.d.g);
+    const ins = S.proj.guitar.instrument;
+    const ev = ins === 'guitar' ? [] : C.pianoEvents(S.d.chords, S.d.g);
     const pno = C.renderPiano(ev, piano.samples, sr, n, 0.35);
-    const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo || m.drums.solo;
+    const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || m.guitar.solo;
     const gv = m.vocal.mute || (anySolo && !m.vocal.solo) ? 0 : dbToGain(m.vocal.vol);
     const gp = m.piano.mute || (anySolo && !m.piano.solo) ? 0 : dbToGain(m.piano.vol);
     const gd = !S.proj.drums.on || m.drums.mute || (anySolo && !m.drums.solo) ? 0 : dbToGain(m.drums.vol);
     const drm = gd ? C.renderDrums(C.drumEvents(currentLoop(), S.d.g, S.d.bars), sr, n, 1) : null;
+    const gg = ins === 'piano' || m.guitar.mute || (anySolo && !m.guitar.solo) ? 0 : dbToGain(m.guitar.vol);
+    const gtrd = gg ? guitarTrack(sr).data : null;
     const mix = new Float32Array(n);
     let peak = 0;
-    for (let i = 0; i < n; i++) { mix[i] = vocal[i] * gv + pno[i] * gp + (drm ? drm[i] * gd : 0); peak = Math.max(peak, Math.abs(mix[i])); }
+    for (let i = 0; i < n; i++) { mix[i] = vocal[i] * gv + pno[i] * gp + (drm ? drm[i] * gd : 0) + (gtrd && i < gtrd.length ? gtrd[i] * gg : 0); peak = Math.max(peak, Math.abs(mix[i])); }
     if (peak > 0.98) for (let i = 0; i < n; i++) mix[i] *= 0.98 / peak;
     download(new Blob([C.encodeWav([mix, mix], sr)], { type: 'audio/wav' }), 'vokal-piyano-mix.wav');
   });
-  status(`Vokal + piyano${S.proj.drums.on ? ' + davul' : ''} mix WAV dışa aktarıldı.`);
+  status(`Vokal + ${{ piano: 'piyano', guitar: 'gitar', both: 'piyano + gitar' }[S.proj.guitar.instrument]}${S.proj.drums.on ? ' + davul' : ''} mix WAV dışa aktarıldı.`);
 };
+
+// ---------------------------------------------------------------- GİTAR PANELİ (8c): katmanlar, adım ızgarası, ön dinleme, bölüme atama, preset
+// app.js'in IIFE'sinin içine girer (build'de /*__GUITARUI__*/ yerine konur): S, C, $, $$, esc, status, Player aynı kapsamda.
+const GT = { target: '_all', sel: null, auditioning: false, cache: null, timer: null, lp: false, lpTimer: null, presetName: '' };
+const MODE_TR = { strum: 'Strum', arpeggio: 'Arpej', bassChord: 'Boom-chick', tremolo: 'Tremolo' };
+const ART_TR = { normal: 'Normal', letRing: 'Let ring', staccato: 'Staccato', palmMute: 'Palm mute' };
+const ORN_TR = { slideIn: 'Slide in', slideOut: 'Slide out', hammerPull: 'Hammer / pull', vibrato: 'Vibrato' };
+const ORN_SYM = { slideIn: '⤴', slideOut: '⤵', hammerPull: 'h', vibrato: '~' };
+const ART_SYM = { letRing: 'L', staccato: 'S', palmMute: 'M' };
+const STEP_SYM = { D: '↓', U: '↑', dead: '✕', rest: '·' };
+const STEP_NEXT = { rest: 'D', D: 'U', U: 'dead', dead: 'rest' };
+const STEP_NAME = { rest: 'es', D: 'aşağı vuruş', U: 'yukarı vuruş', dead: 'ölü vuruş' };
+const gState = () => S.proj.guitar;
+const gOwn = (target = GT.target) => (target === '_all' ? gState().parts._all : gState().parts[target] || null);
+const gEff = (target = GT.target) => gOwn(target) || gState().parts._all;
+const gSections = () => (S.d ? S.d.sections.filter((s) => !s.implicit) : []);
+const jclone = (x) => JSON.parse(JSON.stringify(x));
+
+// ---- parti → ses (çalma, ön dinleme ve mix WAV aynı yolu kullanır; render önbellekli)
+const guitarPartOf = (sl) => C.guitarPartFor(S.proj.guitar, sl.section);
+function guitarTrack(sr) {
+  const g = S.d.g, slots = C.guitarSlotsFrom(S.d);
+  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts);
+  if (GT.cache && GT.cache.key === key) return GT.cache;
+  const events = C.guitarEvents(slots, g, guitarPartOf);
+  const n = Math.ceil((S.d.bars * g.barSec + 2.5) * sr);
+  return (GT.cache = { key, events, data: C.renderGuitar(events, sr, n, g.spq, 1) });
+}
+// 2 ölçülük döngü: projedeki gerçek akor akışı (seçili bölümün başından); akor yoksa Am–F–C–G
+function guitarAudition(sr) {
+  const g = C.makeGrid(S.proj.settings), part = gEff(GT.target), barQ = g.barQ;
+  let slots = null, real = false;
+  if (S.d && S.d.chords.length) {
+    const sec = GT.target !== '_all' ? S.d.sections.find((s) => s.id === GT.target) : null;
+    const startQ = sec ? (sec.startBar - 1) * barQ : Math.floor(S.d.chords[0].q0 / barQ + 1e-6) * barQ;
+    slots = C.guitarSlotsFrom(S.d).filter((sl) => sl.q1 > startQ + 1e-6 && sl.q0 < startQ + 2 * barQ - 1e-6)
+      .map((sl) => Object.assign({}, sl, { q0: Math.max(sl.q0, startQ) - startQ, q1: Math.min(sl.q1, startQ + 2 * barQ) - startQ }));
+    real = slots.length > 0;
+  }
+  if (!real) slots = [[9, 'm'], [5, ''], [0, ''], [7, '']].map(([r, q], i) => ({ q0: (i * barQ) / 2, q1: ((i + 1) * barQ) / 2, chord: { root: r, q }, section: '_all', tonic: 9 }));
+  const events = C.guitarEvents(slots, g, () => part);
+  return { real, events, data: C.renderGuitar(events, sr, Math.round(2 * g.barSec * sr), g.spq, 1) };
+}
+
+// ---- değişiklik akışı
+function gRefreshSound() {
+  clearTimeout(GT.timer);
+  if (GT.auditioning) GT.timer = setTimeout(() => Player.auditionGuitar(), 140); // seçim anında sese yansır
+  else if (Player.playing) GT.timer = setTimeout(() => Player.play(), 140);
+}
+function gChanged() { renderGuitar(); gRefreshSound(); }
+function gEdit(fn) {
+  const p = gOwn();
+  if (!p) return;
+  fn(p);
+  C.normalizeGuitarPart(p, S.proj.settings.meter);
+  gChanged();
+}
+function syncGuitarButtons() { const b = $('#btnGAudition'); if (b) b.classList.toggle('on', GT.auditioning); }
+// hazır kalıp elle düzenlenince "özel ızgara"ya dönüşür
+function toCustom(p) {
+  if (p.pattern.id === 'custom') return;
+  const q = jclone(p.pattern);
+  p.pattern = { id: 'custom', name: 'Özel ızgara', meter: q.meter, grid: q.grid, steps: q.steps, compatibleModes: ['strum', 'arpeggio', 'bassChord'] };
+}
+function resampleGrid(p, grid) {
+  const old = p.pattern, oq = C.GRID_Q[old.grid], nq = C.GRID_Q[grid], n = Math.round(C.METERS[old.meter].barQ / nq);
+  const steps = Array.from({ length: n }, () => ({ type: 'rest' }));
+  old.steps.forEach((s, i) => { const k = (i * oq) / nq; if (Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) < n) steps[Math.round(k)] = s; });
+  const ov = {};
+  for (const [i, o] of Object.entries(p.stepOverrides)) { const k = (i * oq) / nq; if (Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) < n) ov[Math.round(k)] = o; }
+  old.steps = steps; old.grid = grid; p.stepOverrides = ov; GT.sel = null;
+}
+function gAction(k, v) {
+  const meter = S.proj.settings.meter;
+  gEdit((p) => {
+    switch (k) {
+      case 'mode': p.mode = v; GT.sel = null; break;
+      case 'adir': p.arpeggio.direction = v; break;
+      case 'arate': p.arpeggio.rate = v; break;
+      case 'pat': p.pattern = C.clonePattern(C.patternById(v)); p.stepOverrides = {}; GT.sel = null; break;
+      case 'custom': toCustom(p); break;
+      case 'pgrid': toCustom(p); resampleGrid(p, v); break;
+      case 'dmode': p.directionMode = v; break;
+      case 'pos': p.voicing.position = v; break;
+      case 'shape': case 'color': p.voicing[k] = v; break;
+      case 'drone': p.voicing.drone = !p.voicing.drone; break;
+      case 'art': p.articulation = v; break;
+      case 'sart': {
+        if (GT.sel == null) break;
+        if (v === 'inherit') { const o = p.stepOverrides[GT.sel]; if (o) { delete o.articulation; if (!Object.keys(o).length) delete p.stepOverrides[GT.sel]; } } else C.setStepArticulation(p, GT.sel, v);
+        break;
+      }
+      case 'orn': {
+        if (GT.sel == null) break;
+        const o = p.stepOverrides[GT.sel] = Object.assign({}, p.stepOverrides[GT.sel]);
+        if (v === 'none') delete o.ornament; else o.ornament = v;
+        if (!Object.keys(o).length) delete p.stepOverrides[GT.sel];
+        break;
+      }
+      case 'stype': if (GT.sel != null) { toCustom(p); p.pattern.steps[GT.sel].type = v; } break;
+      case 'sacc': if (GT.sel != null) { toCustom(p); const s = p.pattern.steps[GT.sel]; if (s.accent) delete s.accent; else s.accent = true; } break;
+      case 'tone': p.tone = v; break;
+      case 'dtime': p.fx.delay.time = v; break;
+      default: break;
+    }
+  });
+  void meter;
+}
+// ---- adım ızgarası: tıkla = döngü (es → D → U → ölü) ve seç; uzun bas = vurgu
+function gStepClick(i) {
+  GT.sel = i;
+  gEdit((p) => { toCustom(p); const s = p.pattern.steps[i]; s.type = STEP_NEXT[s.type]; });
+}
+function gStepAccent(i) {
+  GT.sel = i;
+  gEdit((p) => { toCustom(p); const s = p.pattern.steps[i]; if (s.accent) delete s.accent; else s.accent = true; });
+}
+
+// ---- panel
+const gchip = (k, v, label, on, extra = '') => `<button type="button" class="gchip${on ? ' on' : ''}" data-k="${k}" data-v="${esc(v)}"${extra}>${label}</button>`;
+const gslider = (k, label, min, max, val, fmt) => `<label class="gsl">${label}<input type="range" data-s="${k}" min="${min}" max="${max}" step="1" value="${val}"><output>${fmt(val)}</output></label>`;
+const grow = (title, body) => `<div class="grow-l"><div class="gtitle">${title}</div>${body}</div>`;
+function droneReport(part) {
+  const st = gState(), tuning = part.voicing.tuning, capo = part.voicing.capo || 0;
+  if (!S.d) return { ok: true, lines: [] };
+  const served = S.d.sections.filter((s) => (GT.target === '_all' ? !st.parts[s.id] : s.id === GT.target));
+  const rs = served.map((s) => ({ name: s.implicit ? 'Tüm şarkı' : s.name, r: C.guitarDrone(s.tonic, tuning, capo) }));
+  return { ok: rs.length === 0 || rs.some((x) => x.r.ok), lines: rs.map((x) => `${esc(x.name)}: ${x.r.ok ? `✓ ${C.noteName(x.r.midi)} boş teli` : '✗ ' + esc(x.r.reason)}`) };
+}
+function gridHtml(part, meter) {
+  const pat = part.pattern, patQ = C.GRID_Q[pat.grid], perBeat = Math.max(1, Math.round(C.METERS[meter].pulseQ / patQ));
+  let h = '<div class="gsteps" role="group" aria-label="Adım ızgarası">';
+  for (let b = 0; b * perBeat < pat.steps.length; b++) {
+    h += '<div class="gbeat">';
+    for (let i = b * perBeat; i < Math.min(pat.steps.length, (b + 1) * perBeat); i++) {
+      const s = pat.steps[i], art = C.stepArticulation(part, s, i), ov = part.stepOverrides[i] || {};
+      const badge = (s.type !== 'rest' && art !== 'normal' ? ART_SYM[art] : '') + (ov.ornament ? ORN_SYM[ov.ornament] : '');
+      h += `<button type="button" class="gstep t-${s.type}${s.accent ? ' acc' : ''}${GT.sel === i ? ' sel' : ''}" data-i="${i}" title="adım ${i + 1}: ${STEP_NAME[s.type]}${s.accent ? ', vurgulu' : ''}${s.type !== 'rest' ? ' · ' + ART_TR[art] : ''}${ov.ornament ? ' · ' + ORN_TR[ov.ornament] : ''}">${STEP_SYM[s.type]}<small>${badge || '&nbsp;'}</small></button>`;
+    }
+    h += '</div>';
+  }
+  return h + '</div>';
+}
+function panelHtml(part, meter) {
+  const patterns = C.guitarPatternsFor(meter, part.mode), pat = part.pattern, v = part.voicing, selI = GT.sel, selStep = selI != null ? pat.steps[selI] : null;
+  const selOv = selI != null ? part.stepOverrides[selI] || {} : {};
+  // 1) vuruş modu
+  let r1 = ['strum', 'arpeggio', 'bassChord', 'tremolo'].map((m) => gchip('mode', m, MODE_TR[m] + (m === 'tremolo' ? ' <small>(v2)</small>' : ''), part.mode === m, m === 'tremolo' ? ' disabled title="v2: tremolo henüz yok"' : '')).join('');
+  if (part.mode === 'arpeggio') {
+    r1 += `<div class="gsub"><span>Yön</span>${[['up', 'Yukarı'], ['down', 'Aşağı'], ['upDown', 'Yukarı-aşağı'], ['travis', 'Travis']].map(([x, l]) => gchip('adir', x, l, part.arpeggio.direction === x)).join('')}</div>`
+      + `<div class="gsub"><span>Hız</span>${[['8n', "8'lik"], ['16n', "16'lık"], ['8t', "8'lik üçleme"]].map(([x, l]) => gchip('arate', x, l, part.arpeggio.rate === x)).join('')}</div>`;
+  }
+  // 2) ritim kalıbı
+  let r2 = patterns.map((p) => gchip('pat', p.id, esc(p.name), pat.id === p.id)).join('') + gchip('custom', 'custom', 'Kendi ızgaram', pat.id === 'custom');
+  r2 += `<div class="gsub"><span>Vuruş yönü</span>${gchip('dmode', 'alternate', 'Alternate (D/U)', part.directionMode === 'alternate')}${gchip('dmode', 'allDown', 'Hep aşağı', part.directionMode === 'allDown')}</div>`;
+  if (pat.id === 'custom') r2 += `<div class="gsub"><span>Izgara</span>${[['4n', "4'lük"], ['8n', "8'lik"], ['16n', "16'lık"]].map(([x, l]) => gchip('pgrid', x, l, pat.grid === x)).join('')}</div>`;
+  r2 += gslider('swing', 'Swing', 0, 100, Math.round(part.swing * 100), (x) => x + '%');
+  r2 += gridHtml(part, meter);
+  r2 += `<div class="hint">${part.mode === 'arpeggio' ? 'Arpejde ızgara bir maskedir: es adımlarında nota çalmaz, vurgulu adımlar güçlü çalar. ' : ''}Adıma tıkla: es → ↓ → ↑ → ✕ döngüsü (ve seçer) · uzun bas: vurgu.</div>`;
+  if (selStep) {
+    r2 += `<div class="gsub"><span>Adım ${selI + 1}</span>${['rest', 'D', 'U', 'dead'].map((t) => gchip('stype', t, STEP_SYM[t] + ' ' + STEP_NAME[t], selStep.type === t)).join('')}${gchip('sacc', 'acc', 'Vurgu', !!selStep.accent)}</div>`;
+  } else r2 += '<div class="hint">Süsleme ve nota süresi ezmesi için bir adım seç.</div>';
+  // 3) voicing
+  const dr = droneReport(part);
+  let r3 = `<div class="gsub"><span>Konum</span>${[['auto', 'Otomatik'], ['open', 'Açık'], ['barre', 'Kapalı (barre)']].map(([x, l]) => gchip('pos', x, l, v.position === x)).join('')}</div>`
+    + `<div class="gsub"><span>Şekil</span>${[['full', 'Tam akor'], ['power', 'Power'], ['triad', 'Üçlü (üst 3 tel)']].map(([x, l]) => gchip('shape', x, l, v.shape === x)).join('')}</div>`
+    + `<div class="gsub"><span>Renk</span>${[['none', 'Yok'], ['sus2', 'sus2'], ['sus4', 'sus4'], ['add9', 'add9']].map(([x, l]) => gchip('color', x, l, v.color === x)).join('')}</div>`
+    + `<div class="gsub"><span>Drone</span>${gchip('drone', 'drone', v.drone ? 'Açık' : 'Kapalı', v.drone, dr.ok ? '' : ' disabled')}</div>`;
+  if (v.drone || !dr.ok) r3 += `<div class="hint">${dr.lines.join('<br>')}</div>`;
+  // 4) süsleme (seçili adım)
+  const r4 = selStep && selStep.type !== 'rest' && selStep.type !== 'dead'
+    ? [['none', 'Yok'], ...Object.entries(ORN_TR)].map(([x, l]) => gchip('orn', x, l, (selOv.ornament || 'none') === x)).join('') + '<div class="hint">Süsleme seçili adıma uygulanır. Vibrato yalnızca ≥ 1 vuruş süren notada, hammer/pull yalnızca renk seçili olmayan ya da sus akorlarında duyulur.</div>'
+    : '<div class="hint">Önce ızgaradan çalan bir adım (↓ ↑) seç.</div>';
+  // 5) nota süresi
+  let r5 = `<div class="gsub"><span>Genel</span>${Object.entries(ART_TR).map(([x, l]) => gchip('art', x, l + (x === 'normal' ? ' <small>(kalıp önerisi)</small>' : ''), part.articulation === x)).join('')}</div>`;
+  if (selStep && selStep.type !== 'rest' && selStep.type !== 'dead') {
+    const cur = selOv.articulation || 'inherit';
+    r5 += `<div class="gsub"><span>Adım ${selI + 1}</span>${gchip('sart', 'inherit', 'Genel', cur === 'inherit')}${Object.entries(ART_TR).map(([x, l]) => gchip('sart', x, l, cur === x)).join('')}</div>`;
+  }
+  const usesPm = part.articulation === 'palmMute' || Object.values(part.stepOverrides).some((o) => o.articulation === 'palmMute') || pat.steps.some((s) => s.defaultArticulation === 'palmMute');
+  if (usesPm) r5 += gslider('pm', 'Palm mute miktarı', 0, 100, Math.round(part.palmMuteAmount * 100), (x) => x + '%');
+  // 6) ton / FX
+  const fx = part.fx, hu = part.humanize;
+  const r6 = `<div class="gsub"><span>Ton</span>${[['clean', 'Clean'], ['crunch', 'Crunch'], ['drive', 'Drive']].map(([x, l]) => gchip('tone', x, l, part.tone === x)).join('')}</div>`
+    + gslider('chorus', 'Chorus', 0, 100, Math.round(fx.chorus * 100), (x) => x + '%') + gslider('reverb', 'Reverb', 0, 100, Math.round(fx.reverb * 100), (x) => x + '%')
+    + gslider('dmix', 'Delay karışımı', 0, 100, Math.round(fx.delay.mix * 100), (x) => x + '%')
+    + `<div class="gsub"><span>Delay süresi</span>${[['8n', "8'lik"], ['d8n', "noktalı 8'lik"], ['4n', "4'lük"]].map(([x, l]) => gchip('dtime', x, l, fx.delay.time === x)).join('')}</div>`
+    + gslider('dfb', 'Delay geri besleme', 0, 85, Math.round(fx.delay.feedback * 100), (x) => x + '%')
+    + gslider('spread', 'Strum yayılması', 5, 25, hu.strumSpreadMs, (x) => x + ' ms') + gslider('vjit', 'Vuruş gücü sapması', 0, 50, Math.round(hu.velocityJitter * 100), (x) => x + '%') + gslider('tjit', 'Zamanlama sapması', 0, 20, hu.timingJitterMs, (x) => x + ' ms');
+  return grow('1 · Vuruş modu (sağ el)', r1) + grow('2 · Ritim kalıbı', r2) + grow('3 · Voicing (sol el)', r3) + grow('4 · Süsleme (sol el, adım bazlı)', r4) + grow('5 · Nota süresi ve kesme', r5) + grow('6 · Ton / FX', r6);
+}
+function renderGuitar() {
+  const st = gState(), meter = S.proj.settings.meter;
+  if (!st || !$('#guitarPanel')) return;
+  $$('input[name=gInstr]').forEach((r) => { r.checked = r.value === st.instrument; });
+  const secs = gSections();
+  if (GT.target !== '_all' && !secs.some((s) => s.id === GT.target)) { GT.target = '_all'; GT.sel = null; }
+  const opts = '<option value="_all">Tüm şarkı (varsayılan)</option>' + secs.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}${st.parts[s.id] ? ' ●' : ''}</option>`).join('');
+  const sel = $('#gTarget');
+  if (sel.dataset.h !== opts) { sel.innerHTML = opts; sel.dataset.h = opts; }
+  sel.value = GT.target;
+  const own = gOwn(), part = own || st.parts._all;
+  if (GT.sel != null && !part.pattern.steps[GT.sel]) GT.sel = null;
+  let info = '';
+  if (GT.target === '_all') info = secs.length ? `<div class="hint">Bölümlerin ayrı partisi yoksa hepsi bu partiyi çalar${secs.some((s) => st.parts[s.id]) ? ` (ayrı partisi olanlar: ${esc(secs.filter((s) => st.parts[s.id]).map((s) => s.name).join(', '))})` : ''}.</div>` : '';
+  else info = own ? '<div class="row"><span class="hint grow">Bu bölümün kendi partisi var (●).</span><button id="gSecReset" class="small">Varsayılana dön</button></div>'
+    : '<div class="adv-opt">Bu bölüm tüm şarkının partisini çalıyor. <button id="gSecOwn" class="accent small">Bu bölüm için ayrı parti oluştur</button></div>';
+  if ($('#gSecInfo').dataset.h !== info) { $('#gSecInfo').innerHTML = info; $('#gSecInfo').dataset.h = info; }
+  const html = `<div class="${GT.target !== '_all' && !own ? 'gdis' : ''}">${panelHtml(part, meter)}</div>`;
+  if ($('#guitarPanel').dataset.h !== html) { $('#guitarPanel').innerHTML = html; $('#guitarPanel').dataset.h = html; }
+  renderGuitarPresets();
+  syncGuitarButtons();
+}
+function renderGuitarPresets() {
+  const st = gState();
+  const h = `<div class="gtitle">Kayıtlı kombinasyonlar</div><div class="gchips">${st.presets.map((p, i) => `<span class="gpre"><button type="button" class="gchip" data-pl="${i}" title="Seçili bölüme yükle">${esc(p.name)}</button><button type="button" class="gchip gx" data-pd="${i}" title="Sil" aria-label="${esc(p.name)} presetini sil">✕</button></span>`).join('') || '<span class="hint">Henüz yok.</span>'}</div>`
+    + `<div class="row"><input type="text" id="gPresetName" placeholder="Kombinasyona isim ver" value="${esc(GT.presetName)}"><button id="gPresetSave" class="small">Kaydet</button></div>`;
+  const box = $('#gPresets');
+  if (box.dataset.h !== h) { box.innerHTML = h; box.dataset.h = h; }
+}
+// ---- olaylar
+$('#guitarPanel').addEventListener('click', (e) => {
+  const st = e.target.closest('.gstep');
+  if (st) { if (GT.lp) { GT.lp = false; return; } gStepClick(+st.dataset.i); return; }
+  const b = e.target.closest('[data-k]');
+  if (b && !b.disabled) gAction(b.dataset.k, b.dataset.v);
+});
+$('#guitarPanel').addEventListener('pointerdown', (e) => {
+  const st = e.target.closest('.gstep');
+  if (!st) return;
+  GT.lp = false; clearTimeout(GT.lpTimer);
+  GT.lpTimer = setTimeout(() => { GT.lp = true; gStepAccent(+st.dataset.i); }, 450);
+});
+for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $('#guitarPanel').addEventListener(ev, () => clearTimeout(GT.lpTimer));
+$('#guitarPanel').addEventListener('input', (e) => {
+  const el = e.target;
+  if (!el.dataset.s) return;
+  const p = gOwn();
+  if (!p) return;
+  const x = +el.value;
+  const set = { swing: () => { p.swing = x / 100; }, pm: () => { p.palmMuteAmount = x / 100; }, chorus: () => { p.fx.chorus = x / 100; }, reverb: () => { p.fx.reverb = x / 100; },
+    dmix: () => { p.fx.delay.mix = x / 100; }, dfb: () => { p.fx.delay.feedback = x / 100; }, spread: () => { p.humanize.strumSpreadMs = x; }, vjit: () => { p.humanize.velocityJitter = x / 100; }, tjit: () => { p.humanize.timingJitterMs = x; } }[el.dataset.s];
+  if (!set) return;
+  set();
+  const out = el.parentElement.querySelector('output');
+  if (out) out.textContent = x + ({ spread: ' ms', tjit: ' ms' }[el.dataset.s] || '%');
+  // ızgara değişmedi: paneli yeniden kurma (sürükleme bozulmasın), yalnızca sesi tazele
+  $('#guitarPanel').dataset.h = '';
+  gRefreshSound();
+});
+$('#guitarPanel').addEventListener('change', (e) => { if (e.target.dataset && e.target.dataset.s) renderGuitar(); });
+$$('input[name=gInstr]').forEach((r) => r.addEventListener('change', (e) => { S.proj.guitar.instrument = e.target.value; if (Player.playing) Player.play(); }));
+$('#gTarget').addEventListener('change', (e) => { GT.target = e.target.value; GT.sel = null; renderGuitar(); if (GT.auditioning) gRefreshSound(); });
+$('#gSecInfo').addEventListener('click', (e) => {
+  if (e.target.closest('#gSecOwn')) { gState().parts[GT.target] = jclone(gState().parts._all); gChanged(); }
+  if (e.target.closest('#gSecReset')) { delete gState().parts[GT.target]; GT.sel = null; gChanged(); }
+});
+$('#btnGAudition').onclick = () => Player.auditionGuitar();
+$('#btnGStop').onclick = () => { Player.stop(); Player.stopGuitar(); };
+$('#gPresets').addEventListener('input', (e) => { if (e.target.id === 'gPresetName') GT.presetName = e.target.value; });
+$('#gPresets').addEventListener('click', (e) => {
+  const st = gState();
+  if (e.target.closest('#gPresetSave')) {
+    const name = GT.presetName.trim();
+    if (!name) { status('Kombinasyona bir isim ver.', 'err'); return; }
+    const entry = { name, part: jclone(gEff()) };
+    const i = st.presets.findIndex((p) => p.name === name);
+    if (i >= 0) st.presets[i] = entry; else st.presets.push(entry);
+    status(`"${name}" kaydedildi (proje dosyasıyla birlikte saklanır).`); renderGuitar(); return;
+  }
+  const d = e.target.closest('[data-pd]');
+  if (d) { st.presets.splice(+d.dataset.pd, 1); renderGuitar(); return; }
+  const l = e.target.closest('[data-pl]');
+  if (l) {
+    const pr = st.presets[+l.dataset.pl];
+    if (GT.target !== '_all' && !st.parts[GT.target]) st.parts[GT.target] = jclone(st.parts._all);
+    const loaded = jclone(pr.part);
+    const dst = gOwn();
+    for (const k of Object.keys(dst)) delete dst[k];
+    Object.assign(dst, loaded);
+    C.normalizeGuitarPart(dst, S.proj.settings.meter);
+    GT.sel = null;
+    status(`"${pr.name}" yüklendi.`); gChanged();
+  }
+});
 
 // ---------------------------------------------------------------- başlangıç
 setEditMode('sound'); // varsayılan: notayı sürükleyerek taşı

@@ -1701,8 +1701,9 @@ function newProject() {
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
     chordLocks: [], chordPins: [], changeMarks: [],
-    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
+    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, guitar: { vol: -4, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
     drums: { on: false, loop: 'auto' },
+    guitar: root.Core && root.Core.defaultGuitarState ? root.Core.defaultGuitarState('4/4') : null, // gitar katmanı (guitar.js): enstrüman seçimi, bölüm bazlı partiler, presetler
     quant: { grid: '1/8', strength: 100 }, taps: [],
   };
 }
@@ -1997,14 +1998,19 @@ function blankChart(proj, d) {
 function exportMidi(proj, d, drumLoop = null) {
   const g = d.g;
   const vocal = d.notes.filter((n) => n.effMidi != null).map((n) => ({ q0: n.q0, q1: n.q1, midi: n.effMidi, vel: 96 }));
+  const ins = proj.guitar && proj.guitar.instrument ? proj.guitar.instrument : 'piano'; // piyano / gitar / ikisi
   const piano = pianoEvents(d.chords, g).map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
+  const gtr = ins !== 'piano' && root.Core && root.Core.guitarEvents
+    ? root.Core.guitarEvents(root.Core.guitarSlotsFrom(d), g, (sl) => root.Core.guitarPartFor(proj.guitar, sl.section)).filter((e) => e.midi != null)
+      .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) })) : [];
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
   const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
   return writeMidi({
     quarterBpm: g.quarterBpm, meter: proj.settings.meter, markers,
     tracks: [
       { name: 'Vokal (düzeltilmiş melodi)', channel: 0, program: 53, notes: vocal },
-      { name: 'Piyano akorları', channel: 1, program: 0, notes: piano, texts },
+      ...(ins === 'guitar' ? [] : [{ name: 'Piyano akorları', channel: 1, program: 0, notes: piano, texts }]),
+      ...(gtr.length ? [{ name: 'Gitar', channel: 2, program: 25, notes: gtr, ...(ins === 'guitar' ? { texts } : {}) }] : []),
       ...(drumLoop && root.Core && root.Core.drumEvents ? [{ name: 'Davul — ' + drumLoop.name, channel: 9, program: 0,
         notes: root.Core.drumEvents(drumLoop, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + 0.1, midi: root.Core.GM_DRUM[e.kind], vel: Math.round(30 + 90 * e.vel) })) }] : []),
     ],

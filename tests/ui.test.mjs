@@ -678,6 +678,145 @@ try {
     return `tahmin 4/4 · 3/4 seçilince "Uygula" → 4/4 · ${auto.trim()} · oynatmada davul çaldı · 260 BPM → bulamadım + tarif`;
   });
 
+  await step('Gitar: altı katman birbirini sıfırlamadan sesi değiştirir; allDown / meter filtresi / letRing ↔ palmMute; ön dinleme; bölüme atama; preset; enstrüman seçimi ve dışa aktarım', async () => {
+    assert.equal(await S(() => window.__daw.d.notes.length), 24, 'önceki adımdan yüklü test melodisi');
+    await S(() => { window.confirm = () => true; }); // "yeni proje?" onayı
+    const part = () => S(() => JSON.parse(JSON.stringify(window.__daw.proj.guitar.parts._all)));
+    const flat = (o, pre = '', out = {}) => { for (const [k, v] of Object.entries(o)) { if (v && typeof v === 'object' && !Array.isArray(v)) flat(v, pre + k + '.', out); else out[pre + k] = JSON.stringify(v); } return out; };
+    const diff = (a, b) => { const x = flat(a), y = flat(b); return [...new Set([...Object.keys(x), ...Object.keys(y)])].filter((k) => x[k] !== y[k]); };
+    const evSig = () => S(() => { const s = window.__daw, C = window.Core; return JSON.stringify(C.guitarEvents(C.guitarSlotsFrom(s.d), s.d.g, (sl) => C.guitarPartFor(s.proj.guitar, sl.section)).map((e) => [e.kind, +e.t.toFixed(4), e.midi, +e.dur.toFixed(3), e.dir, e.art, e.step])); });
+    const midiTracks = () => S(() => { const s = window.__daw, C = window.Core; return C.parseMidi(C.exportMidi(s.proj, s.d, null)).tracks.map((t) => `${t.name}:${t.notes.length}`); });
+    const click = (k, v) => page.click(`#guitarPanel [data-k=${k}][data-v="${v}"]`);
+    // varsayılan: piyano; piyano izi gitar eklenmeden önceki gibi
+    assert.equal(await S(() => window.__daw.proj.guitar.instrument), 'piano');
+    const tracks0 = await midiTracks();
+    assert.ok(tracks0.some((t) => /^Piyano akorları:[1-9]/.test(t)) && !tracks0.some((t) => /^Gitar/.test(t)), tracks0.join(' | '));
+    // panel: 6 satır, tremolo v2'de kapalı
+    assert.equal(await page.locator('#guitarPanel .grow-l').count(), 6);
+    assert.equal(await page.locator('#guitarPanel [data-k=mode]').count(), 4); assert.ok(await page.locator('#guitarPanel [data-k=mode][data-v=tremolo]').isDisabled());
+    // 1) hiçbir seçim diğer katmanları sıfırlamaz
+    const changes = [];
+    let a = await part();
+    await click('pat', 'folk'); let b = await part(); changes.push(['kalıp', diff(a, b)]); assert.ok(diff(a, b).every((k) => /^(pattern|stepOverrides)/.test(k)) && diff(a, b).length, 'kalıp: ' + diff(a, b));
+    const sigU = await evSig(); assert.ok(JSON.parse(sigU).some((e) => e[4] === 'U'));
+    a = b; await click('dmode', 'allDown'); b = await part(); assert.deepEqual(diff(a, b), ['directionMode']);
+    assert.ok(!JSON.parse(await evSig()).some((e) => e[4] === 'U'), 'allDown: U vuruşu çalmaz');
+    await click('dmode', 'alternate'); assert.equal(await evSig(), sigU, 'alternate: kalıp aynen geri gelir');
+    a = await part(); await click('mode', 'bassChord'); b = await part(); assert.deepEqual(diff(a, b), ['mode']); changes.push(['vuruş modu', diff(a, b)]);
+    const sigBc = await evSig(); assert.notEqual(sigBc, sigU);
+    a = b; await click('pos', 'open'); b = await part(); assert.deepEqual(diff(a, b), ['voicing.position']); changes.push(['voicing', diff(a, b)]);
+    a = b; await click('color', 'sus4'); b = await part(); assert.deepEqual(diff(a, b), ['voicing.color']);
+    a = b; await click('shape', 'power'); b = await part(); assert.deepEqual(diff(a, b), ['voicing.shape']);
+    assert.ok(await page.locator('#guitarPanel [data-k=drone]').isDisabled(), 'tonik boş telde yok → drone kapalı, neden gösterilir');
+    assert.match(await page.textContent('#guitarPanel'), /boş tel olarak bulunamıyor|yeterli tel kalmıyor/);
+    await click('shape', 'full'); await click('color', 'none'); await click('pos', 'auto');
+    a = await part(); await click('art', 'staccato'); b = await part(); assert.deepEqual(diff(a, b), ['articulation']); changes.push(['nota süresi', diff(a, b)]);
+    a = b; await click('tone', 'crunch'); b = await part(); assert.deepEqual(diff(a, b), ['tone']); changes.push(['ton/FX', diff(a, b)]);
+    a = b; await page.locator('#guitarPanel [data-s=chorus]').fill('40'); await page.dispatchEvent('#guitarPanel [data-s=chorus]', 'input'); b = await part(); assert.deepEqual(diff(a, b), ['fx.chorus']);
+    await click('mode', 'strum'); await click('art', 'normal'); await click('tone', 'clean'); await page.locator('#guitarPanel [data-s=chorus]').fill('0'); await page.dispatchEvent('#guitarPanel [data-s=chorus]', 'input');
+    // adım ızgarası: tıkla = döngü + seç; süsleme + nota süresi ezmesi; letRing ile palmMute birlikte atanamaz
+    const t0 = await part();
+    await page.click('#guitarPanel .gstep[data-i="1"]'); // folk: 2. adım es → D
+    assert.equal((await part()).pattern.steps[1].type, 'D'); assert.equal((await part()).pattern.id, 'custom');
+    a = await part(); await click('orn', 'slideIn'); b = await part(); assert.deepEqual(diff(a, b), ['stepOverrides.1.ornament']);
+    await click('orn', 'none');
+    await page.click('#guitarPanel .gstep[data-i="1"]'); assert.equal((await part()).pattern.steps[1].type, 'U');
+    await page.click('#guitarPanel .gstep[data-i="1"]'); assert.equal((await part()).pattern.steps[1].type, 'dead');
+    await page.click('#guitarPanel .gstep[data-i="1"]'); assert.equal((await part()).pattern.steps[1].type, 'rest');
+    await page.click('#guitarPanel .gstep[data-i="0"]'); await page.click('#guitarPanel .gstep[data-i="0"]'); await page.click('#guitarPanel .gstep[data-i="0"]'); await page.click('#guitarPanel .gstep[data-i="0"]'); // D → U → ✕ → es → D
+    assert.equal((await part()).pattern.steps[0].type, 'D');
+    await click('sart', 'letRing'); assert.equal((await part()).stepOverrides[0].articulation, 'letRing');
+    await click('sart', 'palmMute');
+    const so = (await part()).stepOverrides[0];
+    assert.equal(so.articulation, 'palmMute'); assert.equal(await page.locator('#guitarPanel [data-k=sart].on').count(), 1, 'tek seçim: letRing kalkar');
+    assert.ok(!JSON.stringify(so).includes('letRing'));
+    await page.dispatchEvent('#guitarPanel .gstep[data-i="2"]', 'pointerdown'); await page.waitForTimeout(600); // uzun bas = vurgu
+    assert.equal((await part()).pattern.steps[2].accent, true);
+    // meter 3/4: 4/4 kalıpları listeden kalkar
+    await page.selectOption('#inMeter', '3/4');
+    const pats34 = await page.locator('#guitarPanel [data-k=pat]').allTextContents();
+    assert.deepEqual(pats34, ['Vals']); assert.equal((await part()).pattern.id, 'waltz');
+    await page.selectOption('#inMeter', '4/4');
+    const pats44 = await page.locator('#guitarPanel [data-k=pat]').allTextContents();
+    assert.ok(pats44.includes("Düz 8'likler") && !pats44.includes('Vals'));
+    await click('mode', 'arpeggio');
+    const patsArp = await page.locator('#guitarPanel [data-k=pat]').allTextContents();
+    assert.ok(!patsArp.some((x) => /skank|Gallop|funk/.test(x)), 'arpejde strum kalıpları kapalı: ' + patsArp.join(','));
+    await click('mode', 'strum'); await click('pat', 'folk');
+    // ön dinleme: gerçek akor akışı; seçim anında sese yansır
+    await page.click('#btnGAudition');
+    await waitStatus(/Gitar önizleme · projenin akorları/);
+    const same = await S(() => { window.__t = window.__dawAPI.player().gAud; return !!window.__t; });
+    assert.ok(same);
+    await click('tone', 'drive');
+    await page.waitForFunction(() => window.__dawAPI.player().gAud && window.__dawAPI.player().gAud !== window.__t, null, { timeout: 15000 });
+    await page.click('#btnGStop');
+    assert.equal(await S(() => window.__dawAPI.player().gAud), null);
+    await click('tone', 'clean');
+    // akor değişince gitar o akora göre yeniden üretilir
+    const before = await evSig();
+    await S(() => { const s = window.__daw; s.proj.chordLocks.push({ bar: 1, half: null, chord: { root: 7, q: '7', bass: null } }); window.__dawAPI.refresh(); });
+    const after = await evSig();
+    assert.notEqual(before, after); assert.ok(JSON.parse(after).some((e) => e[2] != null && e[2] % 12 === 5), 'G7: 7\'li (F) çalar');
+    await S(() => { window.__daw.proj.chordLocks = []; window.__dawAPI.refresh(); });
+    // bölüme atama
+    await page.selectOption('#gTarget', { index: 2 });
+    assert.ok(await page.isVisible('#gSecOwn')); assert.ok(await page.locator('#guitarPanel .gdis').count() === 1);
+    await page.click('#gSecOwn');
+    const secId = await S(() => Object.keys(window.__daw.proj.guitar.parts).find((k) => k !== '_all'));
+    assert.ok(secId);
+    await click('mode', 'arpeggio');
+    assert.deepEqual(await S(() => [window.__daw.proj.guitar.parts._all.mode, window.__daw.proj.guitar.parts[Object.keys(window.__daw.proj.guitar.parts).find((k) => k !== '_all')].mode]), ['strum', 'arpeggio']);
+    const evTwo = JSON.parse(await evSig());
+    assert.ok(evTwo.length > 0);
+    // 2. bölümde arpej (tek nota / adım), 1. bölümde strum: aynı ölçüde olay sayıları çok farklı
+    const perSec = await S(() => { const s = window.__daw, C = window.Core; const ev = C.guitarEvents(C.guitarSlotsFrom(s.d), s.d.g, (sl) => C.guitarPartFor(s.proj.guitar, sl.section)); const bar = (e) => Math.floor(e.q / s.d.g.barQ) + 1; const n = (b) => ev.filter((e) => bar(e) === b).length; return [n(2), n(6)]; });
+    assert.ok(perSec[0] > 2 * perSec[1], `1. bölüm strum (${perSec[0]}) > 2. bölüm arpej (${perSec[1]})`);
+    await page.click('#gSecReset');
+    assert.equal(await S(() => Object.keys(window.__daw.proj.guitar.parts).length), 1);
+    await page.selectOption('#gTarget', '_all');
+    // preset: kaydet → değiştir → yükle → aynı kombinasyon; proje dosyasıyla geri gelir
+    await click('tone', 'crunch'); await click('art', 'letRing'); await click('pos', 'open');
+    const saved = await part();
+    await page.fill('#gPresetName', 'Demo 1'); await page.click('#gPresetSave');
+    assert.equal(await S(() => window.__daw.proj.guitar.presets.length), 1);
+    await click('tone', 'drive'); await click('art', 'palmMute'); await click('pos', 'barre');
+    await page.click('#gPresets [data-pl="0"]');
+    assert.deepEqual(await part(), saved, 'yüklenen preset kaydedilenle aynı');
+    assert.equal(await evSig() === (await (async () => { await click('tone', 'drive'); await click('tone', 'crunch'); return evSig(); })()), true, 'aynı kombinasyon aynı olaylar');
+    await page.click('#gInstr input[value=both] + span');
+    const pj = await download('#btnSave');
+    const { writeFileSync: wf } = await import('node:fs');
+    const f2 = path.join(here, '..', '.tmp-gitar.json'); wf(f2, pj.data);
+    await page.click('#btnNew');
+    assert.equal(await S(() => window.__daw.proj.guitar.presets.length), 0);
+    await page.setInputFiles('#fileProject', f2);
+    await waitStatus(/Proje açıldı/);
+    const back = await S(() => ({ ins: window.__daw.proj.guitar.instrument, pre: window.__daw.proj.guitar.presets.map((p) => p.name), part: window.__daw.proj.guitar.parts._all }));
+    assert.equal(back.ins, 'both'); assert.deepEqual(back.pre, ['Demo 1']); assert.deepEqual(back.part, saved);
+    rmSync(f2, { force: true });
+    // oynatma: piyano + gitar birlikte; gitar kanalı mikserde; durdurunca gitar da durur
+    await page.click('#btnPlay');
+    await page.waitForFunction(() => !!window.__dawAPI.player().gSrc, null, { timeout: 30000 });
+    await page.locator('.strip[data-track=guitar] .mute').click();
+    assert.equal(await S(() => window.__daw.proj.mixer.guitar.mute), true);
+    await page.locator('.strip[data-track=guitar] .mute').click();
+    await page.click('#btnPlay');
+    assert.equal(await S(() => window.__dawAPI.player().gSrc), null);
+    // enstrüman seçimi: MIDI + mix WAV
+    assert.deepEqual(await midiTracks().then((t) => t.map((x) => x.split(':')[0]).filter(Boolean)), ['Vokal (düzeltilmiş melodi)', 'Piyano akorları', 'Gitar']);
+    await page.click('#gInstr input[value=guitar] + span');
+    const tg = await midiTracks();
+    assert.ok(!tg.some((t) => /^Piyano/.test(t)) && tg.some((t) => /^Gitar:[1-9]/.test(t)), tg.join(' | '));
+    const rmsOf = (wav) => { const d = Core.decodeWav(wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength)).data; let e = 0; for (const v of d) e += v * v; return Math.sqrt(e / d.length); };
+    const mixG = await download('#btnExpMix');
+    await page.click('#gInstr input[value=piano] + span');
+    const mixP = await download('#btnExpMix');
+    assert.equal(mixG.data.slice(0, 4).toString(), 'RIFF'); assert.ok(Math.abs(rmsOf(mixG.data) - rmsOf(mixP.data)) > 1e-4 || mixG.data.compare(mixP.data) !== 0, 'gitar mix\'i piyano mix\'inden farklı');
+    assert.deepEqual(await midiTracks(), tracks0, 'piyano seçiliyken MIDI gitar eklenmeden önceki gibi');
+    return `değişen alanlar: ${changes.map(([k, d]) => `${k}→${d.join('+')}`).join(' · ')} · 3/4 kalıpları ${JSON.stringify(pats34)} · 1. bölüm ${perSec[0]} / 2. bölüm (arpej) ${perSec[1]} olay · MIDI gitar izi`;
+  });
+
   await step('Zamanlama: notayı sağa sürükle (ızgaraya yapışır) → ses kayar; quantize; zamanı geri al; piyano tuşu çalar; T ile tap → tempo/ölçü/ızgara', async () => {
     page.once('dialog', (d) => d.accept());
     await page.click('#btnTest');

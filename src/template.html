@@ -239,6 +239,12 @@
           <output>-8 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
         </div>
+        <div class="strip" data-track="guitar">
+          <b>Gitar</b>
+          <input type="range" min="-40" max="6" step="1" value="-4" class="vol" aria-label="Gitar ses seviyesi">
+          <output>-4 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
       </div>
       <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
       <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
@@ -256,13 +262,25 @@
       <pre id="drumGrid" class="drum-grid"></pre>
     </details>
 
+    <details class="step" open id="guitarStep">
+      <summary><b>8c</b> Gitar (ritim katmanı)</summary>
+      <p class="hint">Akor zaman çizelgesinden gitar partisi üretir. Altı katmanı (vuruş modu, ritim kalıbı, voicing, süsleme, nota süresi, ton/FX) ayrı ayrı seçip birleştirirsin; her seçim anında sese yansır. Ses, Karplus-Strong ile tarayıcıda üretilir (örnek dosyası yok, çevrimdışı çalışır).</p>
+      <div class="row"><span class="grow">Çalan enstrüman</span>
+        <span class="seg" id="gInstr"><label><input type="radio" name="gInstr" value="piano"><span>Piyano</span></label><label><input type="radio" name="gInstr" value="guitar"><span>Gitar</span></label><label><input type="radio" name="gInstr" value="both"><span>İkisi</span></label></span></div>
+      <div class="row"><label class="grow">Parti şu bölüm için<select id="gTarget"></select></label></div>
+      <div id="gSecInfo"></div>
+      <div id="guitarPanel"></div>
+      <div class="row"><button id="btnGAudition" title="Seçili kombinasyonu 2 ölçülük döngüde çalar (projedeki gerçek akorlarla; akor yoksa Am–F–C–G)">▶ Dinle (2 ölçü döngü)</button><button id="btnGStop">■</button></div>
+      <div id="gPresets"></div>
+    </details>
+
     <details class="step" open>
       <summary><b>9</b> Dışa aktarım</summary>
       <div class="grid2">
         <button id="btnExpMidi">MIDI (akor + melodi)</button>
         <button id="btnExpChart">Akor şeması (.txt)</button>
         <button id="btnExpVocal">Düzeltilmiş vokal WAV</button>
-        <button id="btnExpMix">Vokal + piyano (+ davul) WAV</button>
+        <button id="btnExpMix">Vokal + piyano / gitar (+ davul) WAV</button>
       </div>
     </details>
   </aside>

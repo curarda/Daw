@@ -6,7 +6,7 @@ const out = tpl
   .replace('/*__STYLE__*/', () => read('./src/style.css'))
   .replace('/*__CORE__*/', () => read('./src/core.js') + '\n' + read('./src/drums.js') + '\n' + read('./src/guitar.js') + '\n' + read('./src/flex.js'))
   .replace('/*__STYLECORE__*/', () => read('./src/styledata.js'))
-  .replace('/*__APP__*/', () => read('./src/app.js'))
+  .replace('/*__APP__*/', () => read('./src/app.js').replace('/*__GUITARUI__*/', () => read('./src/guitarui.js')))
   .replace('/*__STYLEAPP__*/', () => read('./src/styleui.js')
     // içe aktarma istemi tek kaynak: src/import-prompt.txt
     .replace("/*__IMPORT_PROMPT__*/''", () => JSON.stringify(read('./src/import-prompt.txt').trim())));
