@@ -1032,6 +1032,13 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           } else { barChord = cur; barReason = 'mevcut akor korunuyor' + rhTxt; }
         }
       }
+      // senin ölçü başı işaretin (önceliği motor kararlarından yüksek): ✂ = akorun kökü burada değişir, = burada değişmez (ölçü ortası işaretleri süreli Viterbi motorunda)
+      const mkB = !lockFull && cur && !isFirst ? (o.marks || []).find((m) => m.bar === bar && !m.half) : null;
+      if (mkB && mkB.kind === 'change' && barChord.root === cur.root) {
+        const cl = barCands || evalAll(bn, extraBar);
+        const alt = cl.find((c) => c.chord.root !== cur.root && !c.friction) || cl.find((c) => c.chord.root !== cur.root);
+        if (alt) { barChord = alt.chord; barReason = '✂ senin değişim noktan: akor burada değişir'; }
+      } else if (mkB && mkB.kind === 'hold' && !sameChord(barChord, cur)) { barChord = cur; barReason = '= senin işaretin: akor burada değişmez'; }
       // yarım ölçü kontrolü
       const halves = [];
       if (g.split && !lockFull && (!o.downbeatOnly || lockAt(bar, 0) || lockAt(bar, 1))) {

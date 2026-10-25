@@ -1086,6 +1086,30 @@ await step('Alt bölme / swing: oran eşlemesi, melodiden ölçüm, davul + bas 
   return `swing %70: bas / davul / akor ghost'ları 0,70 · %67'de 0,667 · düz projede shuffle içeriği 0,667, düz içerik 0,5 · quantize ${JSON.stringify(qs)} · önerilen loop ${sug.best.loop.id}`;
 });
 
+await step('Senin ✂ işaretin motordan önce gelir: işaret konan ölçüde akor hemen yeniden belirlenir (diğerleri yerinde); ölçü ölçü motor da ölçü başı işaretlerini uygular', () => {
+  const nm2 = (dd) => dd.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${Core.chordName(c.chord)}`).join(' ');
+  for (const engine of ['viterbi', 'greedy']) {
+    const p0 = JSON.parse(JSON.stringify(proj));
+    p0.chordOpts = Object.assign({}, p0.chordOpts, { changePct: 100, maxBars: 16, homeEvery: 0, engine }); // yapışkan motor: akor kendiliğinden değişmez
+    const base = Core.derive(p0, st);
+    const pin = (b) => base.chords.filter((c) => c.bar !== b).map((c) => ({ bar: c.bar, half: c.half, chord: { root: c.chord.root, q: c.chord.q, bass: null } }));
+    // ardışık aynı akorlu iki ölçü bul (değişim işareti anlamlı olsun)
+    const same = base.chords.find((c, i) => i && c.bar === base.chords[i - 1].bar + 1 && c.section === base.chords[i - 1].section && Core.sameChord(c.chord, base.chords[i - 1].chord));
+    assert.ok(same, engine + ': yapışkan motorda ardışık aynı akor yok');
+    const p1 = JSON.parse(JSON.stringify(p0));
+    p1.chordPins = pin(same.bar); p1.changeMarks = [{ bar: same.bar, half: 0, kind: 'change' }];
+    const d1 = Core.derive(p1, st);
+    const at = d1.chords.find((c) => c.bar === same.bar), prev = d1.chords.find((c) => c.bar === same.bar - 1);
+    assert.notEqual(at.chord.root, prev.chord.root, `${engine}: ✂ işaretli ölçüde akorun kökü değişti`);
+    for (const c of d1.chords) if (c.bar !== same.bar && c.bar !== same.bar + 1) assert.ok(Core.sameChord(c.chord, base.chords.find((x) => x.bar === c.bar && x.half === c.half).chord), `${engine}: diğer ölçüler yerinde (ölçü ${c.bar})`);
+    // "değişmesin" işareti
+    const p2 = JSON.parse(JSON.stringify(p0)); p2.changeMarks = [{ bar: same.bar, half: 0, kind: 'hold' }];
+    const d2 = Core.derive(p2, st);
+    assert.ok(Core.sameChord(d2.chords.find((c) => c.bar === same.bar).chord, d2.chords.find((c) => c.bar === same.bar - 1).chord), `${engine}: = işaretinde akor değişmez`);
+  }
+  return 'yapışkan motorda ✂ işaretli ölçüde akor kökü değişir, diğerleri yerinde; = işaretinde değişmez (iki motor)';
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nTüm adımlar geçti.');

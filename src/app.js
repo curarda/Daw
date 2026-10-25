@@ -175,10 +175,11 @@ function refresh() {
   const nmk = (S.proj.changeMarks || []).length;
   $('#markCount').textContent = nmk ? `(${nmk})` : ''; $('#btnClearMarks').disabled = !nmk;
   const conf = S.d.chords.markConflict ? S.d.sections.filter((x) => S.d.chords.markConflict[x.id]).map((x) => x.name) : [];
-  $('#markInfo').innerHTML = (nmk && S.proj.chordOpts.engine === 'greedy' ? '<div class="st-warn">⚠ Değişim işaretleri süreli Viterbi motorunda uygulanır; ölçü ölçü motor bunları yok sayar.</div>' : '')
+  $('#markInfo').innerHTML = (nmk && S.proj.chordOpts.engine === 'greedy' ? '<div class="st-warn">ℹ Ölçü ölçü motor yalnızca <b>ölçü başı</b> işaretlerini (✂ / =) uygular; ölçü ortası işaretleri süreli Viterbi motorunda uygulanır.</div>' : '')
     + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor (ör. ✂ noktasının iki yanında aynı akor kilitli); bu bölüm işaretler olmadan dolduruldu.</div>` : '');
   const nch = S.proj.chordLocks.filter((l) => l.src === 'chart').length;
   $('#chartCount').textContent = nch ? `(${nch})` : ''; $('#btnChartRemove').disabled = !nch;
+  { const lb = lastManualBar(); $('#afterInfo').textContent = lb ? `(ölçü ${lb}'den sonrası)` : ''; $('#btnApplyAfter').disabled = !lb; }
   const ns = S.d.chords.filter((c) => c.pinSuggest).length;
   $('#sugCount').textContent = ns ? `(${ns})` : ''; $('#btnApplySug').disabled = !ns;
   if (S.sel && S.sel.type === 'note' && !S.d.notes.some((n) => n.id === S.sel.id)) S.sel = null;
@@ -2514,7 +2515,8 @@ function renderChordInspector(box, slot) {
     ${sec && sec.tonic != null && window.StyleUI ? `<div class="row" style="margin-top:6px"><span class="hint">Bu akor seçimi (önceki akordan geçiş) — kişisel geri bildirim:</span>
       <button data-act="fbChord" data-v="1" title="beğen">👍</button><button data-act="fbChord" data-v="-1" title="beğenme">👎</button></div>` : ''}
     <div class="row" style="margin-top:8px">Elle yaz: <input type="text" id="chInput" placeholder="ör. Dmaj7, C#m, F#m7/A" style="width:170px"> ${scopeSel}
-      <button data-act="manualChord" class="accent">Uygula + kilitle</button></div>`;
+      <button data-act="manualChord" class="accent" title="Yazdığın akor senindir: motor ve puanlar onu değiştirmez; diğer akorlar da aynı kalır">Uygula</button></div>
+    <p class="hint">Elle yazdığın akor önceliklidir (🔒): motor değiştirmez, diğer akorlar da yerinde kalır. Sonrasını tamamlamak için 6–7. adımdaki <b>"Son elle yaptığımdan sonrasını otomatik uygula"</b>.</p>`;
 }
 
 // ---------------------------------------------------------------- bilgi satırları
@@ -2719,6 +2721,21 @@ $('#btnChartRemove').onclick = () => {
 $('#inOnlyMarked').addEventListener('change', (e) => { S.proj.chordOpts.onlyMarked = e.target.checked; refresh(); });
 $('#inDownbeatOnly').addEventListener('change', (e) => { S.proj.chordOpts.downbeatOnly = e.target.checked; refresh(); });
 $('#btnClearMarks').onclick = () => { const n = (S.proj.changeMarks || []).length; S.proj.changeMarks = []; refresh(); status(`${n} değişim işareti kaldırıldı (akorlar yerinde kaldı).`); };
+// senin kararların: ✂ değişim noktaları ve elle yazılan / kilitlenen akorlar (öncelik: 1) ✂ noktaları 2) elle yazdığın akorlar 3) motor)
+function lastManualBar() {
+  const bars = [...S.proj.chordLocks.map((l) => l.bar), ...(S.proj.changeMarks || []).map((m) => m.bar)];
+  return bars.length ? Math.max(...bars) : 0;
+}
+function applyAfterLast() {
+  const last = lastManualBar();
+  if (!last) { status('Önce bir ✂ değişim noktası işaretle ya da bir akoru elle yaz / kilitle.', 'err'); return; }
+  const had = (S.proj.chordPins || []).filter((p) => p.bar > last).length;
+  S.proj.chordPins = (S.proj.chordPins || []).filter((p) => p.bar <= last); // son yaptığın ölçüye kadar her şey aynen kalır; sonrası serbest
+  refresh();
+  const n = S.d.chords.filter((c) => c.bar > last).length;
+  status(`Ölçü ${last}'ye kadar (✂ noktaların, elle yazdığın akorlar ve aradaki akorlar) aynen kaldı; ölçü ${last + 1}'den sonrası (${n} akor) motorca bütün olarak, işaretlerine ve kilitlerine uyarak yeniden belirlendi${had ? '' : ' (zaten serbestti)'}.`);
+}
+$('#btnApplyAfter').onclick = () => applyAfterLast();
 $('#btnApplySug').onclick = () => {
   const n = S.d.chords.filter((c) => c.pinSuggest).length;
   S.proj.chordPins = []; refresh();

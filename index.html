@@ -423,6 +423,8 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
         <select id="inEngine"><option value="viterbi">süreli Viterbi (bölüm boyunca, 3 alternatif)</option><option value="greedy">ölçü ölçü (eski)</option></select></label>
       <div class="row"><label class="grow" title="Akor motoru bu ölçüyü 1. ölçü sayar; öncesinde akor ve piyano çalmaz. Zaman çizelgesinde cetveldeki 🎹 bayrağını sürükleyerek de ayarlanır"><b>🎹 Akorlar şu ölçüden girsin</b><input type="number" id="inChordStart" min="1" value="1"></label><button id="btnChordHere" title="Oynatma imlecinin (kırmızı çizgi) olduğu ölçü">İmleçten</button></div>
       <div id="chordStartInfo" class="hint"></div>
+      <div class="row"><button id="btnApplyAfter" class="accent" title="Son ✂ işaretinin ya da elle yazdığın akorun ölçüsünden SONRAKİ akorları motor bütün olarak belirler; öncesi aynen kalır">↧ Son elle yaptığımdan sonrasını otomatik uygula <span id="afterInfo"></span></button></div>
+      <p class="hint"><b>Öncelik:</b> 1) ✂ ile seçtiğin değişim noktaları · 2) elle yazdığın akorlar · 3) motor. Akor değişimini işaretlediğin an o noktadaki akor motorca yeniden belirlenir (diğerleri yerinde kalır). Sonra istediğin akorları elle yaz; en son bu düğmeyle şarkının kalanını bir bütün olarak tamamlat — son yaptığın ölçüye kadar hiçbir şey değişmez.</p>
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
         <button id="btnApplySug" title="Kilitlerin dışındaki akorları motorun şimdiki önerisine göre yeniden hesaplar">Motorun önerilerini uygula <span id="sugCount"></span></button></div>
       <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Bir akoru kilitlediğinde <b>diğer akorlar değişmez</b>; motor başka bir şey önerirse akorun altında turuncu <b>→</b> ile gösterilir, nedeni sağdaki panelde yazar. Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
@@ -1622,6 +1624,13 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           } else { barChord = cur; barReason = 'mevcut akor korunuyor' + rhTxt; }
         }
       }
+      // senin ölçü başı işaretin (önceliği motor kararlarından yüksek): ✂ = akorun kökü burada değişir, = burada değişmez (ölçü ortası işaretleri süreli Viterbi motorunda)
+      const mkB = !lockFull && cur && !isFirst ? (o.marks || []).find((m) => m.bar === bar && !m.half) : null;
+      if (mkB && mkB.kind === 'change' && barChord.root === cur.root) {
+        const cl = barCands || evalAll(bn, extraBar);
+        const alt = cl.find((c) => c.chord.root !== cur.root && !c.friction) || cl.find((c) => c.chord.root !== cur.root);
+        if (alt) { barChord = alt.chord; barReason = '✂ senin değişim noktan: akor burada değişir'; }
+      } else if (mkB && mkB.kind === 'hold' && !sameChord(barChord, cur)) { barChord = cur; barReason = '= senin işaretin: akor burada değişmez'; }
       // yarım ölçü kontrolü
       const halves = [];
       if (g.split && !lockFull && (!o.downbeatOnly || lockAt(bar, 0) || lockAt(bar, 1))) {
@@ -5091,10 +5100,11 @@ function refresh() {
   const nmk = (S.proj.changeMarks || []).length;
   $('#markCount').textContent = nmk ? `(${nmk})` : ''; $('#btnClearMarks').disabled = !nmk;
   const conf = S.d.chords.markConflict ? S.d.sections.filter((x) => S.d.chords.markConflict[x.id]).map((x) => x.name) : [];
-  $('#markInfo').innerHTML = (nmk && S.proj.chordOpts.engine === 'greedy' ? '<div class="st-warn">⚠ Değişim işaretleri süreli Viterbi motorunda uygulanır; ölçü ölçü motor bunları yok sayar.</div>' : '')
+  $('#markInfo').innerHTML = (nmk && S.proj.chordOpts.engine === 'greedy' ? '<div class="st-warn">ℹ Ölçü ölçü motor yalnızca <b>ölçü başı</b> işaretlerini (✂ / =) uygular; ölçü ortası işaretleri süreli Viterbi motorunda uygulanır.</div>' : '')
     + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor (ör. ✂ noktasının iki yanında aynı akor kilitli); bu bölüm işaretler olmadan dolduruldu.</div>` : '');
   const nch = S.proj.chordLocks.filter((l) => l.src === 'chart').length;
   $('#chartCount').textContent = nch ? `(${nch})` : ''; $('#btnChartRemove').disabled = !nch;
+  { const lb = lastManualBar(); $('#afterInfo').textContent = lb ? `(ölçü ${lb}'den sonrası)` : ''; $('#btnApplyAfter').disabled = !lb; }
   const ns = S.d.chords.filter((c) => c.pinSuggest).length;
   $('#sugCount').textContent = ns ? `(${ns})` : ''; $('#btnApplySug').disabled = !ns;
   if (S.sel && S.sel.type === 'note' && !S.d.notes.some((n) => n.id === S.sel.id)) S.sel = null;
@@ -7430,7 +7440,8 @@ function renderChordInspector(box, slot) {
     ${sec && sec.tonic != null && window.StyleUI ? `<div class="row" style="margin-top:6px"><span class="hint">Bu akor seçimi (önceki akordan geçiş) — kişisel geri bildirim:</span>
       <button data-act="fbChord" data-v="1" title="beğen">👍</button><button data-act="fbChord" data-v="-1" title="beğenme">👎</button></div>` : ''}
     <div class="row" style="margin-top:8px">Elle yaz: <input type="text" id="chInput" placeholder="ör. Dmaj7, C#m, F#m7/A" style="width:170px"> ${scopeSel}
-      <button data-act="manualChord" class="accent">Uygula + kilitle</button></div>`;
+      <button data-act="manualChord" class="accent" title="Yazdığın akor senindir: motor ve puanlar onu değiştirmez; diğer akorlar da aynı kalır">Uygula</button></div>
+    <p class="hint">Elle yazdığın akor önceliklidir (🔒): motor değiştirmez, diğer akorlar da yerinde kalır. Sonrasını tamamlamak için 6–7. adımdaki <b>"Son elle yaptığımdan sonrasını otomatik uygula"</b>.</p>`;
 }
 
 // ---------------------------------------------------------------- bilgi satırları
@@ -7635,6 +7646,21 @@ $('#btnChartRemove').onclick = () => {
 $('#inOnlyMarked').addEventListener('change', (e) => { S.proj.chordOpts.onlyMarked = e.target.checked; refresh(); });
 $('#inDownbeatOnly').addEventListener('change', (e) => { S.proj.chordOpts.downbeatOnly = e.target.checked; refresh(); });
 $('#btnClearMarks').onclick = () => { const n = (S.proj.changeMarks || []).length; S.proj.changeMarks = []; refresh(); status(`${n} değişim işareti kaldırıldı (akorlar yerinde kaldı).`); };
+// senin kararların: ✂ değişim noktaları ve elle yazılan / kilitlenen akorlar (öncelik: 1) ✂ noktaları 2) elle yazdığın akorlar 3) motor)
+function lastManualBar() {
+  const bars = [...S.proj.chordLocks.map((l) => l.bar), ...(S.proj.changeMarks || []).map((m) => m.bar)];
+  return bars.length ? Math.max(...bars) : 0;
+}
+function applyAfterLast() {
+  const last = lastManualBar();
+  if (!last) { status('Önce bir ✂ değişim noktası işaretle ya da bir akoru elle yaz / kilitle.', 'err'); return; }
+  const had = (S.proj.chordPins || []).filter((p) => p.bar > last).length;
+  S.proj.chordPins = (S.proj.chordPins || []).filter((p) => p.bar <= last); // son yaptığın ölçüye kadar her şey aynen kalır; sonrası serbest
+  refresh();
+  const n = S.d.chords.filter((c) => c.bar > last).length;
+  status(`Ölçü ${last}'ye kadar (✂ noktaların, elle yazdığın akorlar ve aradaki akorlar) aynen kaldı; ölçü ${last + 1}'den sonrası (${n} akor) motorca bütün olarak, işaretlerine ve kilitlerine uyarak yeniden belirlendi${had ? '' : ' (zaten serbestti)'}.`);
+}
+$('#btnApplyAfter').onclick = () => applyAfterLast();
 $('#btnApplySug').onclick = () => {
   const n = S.d.chords.filter((c) => c.pinSuggest).length;
   S.proj.chordPins = []; refresh();

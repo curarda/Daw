@@ -1204,6 +1204,41 @@ try {
     return `Demo: 3/4, 100 BPM, waltz, walk, bölüm düzenlemesi korundu · listeler ${nDrum} loop / ${nBass} bas kalıbı puanlı · ▶ seçmeden çalar · Seç → ✋`;
   });
 
+  await step('Öncelik ✂ > elle akor > motor: işaretleyince o ölçünün akoru hemen yenilenir; elle "Uygula"; "Son elle yaptığımdan sonrasını otomatik uygula" öncesine dokunmadan kalanı bütün olarak belirler', async () => {
+    const tl = await resetTest();
+    assert.equal(await page.isDisabled('#btnApplyAfter'), true, 'henüz elle yapılmış bir şey yok');
+    const names = () => S(() => window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`));
+    const n0 = await names();
+    // 6. ölçü başında ✂ → o noktadaki akor hemen yeniden belirlenir; diğerleri sabitlenir (📌)
+    await S(() => { document.querySelector('#tlScroll').scrollLeft = Math.max(0, 46 + 20 * window.__daw.view.pxPerQ - 420); });
+    await page.waitForTimeout(150);
+    const sl = await S(() => document.querySelector('#tlScroll').scrollLeft), ppq = await S(() => window.__daw.view.pxPerQ);
+    await page.mouse.click(tl.x + 46 + 20 * ppq - sl, tl.y + 22 + 26 + 5);
+    assert.equal(await S(() => window.__daw.proj.changeMarks.length), 1);
+    assert.equal(await S(() => window.__daw.proj.changeMarks[0].bar), 6);
+    const n1 = await names();
+    for (const c of n0) if (!/^6:/.test(c)) assert.ok(n1.includes(c), 'diğer akorlar yerinde: ' + c);
+    // 7. ölçüde elle akor: sadece "Uygula"
+    await page.mouse.click(tl.x + 46 + (24 + 2) * ppq - sl, tl.y + 22 + 26 + 18);
+    assert.equal(await S(() => window.__daw.sel.type), 'chord');
+    assert.equal((await page.textContent('#inspector button[data-act=manualChord]')).trim(), 'Uygula', 'elle yaz düğmesi yalnızca "Uygula"');
+    await page.fill('#chInput', 'A'); await page.click('#inspector button[data-act=manualChord]');
+    assert.equal(await S(() => window.__daw.d.chords.find((c) => c.bar === 7).locked), true);
+    assert.equal(await S(() => window.__dawAPI.C.chordName(window.__daw.d.chords.find((c) => c.bar === 7).chord)), 'A');
+    assert.equal(await page.isDisabled('#btnApplyAfter'), false); assert.match(await page.textContent('#afterInfo'), /ölçü 7/);
+    // kalan ölçüler şu an sabit (📌); düğme son yapılan ölçü (7) sonrasını serbest bırakır
+    assert.ok(await S(() => window.__daw.d.chords.filter((c) => c.bar > 7).every((c) => c.pinned)), 'sonraki akorlar sabit');
+    const before = await names();
+    await page.click('#btnApplyAfter');
+    const after = await names();
+    assert.deepEqual(after.filter((c) => +c.split(':')[0].split('.')[0] <= 7), before.filter((c) => +c.split(':')[0].split('.')[0] <= 7), "ölçü 7'ye kadar hiçbir şey değişmedi");
+    assert.ok(await S(() => window.__daw.d.chords.filter((c) => c.bar > 7).every((c) => !c.pinned)), 'sonrası serbest: motor belirledi');
+    assert.equal(await S(() => window.__daw.proj.changeMarks.length), 1); assert.equal(await S(() => window.__daw.proj.chordLocks.length), 1);
+    assert.match(await page.textContent('#status'), /Ölçü 7'ye kadar .* aynen kaldı; ölçü 8'den sonrası/);
+    await page.click('#btnUnlockAll'); await page.click('#btnClearMarks');
+    return `✂ 6. ölçü → akor yenilendi · 7. ölçü elle A · düğme: ≤7 aynı, 8+ motor (${after.filter((c) => +c.split(':')[0] > 7).join(' ')})`;
+  });
+
   await step('✨ Demo yap: ölçü + ton + akor + davul + bas tek tuşla, çalar; verse sade / nakarat dolu; tek Ctrl+Z ile geri', async () => {
     await resetTest();
     const pre = await S(() => ({ drums: window.__daw.proj.drums.on, bass: window.__daw.proj.bass.on, secs: window.__daw.proj.sections.map((s) => s.tonic) }));
