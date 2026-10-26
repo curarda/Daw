@@ -172,6 +172,8 @@ const DRUM_LOOPS = [
     K: '........x.......', S: '........X.......', H: '..x...x...x...x.', desc: "1. vuruş boş, kick ve trampet birlikte 3'te" },
   { id: 'shuffle', name: 'Shuffle / swing (üçleme)', meter: '4/4', spb: 3, feel: 'triple', bpm: [70, 140], base: 0,
     K: 'x.....x.....', S: '...X.....X..', H: 'x.xx.xx.xx.x', desc: "üçleme hissi: hi-hat 'uzun-kısa', 2 ve 4'te trampet" },
+  { id: 'shufflecell', name: 'Shuffle hücresi — X . t (her vuruşta aynı)', meter: '4/4', spb: 3, feel: 'triple', bpm: [70, 140], base: 0,
+    K: 'x.....x.....', S: '...X.....X..', H: 'x.gx.gx.gx.g', desc: "her vuruşta aynı hücre: güçlü (X) · boş · hafif ghost (t) — sayım \"1 ve-let 2 ve-let…\"; kick 1 ve 3'te, trampet 2 ve 4'te. Ghost (t) projenin swing oranına oturur" },
   { id: 'push332', name: 'İtmeli pop-rock (3+3+2 kick, 4\'ün ve\'sinde öncel)', meter: '4/4', spb: 4, feel: 'straight', bpm: [128, 180], base: 0,
     K: 'x..x....x..x..x.', S: '....X.......X...', H: 'x.x.x.x.x.x.x.o.', desc: "kick 1, 1'in son 16'lığı, 3, 3'ün son 16'lığı ve 4'ün ve'sinde (sonraki 1'i önden iter, açık hi-hat); trampet 2 ve 4'te. Melodisi vuruşların önüne/arkasına senkoplu hızlı şarkılar için" },
   { id: 'minimal', name: 'Sade — kick + hi-hat', meter: '4/4', spb: 4, feel: 'straight', bpm: [55, 150], base: -0.12,
@@ -189,15 +191,171 @@ const DRUM_LOOPS = [
   { id: 'rock68', name: '6/8 rock / afro', meter: '6/8', spb: 3, feel: 'triple', bpm: [50, 100], base: 0,
     K: 'x...x.', S: '...X..', H: 'x.xx.x', desc: "kick 1 ve 5. 8'likte, trampet 4'te" },
 ];
+
+// ---- 2b) KALIP KÜTÜPHANESİ (45 kalıp: A–E). Yazım: "vuruş + ek" — 1 2 3 4 = vuruş; e & a = 16'lıkların 2./3./4. adımı
+// (üçlemede & = 2., a = 3. adım; 6/8'de rakam = 8'lik adımı 1–6). Başa harf: X vurgulu · x normal · g hayalet · o açık hi-hat.
+// "*4" her vuruş, "*8" her 8'lik, "*16" her 16'lık, "*e" "*&" "*a" her vuruşun o adımı. Sonraki parça öncekini ezer.
+// Şeritler: K kick · S trampet · H hi-hat · F floor tom · T tom · C clap · R rim click (cross-stick) · D ride · P hi-hat pedalı.
+const LANES = ['K', 'S', 'H', 'F', 'T', 'C', 'R', 'D', 'P'];
+const LANE_DEFAULT = { K: 'x', H: 'x', D: 'x', P: 'x' }; // diğer şeritlerin varsayılanı X (vurgulu)
+const LANE_NAME = { K: 'Kick', S: 'Trampet', H: 'Hi-hat', F: 'Floor tom', T: 'Tom', C: 'Clap', R: 'Rim click', D: 'Ride', P: 'Hat pedal' };
+const SUB = { 4: { '': 0, e: 1, '&': 2, a: 3 }, 3: { '': 0, '&': 1, a: 2 } };
+function parsePattern(spec, steps, spb, stepMode, lane) {
+  const out = new Array(steps).fill('.');
+  for (const tok of String(spec || '').split(/\s+/).filter(Boolean)) {
+    const m = /^([Xxgo]?)(?:\*(4|8|16|&|e|a)|(\d)([ea&]?))$/.exec(tok);
+    if (!m) throw new Error(`kalıp jetonu anlaşılmadı: "${tok}"`);
+    const ch = m[1] || LANE_DEFAULT[lane] || 'X';
+    if (m[2]) {
+      for (let i = 0; i < steps; i++) {
+        const w = m[2], inBeat = i % spb;
+        const hit = stepMode ? w === '8' // 6/8: her adım bir 8'lik
+          : w === '4' ? inBeat === 0
+          : w === '16' ? spb === 4
+          : w === '8' ? spb === 4 && inBeat % 2 === 0
+          : inBeat === SUB[spb][w];
+        if (hit) out[i] = ch;
+      }
+    } else {
+      const d = +m[3], i = stepMode ? d - 1 : (d - 1) * spb + (SUB[spb][m[4]] ?? NaN);
+      if (!(i >= 0 && i < steps)) throw new Error(`kalıp adımı ızgaranın dışında: "${tok}"`);
+      out[i] = ch;
+    }
+  }
+  return out.join('');
+}
+const CATS = {
+  A: '4/4 · temel rock kalıpları', B: '4/4 · post-punk, darkwave, synthwave', C: '4/4 · half-time ailesi',
+  D: '3/4 · waltz', E: '6/8', Z: 'Diğer (ilk loop\'lar)',
+};
+const STEPS_OF = { '4/4': 16, '3/4': 12, '2/4': 8, '6/8': 6 };
+// def: { no, cat, id, name, meter, spb (4 düz · 3 üçleme), bpm, base, K S H F T C R D P (jetonlar), lay, fill:{every, lanes}, desc }
+// Otomatik öneri ilk 15 loop'un davranışını korusun: kalıplar elle seçilir; tempo/his başka loop'a uymayınca ya da vurgu çok daha iyi oturunca öne çıkar.
+const NEW_BASE = -0.1;
+function buildPattern(d) {
+  const spb = d.spb || 4, meter = d.meter || '4/4', stepMode = meter === '6/8';
+  const steps = stepMode ? 6 : (meter === '4/4' ? 4 : meter === '3/4' ? 3 : 2) * spb;
+  const L = { id: d.id, no: d.no, cat: d.cat, name: d.name, meter, spb, feel: spb === 3 ? 'triple' : 'straight', bpm: d.bpm, base: d.base ?? NEW_BASE, desc: d.desc };
+  for (const k of LANES) {
+    const v = parsePattern(d[k], steps, spb, stepMode, k);
+    if (k === 'K' || k === 'S' || k === 'H' || /[^.]/.test(v)) L[k] = v;
+  }
+  if (d.lay) L.lay = d.lay;
+  if (d.fill) {
+    L.fill = { every: d.fill.every, lanes: {} };
+    for (const k of LANES) if (d.fill[k] != null) L.fill.lanes[k] = parsePattern(d.fill[k], steps, spb, stepMode, k);
+  }
+  return L;
+}
+const PATTERN_DEFS = [
+  // ---------------- A) 4/4: temel rock kalıpları
+  { no: 1, cat: 'A', id: 'backbeat', name: 'Basic backbeat', bpm: [70, 160], K: '1 3', S: '2 4', H: '*8',
+    desc: "kick 1 ve 3'te, trampet 2 ve 4'te, hi-hat 8'lik — rock'ın ve synthwave'in varsayılanı" },
+  { no: 3, cat: 'A', id: 'motorik', name: 'Motorik', bpm: [110, 160], K: '1 3', S: '2 4', H: 'X*8',
+    desc: "kick 1 ve 3'te, trampet 2 ve 4'te, hi-hat sürekli ve eşit vurgulu 8'lik — hipnotik, makine gibi akış (Neu!, Joy Division, Stereolab)" },
+  { no: 5, cat: 'A', id: 'train', name: 'Train beat', bpm: [120, 190], K: '1 3', S: 'x*4 g*& g*a X2 X4', H: '*4',
+    desc: "trampet vuruş + & + a'da \"çuf-a çuf-a\" akar, 2 ve 4 vurgulu; kick 1 ve 3 (Johnny Cash, \"Folsom Prison Blues\")" },
+  { no: 6, cat: 'A', id: 'bodiddley', name: 'Bo Diddley beat', bpm: [95, 140], K: '1 3', T: '1 1a 2& 3& 4', H: 'g*8',
+    desc: "3-2 clave'ı tom'larda: 1, 1a, 2&, 3&, 4 — \"bomp, ba-bomp-bomp, bomp-bomp\"; kick 1 ve 3" },
+  { no: 7, cat: 'A', id: 'levee', name: '"When the Levee Breaks" groove', bpm: [60, 85], K: '1 3& 3a', S: '2 4', H: '*8', lay: { S: 0.12 },
+    desc: "yavaş ve geniş; trampet hafif geriden (backbeat gecikmeli) — en çok sample'lanan davul break'i" },
+  // ---------------- B) 4/4: post-punk, darkwave, synthwave
+  { no: 8, cat: 'B', id: 'tribal', name: 'Tom-ağırlıklı tribal', bpm: [90, 150], K: '1 3', T: '1 3', F: '2 4',
+    desc: "hi-hat yok; rack ve floor tom 1-2-3-4 üzerinde dönüşümlü, kick 1 ve 3'te (Siouxsie, Bauhaus, Killing Joke)" },
+  { no: 9, cat: 'B', id: 'fastpunk', name: 'Hızlı punk beat', bpm: [150, 210], K: '1 1&', S: '2 4', H: '*8',
+    desc: "kick 1 ve 1&'de, trampet 2 ve 4'te, hızlı tempoda 8'lik hi-hat (Wire, Magazine, erken Siouxsie)" },
+  { no: 10, cat: 'B', id: 'syncokick', name: 'Syncopated kick groove', bpm: [100, 150], K: '1 2& 3& 4&', S: '2 4', H: '*8',
+    desc: "trampet 2 ve 4'te sabit, kick beklenmedik yerlerde (1, 2&, 3&, 4&) — gergin, hafif funky (Gang of Four, The Fall, Gary Numan)" },
+  { no: 11, cat: 'B', id: 'dub', name: 'Dub / one-drop (swing hi-hat)', spb: 3, bpm: [60, 100], K: '3', S: '3', H: 'x*4 x*a',
+    desc: "kick ve trampet 3. vuruşta, hi-hat swing'li üçleme (PiL, The Slits, The Clash)" },
+  { no: 12, cat: 'B', id: 'joydiv', name: 'Joy Division tarzı hook', bpm: [110, 160], K: '1 3', S: '2 4', H: 'X*4 x*& g*e g*a', T: '4& 4a',
+    desc: "kick 1 ve 3, trampet 2 ve 4; 16'lık hi-hat tonlaması (vuruş > & > e/a) ve her ölçü sonunda tom dolgusu — yalın ama sert" },
+  { no: 13, cat: 'B', id: 'drive16', name: "16'lık hi-hat drive", bpm: [110, 130], K: '1 3 3a', S: '2 4', H: 'x*16 X*4',
+    desc: "kick 1 ve 3 (+ 3a), trampet 2 ve 4, her 16'lıkta hi-hat, vuruşlar vurgulu — hızlı synthwave'in \"gece sürüşü\" hissi" },
+  { no: 14, cat: 'B', id: 'pulse8', name: "Pulsing 8th-note kick", bpm: [100, 135], K: '*8', S: '2 4', H: 'g*&',
+    desc: "kick her 8'likte, trampet 2 ve 4'te, hi-hat çok az — dark synthwave ve EBM'e yakın darkwave" },
+  { no: 15, cat: 'B', id: 'gated', name: 'Gated-reverb snare + tom fill', bpm: [90, 130], K: '1 3', S: '2 4', H: '*8',
+    fill: { every: 4, S: '2', T: '3 3& 4', F: '4& 4a' },
+    desc: "backbeat üzerine dev gated trampet; her 4. ölçünün sonunda yüksekten alçağa tom inişi — 80'lerin imzası" },
+  { no: 16, cat: 'B', id: 'clapsnare', name: 'Clap-layered snare', bpm: [85, 130], K: '1 2a 3', S: '2 4', C: '2 4', H: 'x*8 o4&',
+    desc: "clap ve trampet 2 ve 4'te üst üste, kick 1, 2a ve 3'te, 8'lik hi-hat, 4&'de açık hi-hat — 808/909 havası" },
+  { no: 17, cat: 'B', id: 'ebm', name: 'EBM / sequenced makine', bpm: [120, 135], K: '1 1a 2& 3 3a', S: '2 4', H: 'x*16',
+    desc: "kick 16'lık dizilimde (1, 1a, 2&, 3, 3a), trampet 2 ve 4, sürekli 16'lık hi-hat (Front 242, Nitzer Ebb)" },
+  // ---------------- C) 4/4: half-time ailesi (trampet 2 ve 4 yerine yalnızca 3'te)
+  { no: 18, cat: 'C', id: 'ht-flat', name: 'Düz half-time', bpm: [60, 165], K: '1', S: '3', H: '*8',
+    desc: "kick 1'de, trampet 3'te, 8'lik hi-hat — half-time'ın temel hali" },
+  { no: 19, cat: 'C', id: 'ht-kick', name: "Kick'li half-time", bpm: [60, 165], K: '1 4&', S: '3', H: '*8',
+    desc: "kick 1'de ve 4&'de (sonraki 1'i önden iter), trampet 3'te — groove'a ileri doğru itiş" },
+  { no: 20, cat: 'C', id: 'ht-shuffle', name: 'Half-time shuffle', spb: 3, bpm: [55, 100], K: '1 2a', S: 'X3 g1& g2& g2a g3a g4& g4a', H: 'x*4 x*a',
+    desc: "üçleme swing, trampet 3'te, aralarda çok hayalet nota (Toto \"Rosanna\", Purdie shuffle)" },
+  { no: 21, cat: 'C', id: 'ht-hat16', name: "16'lık hat'li half-time", bpm: [65, 170], K: '1', S: '3', H: 'x*16',
+    desc: "trampet 3'te, hi-hat her 16'lıkta — trap, modern pop ve hızlı synthwave" },
+  { no: 22, cat: 'C', id: 'ht-rim', name: 'Rim click half-time', bpm: [60, 110], K: '1 3&', R: '3', H: '*4',
+    desc: "trampet yerine cross-stick 3'te, kick 1'de (bazen 3&'de), hi-hat çeyreklik — soğuk, klinik coldwave/darkwave" },
+  { no: 23, cat: 'C', id: 'ht-tom', name: 'Tom half-time', bpm: [55, 100], K: '1', F: '3',
+    desc: "backbeat 3'te floor tom'a verilir, trampet yok — ağır ve tribal" },
+  { no: 24, cat: 'C', id: 'ht-clap', name: 'Clap/snare katmanlı half-time', bpm: [60, 120], K: '1 2a', S: '3', C: '3', H: '*8',
+    desc: "3'te clap ve trampet üst üste, kick 1 ve 2a'da — 808 sesli elektronik versiyon" },
+  { no: 25, cat: 'C', id: 'ht-cine', name: 'Sinematik half-time', bpm: [65, 95], K: '1', S: '3', H: '1 3',
+    fill: { every: 4, S: '3', T: '4 4&', F: '4a' },
+    desc: "kick 1'de, trampet 3'te, hi-hat yalnızca 1 ve 3'te, her 4. ölçünün sonunda fill — baladlar ve gerilim bölümleri" },
+  // ---------------- D) 3/4 (waltz)
+  { no: 26, cat: 'D', id: 'w-basic', name: 'Temel waltz', meter: '3/4', bpm: [80, 180], K: '1', S: '2 3', H: '*4',
+    desc: "kick 1'de, trampet 2 ve 3'te, hi-hat çeyreklik (\"oom-pah-pah\")" },
+  { no: 27, cat: 'D', id: 'w-eighth', name: "Sekizlik hat'li waltz", meter: '3/4', bpm: [80, 180], K: '1', S: '2 3', H: '*8',
+    desc: "temel waltz, hi-hat her 8'likte — pop/rock'ta en yaygın hali" },
+  { no: 28, cat: 'D', id: 'w-ballad', name: 'Yavaş balad waltz', meter: '3/4', bpm: [50, 110], K: '1', S: '3', H: '*8',
+    desc: "kick 1'de, trampet yalnızca 3'te, 8'lik hi-hat — half-time waltz hissi" },
+  { no: 29, cat: 'D', id: 'w-rim', name: 'Rim click waltz', meter: '3/4', bpm: [60, 140], K: '1', R: '2 3',
+    desc: "kick 1'de, cross-stick 2 ve 3'te, hi-hat yok — yumuşak ve minimal" },
+  { no: 30, cat: 'D', id: 'w-syncopated', name: 'Senkoplu waltz', meter: '3/4', bpm: [70, 150], K: '1 2&', S: '3', H: '*8',
+    desc: "kick 1 ve 2&'de, trampet 3'te, 8'lik hi-hat" },
+  { no: 31, cat: 'D', id: 'w-dance', name: "Her vuruşta kick'li waltz", meter: '3/4', bpm: [100, 140], K: '1 2 3', S: '3', C: '3', H: 'o*&',
+    desc: "kick 1, 2, 3'te, clap + trampet 3'te, açık hi-hat \"&\"lerde — dans versiyonu" },
+  { no: 32, cat: 'D', id: 'w-tom', name: 'Tom waltz', meter: '3/4', bpm: [60, 130], K: '1', F: '1', T: '2 3',
+    desc: "floor tom 1'de, rack tom 2 ve 3'te, kick 1'de — tribal, ritüel gibi" },
+  { no: 33, cat: 'D', id: 'w-jazz', name: 'Jazz waltz', meter: '3/4', spb: 3, bpm: [90, 180], K: 'g1', D: '1 2 2a 3', P: '2 3',
+    desc: "swing'li ride 1, 2 (+ 2a), 3'te, hi-hat pedalı 2 ve 3'te, hafif kick 1'de" },
+  { no: 34, cat: 'D', id: 'w-rock', name: 'Rock waltz', meter: '3/4', bpm: [70, 140], K: '1 3&', S: '2 3', H: 'x*8 X1',
+    desc: "kick 1 ve 3&'de, trampet 2 ve 3'te, 8'lik hi-hat ve 1'de vurgu — daha ağır ve sürükleyici" },
+  { no: 35, cat: 'D', id: 'w-sparse', name: 'Seyrek waltz + açık hat', meter: '3/4', bpm: [55, 120], K: '1', S: '3', H: 'o3&',
+    desc: "kick 1'de, trampet 3'te, açık hi-hat 3&'de — darkwave kıtaları için" },
+  // ---------------- E) 6/8 (rakam = 8'lik adımı, 1–6)
+  { no: 37, cat: 'E', id: 'e-dotted', name: 'Noktalı çeyrek nabzı', meter: '6/8', spb: 3, bpm: [40, 90], K: '1', S: '4', H: '1 4',
+    desc: "kick 1'de, trampet 4'te, hi-hat yalnızca 1 ve 4'te — temel 6/8'in daha ferah hali" },
+  { no: 38, cat: 'E', id: 'e-twokick', name: "İki kick'li 6/8", meter: '6/8', spb: 3, bpm: [40, 85], K: '1 3', S: '4', H: '*8',
+    desc: "kick 1 ve 3'te, trampet 4'te, 8'lik hi-hat — biraz daha itiş" },
+  { no: 39, cat: 'E', id: 'e-pickup', name: 'Pickup kick', meter: '6/8', spb: 3, bpm: [40, 85], K: '1 6', S: '4', H: '*8',
+    desc: "kick 1 ve 6'da, trampet 4'te — 6'daki kick sonraki ölçüye iter" },
+  { no: 40, cat: 'E', id: 'e-rim', name: 'Cross-stick balad', meter: '6/8', spb: 3, bpm: [36, 75], K: '1', R: '4', H: '*8',
+    desc: "kick 1'de, rim click 4'te, hi-hat sekizlik — yavaş şarkılarda yumuşak seçenek" },
+  { no: 41, cat: 'E', id: 'e-tom', name: 'Tom-driven tribal 6/8', meter: '6/8', spb: 3, bpm: [45, 90], K: '1', F: '1 4', T: '3 6',
+    desc: "floor tom 1 ve 4'te, rack tom 3 ve 6'da, kick 1'de — yuvarlanan, ritüel gibi" },
+  { no: 42, cat: 'E', id: 'e-hemiola', name: 'Hemiola (6/8 üzerinde 3/4)', meter: '6/8', spb: 3, bpm: [40, 85], K: '1', S: '3 5', H: '*8',
+    desc: "vurgular 1, 3, 5'te (kick 1'de, trampet 3 ve 5'te) — waltz hissi 6/8 nabzını keser, gerilim yaratır" },
+  { no: 43, cat: 'E', id: 'e-halftime', name: 'Half-time 6/8', meter: '6/8', spb: 3, bpm: [36, 70], K: '1', S: '4', H: 'g1 g4',
+    fill: { every: 4, S: '4', T: '5', F: '6' },
+    desc: "kick 1'de, trampet yalnızca 4'te, hi-hat 1 ve 4'te seyrek, her 4. ölçünün sonunda fill — ağır ve sinematik" },
+  { no: 44, cat: 'E', id: 'e-march', name: 'March tarzı 6/8', meter: '6/8', spb: 3, bpm: [50, 100], K: '3 6', S: '1 3 4 6',
+    desc: "trampet 1, 3, 4, 6'da, kick 3 ve 6'da — askeri / rudimental" },
+  { no: 45, cat: 'E', id: 'e-openhat', name: 'Açık hat nabzı', meter: '6/8', spb: 3, bpm: [36, 80], K: '1', S: '4', H: 'x*8 o6',
+    desc: "kick 1'de, trampet 4'te, 8'lik hi-hat, 6'da açık hi-hat — sonraki ölçüye geçişi hazırlar" },
+];
+// zaten var olan, birebir aynı kalıplar yeniden yazılmadı; numarasıyla işaretlendi
+const TAGGED = { four: [2, 'A'], shuffle: [4, 'A'], ballad68: [36, 'E'] };
+for (const L of DRUM_LOOPS) { if (TAGGED[L.id]) { L.no = TAGGED[L.id][0]; L.cat = TAGGED[L.id][1]; } else L.cat = 'Z'; }
+for (const d of PATTERN_DEFS) DRUM_LOOPS.push(buildPattern(d));
+const loopLabel = (L) => (L.no ? `${L.no} · ` : '') + L.name;
 const VEL = { X: 1, x: 0.78, o: 0.7, g: 0.32 };
 // loop'un "ağırlık merkezi" profili (adım başına): melodinin vurguları kick'le örtüşmeli; trampet (backbeat)
 // melodinin vurgusuyla çakışmak zorunda değil, onu tamamlar — bu yüzden az sayılır.
 function loopProfile(L) {
   const n = L.K.length, p = new Float64Array(n);
+  const peak = (lanes, i) => Math.max(0, ...lanes.map((k) => (L[k] && L[k][i] !== '.' ? VEL[L[k][i]] : 0)));
   for (let i = 0; i < n; i++) {
-    p[i] += L.K[i] !== '.' ? 1 * VEL[L.K[i]] : 0;
-    p[i] += L.S[i] !== '.' ? 0.25 * VEL[L.S[i]] : 0;
-    p[i] += L.H[i] !== '.' ? 0.1 * VEL[L.H[i]] : 0;
+    p[i] += 1 * peak(['K'], i);
+    p[i] += 0.25 * peak(['S', 'C', 'R', 'F', 'T'], i); // trampet / clap / rim / tom'lar: aynı yerde üst üste olunca bir sayılır
+    p[i] += 0.1 * peak(['H', 'D', 'P'], i);
   }
   return p;
 }
@@ -235,7 +393,9 @@ function suggestDrumLoop(notes, settings, est = null) {
   const P = 60 / bpm;
   const res = { meter, bpm, ranked: [], best: null, ok: false, reasons: [], request: '' };
   const ns = notes.filter((n) => n.t1 > n.t0);
-  const feel = est && est.ok ? est.feel : 'straight';
+  // senin bildirdiğin swing oranı (≥ %60) varsa his üçlemedir; yoksa melodiden tahmin
+  const declared = settings.swingRatio >= 0.6;
+  const feel = declared ? 'triple' : est && est.ok ? est.feel : 'straight';
   const pool = loopsFor(meter);
   if (!pool.length) res.reasons.push(`${meter} ölçüsü için loop yok.`);
   for (const L of pool) {
@@ -250,6 +410,7 @@ function suggestDrumLoop(notes, settings, est = null) {
     if (settings.clickFeel === 'halftime' && L.id === 'half') { total += 0.12; why.push('click deseni yarım zaman seçili'); }
     why.push(tf === 1 ? `tempo ${bpm} BPM aralıkta (${L.bpm[0]}–${L.bpm[1]})` : `tempo ${bpm} BPM aralık dışı (${L.bpm[0]}–${L.bpm[1]})`);
     if (mp) why.push(acc > 0.25 ? 'vurguları melodinin güçlü vuruşlarıyla örtüşüyor' : acc > 0 ? 'vurgularla zayıf örtüşme' : 'vurguları melodinin güçlü vuruşlarına ters düşüyor');
+    if (declared && ff) why.push(`swing oranın %${Math.round(settings.swingRatio * 100)}: üçleme hisli loop'lar öne çıkar`);
     if (!ff) why.push(L.feel === 'triple' ? 'loop üçleme hisli, melodi düz' : 'loop düz, melodi üçleme hisli');
     res.ranked.push({ loop: L, score: total, accent: acc, tempo: tf, feelOk: !!ff, why });
   }
@@ -286,7 +447,7 @@ function suggestDrumLoop(notes, settings, est = null) {
 // ---- 4) SES: kick / trampet / hi-hat sentezi (tekrarlanabilir gürültü)
 function noiseGen(seed) { let r = seed >>> 0; return () => ((r = (r * 1664525 + 1013904223) >>> 0) / 4294967296) * 2 - 1; }
 function synthDrum(kind, sr) {
-  const dur = kind === 'K' ? 0.45 : kind === 'S' ? 0.25 : kind === 'O' ? 0.35 : 0.07;
+  const dur = { K: 0.45, S: 0.25, O: 0.35, F: 0.5, T: 0.38, C: 0.22, R: 0.05, D: 0.7, P: 0.05 }[kind] || 0.07;
   const n = Math.round(dur * sr), x = new Float32Array(n), rnd = noiseGen(kind.charCodeAt(0) * 7919);
   if (kind === 'K') {
     let ph = 0;
@@ -302,6 +463,37 @@ function synthDrum(kind, sr) {
       const nz = rnd(); lp += 0.55 * (nz - lp);
       x[i] = 0.45 * Math.sin(ph) * Math.exp(-t / 0.05) + 0.6 * (nz - 0.5 * lp) * Math.exp(-t / 0.085);
     }
+  } else if (kind === 'F' || kind === 'T') { // tom'lar: perdesi düşen sinüs + kısa vuruş gürültüsü (F alçak floor, T rack)
+    const f0 = kind === 'F' ? 78 : 125, bend = kind === 'F' ? 55 : 80, tau = kind === 'F' ? 0.2 : 0.14;
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr; ph += (2 * Math.PI * (f0 + bend * Math.exp(-t / 0.04))) / sr;
+      x[i] = 0.9 * Math.sin(ph) * Math.exp(-t / tau) + 0.2 * rnd() * Math.exp(-t / 0.006);
+    }
+  } else if (kind === 'C') { // clap: üç kısa gürültü patlaması + kuyruk
+    let lp = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, nz = rnd(); lp += 0.35 * (nz - lp);
+      const burst = [0, 0.011, 0.022].reduce((a, t0) => a + (t >= t0 ? Math.exp(-(t - t0) / 0.004) : 0), 0);
+      x[i] = 0.7 * (nz - lp) * (burst * 0.6 + 0.5 * Math.exp(-t / 0.06));
+    }
+  } else if (kind === 'R') { // rim click (cross-stick): kısa, tahta gibi tıkırtı
+    let ph = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / sr; ph += (2 * Math.PI * 1650) / sr;
+      x[i] = 0.55 * Math.sin(ph) * Math.exp(-t / 0.006) + 0.35 * rnd() * Math.exp(-t / 0.003);
+    }
+  } else if (kind === 'D') { // ride: uyumsuz tizler + tizleştirilmiş gürültü
+    let prev = 0;
+    const fr = [3170, 4210, 5530, 6890, 8390];
+    for (let i = 0; i < n; i++) {
+      const t = i / sr, nz = rnd(), hp = nz - prev; prev = nz;
+      let m = 0; for (const f of fr) m += Math.sin(2 * Math.PI * f * t);
+      x[i] = (0.05 * m + 0.12 * hp) * Math.exp(-t / 0.28) + 0.12 * Math.exp(-t / 0.004) * rnd();
+    }
+  } else if (kind === 'P') { // hi-hat pedalı: kapalı hi-hat'ten daha yumuşak, kısa
+    let prev = 0;
+    for (let i = 0; i < n; i++) { const nz = rnd(), hp = nz - prev; prev = nz; x[i] = 0.2 * hp * Math.exp(-(i / sr) / 0.012); }
   } else { // H (kapalı) / O (açık): tizleştirilmiş gürültü
     let prev = 0;
     const tau = kind === 'O' ? 0.12 : 0.018;
@@ -310,18 +502,26 @@ function synthDrum(kind, sr) {
   for (let i = 0; i < 32 && i < n; i++) x[n - 1 - i] *= i / 32;
   return x;
 }
-// Zaman çizelgesi boyunca davul vuruşları: {t (s), kind 'K'|'S'|'H'|'O', vel, q (çeyrek)}
+// Zaman çizelgesi boyunca davul vuruşları: {t (s), kind 'K'|'S'|'H'|'O'|'F'|'T'|'C'|'R'|'D'|'P', vel, q (çeyrek)}
+// loop.lay: şerit başına gecikme (adımın kesri; ör. trampet hafif geriden). loop.fill: her N. ölçüde o şeritlerin yerine fill kalıbı.
 function drumEvents(loop, g, bars, fromBar = 1) {
   const ev = [];
   if (!loop) return ev;
   const steps = loop.K.length, stepQ = g.barQ / steps;
-  for (let b = fromBar - 1; b < bars; b++) for (let i = 0; i < steps; i++) {
-    const q = b * g.barQ + i * stepQ;
-    if (loop.K[i] !== '.') ev.push({ q, t: q * g.spq, kind: 'K', vel: VEL[loop.K[i]] });
-    if (loop.S[i] !== '.') ev.push({ q, t: q * g.spq, kind: 'S', vel: VEL[loop.S[i]] });
-    if (loop.H[i] !== '.') ev.push({ q, t: q * g.spq, kind: loop.H[i] === 'o' ? 'O' : 'H', vel: VEL[loop.H[i]] });
+  for (let b = fromBar - 1; b < bars; b++) {
+    const fill = loop.fill && (b + 1) % loop.fill.every === 0 ? loop.fill.lanes : null;
+    for (const lane of LANES) {
+      const pat = (fill && fill[lane]) || loop[lane];
+      if (!pat) continue;
+      const lay = ((loop.lay && loop.lay[lane]) || 0) * stepQ;
+      for (let i = 0; i < steps; i++) {
+        if (pat[i] === '.') continue;
+        const q = b * g.barQ + i * stepQ + lay;
+        ev.push({ q, t: q * g.spq, kind: lane === 'H' && pat[i] === 'o' ? 'O' : lane, vel: VEL[pat[i]] });
+      }
+    }
   }
-  return ev;
+  return ev.sort((a, b) => a.q - b.q); // kararlı sıralama: aynı anda K, S, H … sırası korunur
 }
 function renderDrums(events, sr, length, gain = 1) {
   const out = new Float32Array(length), bank = {};
@@ -332,12 +532,20 @@ function renderDrums(events, sr, length, gain = 1) {
   }
   return out;
 }
-const GM_DRUM = { K: 36, S: 38, H: 42, O: 46 };
-// ızgara metni (gösterim): her satır bir enstrüman, | vuruş ayracı
+const GM_DRUM = { K: 36, S: 38, H: 42, O: 46, F: 41, T: 47, C: 39, R: 37, D: 51, P: 44 };
+const DRUM_KINDS = Object.keys(GM_DRUM);
+// ızgara metni (gösterim): her satır bir enstrüman, | vuruş ayracı; boş şeritler gösterilmez (kick hep), fill ayrı blok
 function loopGridText(L) {
   const spb = L.spb, row = (s) => s.match(new RegExp(`.{1,${spb}}`, 'g')).join('|');
-  return `Kick    |${row(L.K)}|\nTrampet |${row(L.S)}|\nHi-hat  |${row(L.H)}|`;
+  const used = (src) => LANES.filter((k) => src[k] && (k === 'K' || /[^.]/.test(src[k])));
+  const fillLanes = L.fill ? LANES.filter((k) => L.fill.lanes[k]) : [];
+  const w = Math.max(8, ...used(L).concat(fillLanes).map((k) => LANE_NAME[k].length + 1));
+  const rows = (src, lanes) => lanes.map((k) => `${LANE_NAME[k].padEnd(w)}|${row(src[k])}|`).join('\n');
+  let t = rows(L, used(L));
+  if (L.fill) t += `\n\nFill (her ${L.fill.every}. ölçü):\n` + rows(L.fill.lanes, fillLanes);
+  if (L.lay) t += '\n\nGecikme: ' + Object.keys(L.lay).map((k) => `${LANE_NAME[k]} adımın %${Math.round(L.lay[k] * 100)}'i kadar geriden`).join(', ');
+  return t;
 }
 
-Object.assign(C, { estimateMeter, DRUM_LOOPS, loopsFor, suggestDrumLoop, synthDrum, drumEvents, renderDrums, GM_DRUM, loopGridText, loopProfile });
+Object.assign(C, { estimateMeter, DRUM_LOOPS, DRUM_CATS: CATS, DRUM_KINDS, LANES, parsePattern, loopLabel, loopsFor, suggestDrumLoop, synthDrum, drumEvents, renderDrums, GM_DRUM, loopGridText, loopProfile });
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -64,6 +64,32 @@ function makeGrid(settings) {
   return Object.assign({}, m, { meter: settings.meter, bpm: settings.bpm, spq, pulseSec, barSec: m.barQ * spq, quarterBpm: 60 / spq });
 }
 
+// ---------------------------------------------------------------- ALT BÖLME / SWING
+// r = vuruşun "ve"sinin (zayıf sekizliğin) vuruş içindeki yeri: 0,5 düz · 0,667 üçleme (her vuruş 3'e bölünür, 12/8 hissi) ·
+// arası swing (ör. %70 ölçülmüş shuffle). Vuruş içi konum parçalı doğrusal eşlenir: anchor (içeriğin kendi "ve" yeri; düz ızgarada 0,5,
+// üçleme ızgarasında 2/3) → r. Yalnızca çeyrek vuruşlu ölçülerde (4/4, 3/4, 2/4); 6/8'in vuruşu zaten üçe bölünür.
+// Üçleme içeriği (anchor 2/3) r < 0,55 iken (düz proje) olduğu gibi kalır: shuffle loop'u düz projede de üçleme çalar.
+function swingMap(q, g, r, anchor = 0.5) {
+  if (!r || g.pulseQ !== 1 || Math.abs(r - anchor) < 1e-9 || (anchor > 0.6 && r < 0.55)) return q;
+  const k = Math.floor(q + 1e-9), f = q - k;
+  return k + (f < anchor ? f * (r / anchor) : r + (f - anchor) * ((1 - r) / (1 - anchor)));
+}
+function swingUnmap(q, g, r, anchor = 0.5) {
+  if (!r || g.pulseQ !== 1 || Math.abs(r - anchor) < 1e-9 || (anchor > 0.6 && r < 0.55)) return q;
+  const k = Math.floor(q + 1e-9), f = q - k;
+  return k + (f < r ? f * (anchor / r) : anchor + (f - r) * ((1 - anchor) / (1 - r)));
+}
+// Melodinin swing oranı: ölçü içindeki zayıf vuruşa düşen (vuruşun %40–85'i) nota başlangıçlarının medyanı. notes: {q0}; ızgara hizalı olmalı
+function estimateSwing(notes, g) {
+  if (g.pulseQ !== 1) return null;
+  const phis = notes.map((n) => n.q0 - Math.floor(n.q0 + 1e-9));
+  const off = phis.filter((f) => f > 0.42 && f < 0.85).sort((a, b) => a - b);
+  if (phis.length < 8 || off.length < 4) return null;
+  const med = off.length % 2 ? off[(off.length - 1) / 2] : (off[off.length / 2 - 1] + off[off.length / 2]) / 2;
+  const mad = off.map((f) => Math.abs(f - med)).sort((a, b) => a - b)[Math.floor(off.length / 2)];
+  return { ratio: Math.max(0.5, med), raw: med, n: off.length, of: phis.length, spread: mad, confident: off.length >= 6 && mad < 0.06 }; // oran en az %50 (daha erken = düz)
+}
+
 // ---------------------------------------------------------------- mod / scale
 const MODES = {
   major:         { name: 'Majör (İyonyen)',      short: 'majör',        steps: [0, 2, 4, 5, 7, 9, 11], prior: 1.0,  parent: 0 },
@@ -1006,6 +1032,13 @@ function buildChords(notes, sections, g, opts = {}, locks = []) {
           } else { barChord = cur; barReason = 'mevcut akor korunuyor' + rhTxt; }
         }
       }
+      // senin ölçü başı işaretin (önceliği motor kararlarından yüksek): ✂ = akorun kökü burada değişir, = burada değişmez (ölçü ortası işaretleri süreli Viterbi motorunda)
+      const mkB = !lockFull && cur && !isFirst ? (o.marks || []).find((m) => m.bar === bar && !m.half) : null;
+      if (mkB && mkB.kind === 'change' && barChord.root === cur.root) {
+        const cl = barCands || evalAll(bn, extraBar);
+        const alt = cl.find((c) => c.chord.root !== cur.root && !c.friction) || cl.find((c) => c.chord.root !== cur.root);
+        if (alt) { barChord = alt.chord; barReason = '✂ senin değişim noktan: akor burada değişir'; }
+      } else if (mkB && mkB.kind === 'hold' && !sameChord(barChord, cur)) { barChord = cur; barReason = '= senin işaretin: akor burada değişmez'; }
       // yarım ölçü kontrolü
       const halves = [];
       if (g.split && !lockFull && (!o.downbeatOnly || lockAt(bar, 0) || lockAt(bar, 1))) {
@@ -1568,8 +1601,8 @@ function renderPiano(events, samples, sr, length, gain = 1) {
     let s = samples[0];
     for (const c of samples) if (Math.abs(c.midi - e.midi) < Math.abs(s.midi - e.midi)) s = c;
     const rate = Math.pow(2, (e.midi - s.midi) / 12) * (s.sr / sr);
-    const start = Math.round(e.t * sr), rel = 0.35, relN = Math.round(rel * sr);
-    const holdN = Math.round(e.dur * sr);
+    const start = Math.round(e.t * sr), rel = e.rel != null ? e.rel : 0.35, relN = Math.max(1, Math.round(rel * sr));
+    const holdN = Math.round((e.hold != null ? e.hold : e.dur) * sr);
     const v = gain * Math.pow((e.vel || 80) / 127, 1.6);
     for (let i = 0; i < holdN + relN; i++) {
       const o = start + i;
@@ -1601,6 +1634,51 @@ function synthPianoSample(midi, sr, dur = 3) {
   let mx = 0;
   for (let i = 0; i < n; i++) { if (i < att) out[i] *= i / att; mx = Math.max(mx, Math.abs(out[i])); }
   for (let i = 0; i < n; i++) out[i] *= 0.6 / mx;
+  return out;
+}
+
+// ---------------------------------------------------------------- synth klavye (canlı çalma app.js'te Web Audio ile, aynı parametreler)
+// İki fark edilmiş testere + üçgen → alçak geçiren filtre; akor: yavaş atak, tutulan seviye · arpej: kısa, "pluck"
+const SYNTH = {
+  level: 0.2,
+  chord: { a: 0.015, d: 0.4, s: 0.6, r: 0.6, cut0: 2600, cut1: 1500, det: 7 },
+  arp: { a: 0.004, d: 0.22, s: 0.12, r: 0.25, cut0: 4200, cut1: 1100, det: 6 },
+  lead: { a: 0.01, d: 0.12, s: 0.8, r: 0.12, cut0: 3600, cut1: 3000, det: 5 }, // MIDI melodisi (vokal yerine)
+};
+// zarf: atak → sürekli seviyeye çökme → (dur sonunda) bırakma; fade: tutma boyunca üstel olarak %6'ya iner. t: nota başından saniye
+function synthEnv(arp, dur, fade, lead) {
+  const P = lead ? SYNTH.lead : arp ? SYNTH.arp : SYNTH.chord;
+  const hold = (t) => {
+    const a = t < P.a ? t / P.a : P.s + (1 - P.s) * Math.exp(-(t - P.a) / (P.d / 3));
+    return fade ? a * Math.pow(0.06, Math.min(t, dur) / dur) : a;
+  };
+  const endLvl = hold(dur);
+  return { tail: P.r * 1.6, at: (t) => (t < dur ? hold(t) : endLvl * Math.exp(-(t - dur) / (P.r / 3))) };
+}
+function renderSynth(events, sr, length, gain = 1) {
+  const out = new Float32Array(length);
+  for (const e of events) {
+    const P = e.lead ? SYNTH.lead : e.arp ? SYNTH.arp : SYNTH.chord, env = synthEnv(!!e.arp, e.dur, !!e.fade, !!e.lead);
+    const f = midiToHz(e.midi), start = Math.round(e.t * sr), total = Math.round((e.dur + env.tail) * sr);
+    const v = gain * SYNTH.level * Math.pow((e.vel || 80) / 127, 1.4);
+    const inc1 = (f * Math.pow(2, P.det / 1200)) / sr, inc2 = (f * Math.pow(2, -P.det / 1200)) / sr, inc3 = f / sr;
+    let ph1 = 0, ph2 = 0.37, ph3 = 0, y1 = 0, y2 = 0, k = 0, a = 0;
+    for (let i = 0; i < total; i++) {
+      const o = start + i;
+      if (o >= length) break;
+      if ((i & 31) === 0) { // zarf ve filtre kesimi her 32 örnekte güncellenir
+        a = env.at(i / sr);
+        const fc = P.cut1 + (P.cut0 - P.cut1) * Math.exp(-(i / sr) / (P.d / 2));
+        k = 1 - Math.exp((-2 * Math.PI * Math.min(fc, sr * 0.45)) / sr);
+      }
+      ph1 += inc1; if (ph1 >= 1) ph1 -= 1;
+      ph2 += inc2; if (ph2 >= 1) ph2 -= 1;
+      ph3 += inc3; if (ph3 >= 1) ph3 -= 1;
+      const x = 0.5 * (2 * ph1 - 1) + 0.5 * (2 * ph2 - 1) + 0.4 * (4 * Math.abs(ph3 - 0.5) - 1);
+      y1 += k * (x - y1); y2 += k * (y1 - y2); // iki kutuplu alçak geçiren
+      if (o >= 0) out[o] += y2 * a * v;
+    }
+  }
   return out;
 }
 
@@ -1689,20 +1767,132 @@ function synthTestVocal(sr = 44100, opts = {}) {
   };
 }
 
+// Bölüm başına farklı akor sesi: her bölümün akorları kendi ayarıyla (optsFor(bölümId) → pianoEvents seçenekleri) olaylara dönüşür
+function arrangePiano(chords, g, optsFor) {
+  const out = [];
+  let cur = [], sec = null;
+  const flush = () => { if (cur.length) out.push(...pianoEvents(cur, g, optsFor(sec))); };
+  for (const c of chords) { if (c.section !== sec) { flush(); cur = []; sec = c.section; } cur.push(c); }
+  flush();
+  return out;
+}
+
+// ---------------------------------------------------------------- DAVUL DÜZENLEMESİ: bölüm başına loop + geçişlerde fill
+// plan(ölçü) → o ölçünün davul loop'u ya da null; fillAt(ölçü) → bu ölçünün sonunda bölüm geçişi fill'i var mı
+function arrangeDrums(g, bars, startBar, plan, fillAt, swing) {
+  const DE = root.Core.drumEvents, ev = [];
+  for (let b = Math.max(1, startBar || 1); b <= bars; b++) {
+    const L = plan(b);
+    if (!L) continue;
+    let be = DE(L, g, b, b);
+    if (fillAt && fillAt(b)) {
+      const lastQ = b * g.barQ - g.pulseQ, n = g.meter === '6/8' || L.feel === 'triple' ? 3 : 4;
+      be = be.filter((e) => e.q < lastQ - 1e-6);
+      for (let i = 0; i < n; i++) { const q = lastQ + (i * g.pulseQ) / n; be.push({ q, t: q * g.spq, kind: 'S', vel: 0.45 + (0.5 * i) / (n - 1), fill: true }); }
+    }
+    if (swing) for (const e of be) { const q = swingMap(e.q, g, swing, L.feel === 'triple' ? 2 / 3 : 0.5); e.q = q; e.t = q * g.spq; } // swing: zayıf vuruşlar projenin oranına kayar
+    ev.push(...be);
+  }
+  return ev;
+}
+
+// ---------------------------------------------------------------- NOTA BÖLME (çift tık): programın tek ses sandığı yeri ikiye ayır
+// Bölme noktaları projede kayıttaki saniye olarak tutulur (proj.noteSplits); perde analizi yeniden yapılsa da uygulanır.
+const SPLIT_MIN_FRAMES = 2;
+function applyNoteSplits(notes, track, splits) {
+  if (!splits || !splits.length || !track) return notes;
+  const hop = track.hopSec, sorted = [...splits].sort((a, b) => a - b);
+  const midiAt = (i) => (track.f0[i] > 0 ? hzToMidi(track.f0[i]) : NaN);
+  const mk = (src, f0i, f1i, extra) => {
+    const vals = [];
+    const trim = f1i - f0i >= 10 ? Math.floor((f1i - f0i) * 0.15) : 0;
+    for (let i = f0i + trim; i < f1i - trim; i++) { const m = midiAt(i); if (m === m) vals.push(m); }
+    const med = vals.length ? median(vals) : src.median;
+    const nearest = Math.round(med);
+    return Object.assign({}, src, { f0i, f1i, t0: f0i * hop, t1: f1i * hop, median: med, nearest, cents: Math.round((med - nearest) * 100) }, extra);
+  };
+  const out = [];
+  for (const nt of notes) {
+    let parts = [nt];
+    for (const t of sorted) {
+      const idx = parts.findIndex((p) => t > p.t0 && t < p.t1);
+      if (idx < 0) continue;
+      const p = parts[idx], fi = Math.round(t / hop);
+      if (fi - p.f0i < SPLIT_MIN_FRAMES || p.f1i - fi < SPLIT_MIN_FRAMES) continue;
+      parts.splice(idx, 1, mk(p, p.f0i, fi, { splitEnd: fi * hop }), mk(p, fi, p.f1i, { splitStart: fi * hop }));
+    }
+    out.push(...parts);
+  }
+  return out;
+}
+// Bölme noktası ekle: notanın düzenlemesi (etiket, ses düzeltmesi, zaman kaydırması) iki yarıya da geçer
+function addNoteSplit(proj, note, t, spq) {
+  proj.noteSplits = proj.noteSplits || [];
+  if (proj.noteSplits.some((x) => Math.abs(x - t) < 0.002)) return false;
+  proj.noteSplits.push(t); proj.noteSplits.sort((a, b) => a - b);
+  const e = findEdit(proj.noteEdits || [], note);
+  if (e) {
+    const e2 = Object.assign({}, e, { t0: t, t1: Math.max(e.t1, note.t1) });
+    if (e.q0to != null) e2.q0to = e.q0to + (t - note.t0) / spq; // zamanı kaydırılmış notanın ikinci yarısı da aynı kadar kayar
+    e.t1 = t;
+    proj.noteEdits.push(e2);
+  }
+  return true;
+}
+// Bölmeyi geri al: iki yarının düzenlemeleri birleşir (soldaki öncelikli)
+function removeNoteSplit(proj, t, spq) {
+  const i = (proj.noteSplits || []).findIndex((x) => Math.abs(x - t) < 0.002);
+  if (i < 0) return false;
+  proj.noteSplits.splice(i, 1);
+  const edits = proj.noteEdits || [];
+  const left = edits.find((e) => Math.abs(e.t1 - t) < 0.002), right = edits.find((e) => Math.abs(e.t0 - t) < 0.002);
+  if (left && right && left !== right) {
+    left.t1 = right.t1;
+    for (const k of ['target', 'label']) if (left[k] == null && right[k] != null) left[k] = right[k];
+    if (!left.locked && right.locked) left.locked = true;
+    if (left.q0to == null && right.q0to != null) left.q0to = right.q0to - (t - left.t0) / spq;
+    proj.noteEdits = edits.filter((e) => e !== right);
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------- ŞARKIYI KAYDIR (başa boşluk bırak / boşluğu azalt)
+// Ses n ölçü geç (n<0: erken) başlar. Ölçü numarasına bağlı her şey (bölümler, akor kilitleri, işaretler, zaman kaydırmaları,
+// akor/davul başlangıcı) şarkıyla birlikte kayar; orijinal ses ve tap noktaları (kayıt zamanı) değişmez.
+// Akor/davul başlangıcı 1. ölçüdeyse (varsayılan) yerinde kalır: boşluğa giriş çalabilirsin.
+function shiftSong(proj, nBars) {
+  const g = makeGrid(proj.settings), n = Math.round(nBars);
+  if (!n) return proj;
+  proj.audio.leadBars = (proj.audio.leadBars || 0) + n;
+  const mv = (b) => b + n;
+  proj.sections = (proj.sections || []).map((s) => Object.assign({}, s, { startBar: Math.max(1, mv(s.startBar)), endBar: mv(s.endBar) })).filter((s) => s.endBar >= s.startBar);
+  const byBar = (arr) => (arr || []).map((x) => Object.assign({}, x, { bar: mv(x.bar) })).filter((x) => x.bar >= 1);
+  proj.chordLocks = byBar(proj.chordLocks); proj.chordPins = byBar(proj.chordPins); proj.changeMarks = byBar(proj.changeMarks);
+  for (const e of proj.noteEdits || []) if (e.q0to != null) e.q0to += n * g.barQ;
+  if ((proj.chordStartBar || 1) > 1) proj.chordStartBar = Math.max(1, mv(proj.chordStartBar));
+  if (proj.drums && (proj.drums.startBar || 1) > 1) proj.drums.startBar = Math.max(1, mv(proj.drums.startBar));
+  return proj;
+}
+
 // ---------------------------------------------------------------- PIPELINE (UI ve test ortak)
 function newProject() {
   return {
     version: 1,
     settings: { bpm: 120, meter: '4/4', latencyMs: 0, clickFeel: 'normal' },
-    audio: { offsetSec: 0, alignMode: 'none' },
+    audio: { offsetSec: 0, alignMode: 'none', leadBars: 0 }, // leadBars: şarkının başındaki boş ölçü sayısı (kaydırma)
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
     chordLocks: [], chordPins: [], changeMarks: [],
-    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
-    drums: { on: false, loop: 'auto' },
+    swing: { ratio: 0.5 }, // alt bölme: 0,5 düz · 0,667 üçleme · arası swing (ölçülen %70 → 0,70); gitar ve bas da aynı ızgaraya oturur
+    chordStartBar: 1, noteSplits: [], // akorların girdiği ilk ölçü (bu ölçü akorlar için 1. ölçüdür); çift tıkla bölünen yerler (kayıttaki saniye)
+    piano: Object.assign({}, PIANO_DEFAULTS),
+    mixer: { vocal: { vol: 0, mute: false, solo: false }, piano: { vol: -6, mute: false, solo: false }, drums: { vol: -8, mute: false, solo: false }, guitar: { vol: -4, mute: false, solo: false }, bass: { vol: -4, mute: false, solo: false }, ab: 'corrected', pedal: false, click: false },
+    drums: { on: false, loop: 'auto', startBar: 1, fills: true }, // startBar: davulun girdiği ilk ölçü (loop'un 1. ölçüsü burası) · fills: bölüm geçişlerinde davul fill'i
+    guitar: root.Core && root.Core.defaultGuitarState ? root.Core.defaultGuitarState('4/4') : null, // gitar katmanı (guitar.js): enstrüman seçimi, bölüm bazlı partiler, presetler
+    bass: root.Core && root.Core.Bass ? root.Core.Bass.defaultBassTrack() : null, // bas katmanı (bass.js): üretilen notalar, bölüm ayarları, döngüler, profiller
     quant: { grid: '1/8', strength: 100 }, taps: [],
   };
 }
@@ -1721,11 +1911,13 @@ function totalBars(proj, duration) {
   const maxSec = Math.max(0, ...proj.sections.map((s) => s.endBar * g.barSec));
   return Math.max(4, Math.ceil(Math.max(d, maxSec) / g.barSec - 1e-6));
 }
-const effectiveOffset = (proj) => (proj.audio.offsetSec || 0) + (proj.audio.source === 'record' ? (proj.settings.latencyMs || 0) / 1000 : 0);
+// Şarkıyı kaydırma (leadBars): ses zaman çizelgesinde bu kadar ölçü geç başlar; ölçü çizgileri, bölümler, kilitler yerinde kalır
+const effectiveOffset = (proj) => (proj.audio.offsetSec || 0) + (proj.audio.source === 'record' ? (proj.settings.latencyMs || 0) / 1000 : 0) - (proj.audio.leadBars || 0) * makeGrid(proj.settings).barSec;
 
 // Senkron türetme aşamaları: notlar → ton önerileri → düzeltme → akorlar → voicing
 function derive(proj, st) {
   const g = makeGrid(proj.settings);
+  g.swing = proj.swing && proj.swing.ratio > 0.5 ? proj.swing.ratio : 0; // genel alt bölme: gitar ve bas olayları da bu ızgaraya oturur
   const off = effectiveOffset(proj);
   const bars = totalBars(proj, st.duration);
   let sections = proj.sections.map((s) => Object.assign({}, s));
@@ -1808,7 +2000,11 @@ function derive(proj, st) {
   const userLocks = proj.chordLocks || [];
   const covers = (l, bar, half) => l.bar === bar && (l.half == null || half == null || l.half === half);
   const pins = (proj.chordPins || []).filter((p) => !userLocks.some((l) => covers(l, p.bar, p.half)));
-  const chords = buildChords(notes, sections, g, chordOpts, [...userLocks, ...pins]);
+  // akorların girdiği ilk ölçü: bu ölçü akor motoru için 1. ölçüdür (bölüm başı = ev akoru tercihi, ortak nota vb.);
+  // öncesinde akor ve piyano yoktur. Bölümler (ton önerisi, görünüm) olduğu gibi kalır.
+  const chordStart = Math.max(1, Math.round(proj.chordStartBar || 1));
+  const chordSections = chordStart > 1 ? sections.filter((s) => s.endBar >= chordStart).map((s) => (s.startBar < chordStart ? Object.assign({}, s, { startBar: chordStart }) : s)) : sections;
+  const chords = buildChords(notes, chordSections, g, chordOpts, [...userLocks, ...pins]);
   for (const sl of chords) {
     const ul = userLocks.find((l) => covers(l, sl.bar, sl.half));
     sl.locked = !!ul;
@@ -1820,7 +2016,7 @@ function derive(proj, st) {
   voiceChords(chords, notes, sections, { pedal: proj.mixer.pedal });
   // motorun kilitler varken (pin olmadan) ne seçeceği → sabit akorlar için öneri + neden
   if (pins.length) {
-    const free = buildChords(notes, sections, g, chordOpts, userLocks);
+    const free = buildChords(notes, chordSections, g, chordOpts, userLocks);
     chords.forEach((sl, i) => {
       if (!sl.pinned) return;
       const mid = (sl.q0 + sl.q1) / 2;
@@ -1835,17 +2031,87 @@ function derive(proj, st) {
   }
   // kilitli akor için uyarı/öneriler: sürtünme (önemli), renk ve çevrim (isteğe bağlı)
   chords.forEach((sl) => { if (sl.locked) { sl.lockAdvice = lockAdvice(sl, slotNotes(notes, sl.q0, sl.q1, g), chordOpts.colorPenalty || 0); sl.suggest = null; } });
-  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning, timeMap };
+  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning, timeMap, chordStart };
 }
 
-// Nota olayları (oynatma + MIDI)
-function pianoEvents(chords, g) {
-  const ev = [];
+// ---------------------------------------------------------------- AKOR SESİ: piyano / synth klavye × akor / arpej
+// style: 'piano-chord' | 'piano-arp' | 'synth-chord' | 'synth-arp'
+// repeat: 'off' = her ölçüde akor yeniden basılır · 'hold' = aynı akor art arda gelince bir kez basılır, sonraki ölçülerde sürer ·
+//         'fade' = bir kez basılır, uzayan ölçülerde yavaşça söner (fade-out). holdBars: tek vuruşun en fazla kaç ölçü süreceği.
+const PIANO_STYLES = {
+  'piano-chord': { inst: 'piano', pattern: 'chord', name: 'Piyano — akor' },
+  'piano-arp': { inst: 'piano', pattern: 'arp', name: 'Piyano — arpej' },
+  'synth-chord': { inst: 'synth', pattern: 'chord', name: 'Synth klavye — akor' },
+  'synth-arp': { inst: 'synth', pattern: 'arp', name: 'Synth klavye — arpej' },
+  'piano-shuffle': { inst: 'piano', pattern: 'shuffle', name: 'Piyano — shuffle (X . t)' },
+  'synth-shuffle': { inst: 'synth', pattern: 'shuffle', name: 'Synth klavye — shuffle (X . t)' },
+};
+const ARP_RATES = { '1/4': 1, '1/8': 0.5, '1/16': 0.25 };
+const PIANO_DEFAULTS = { style: 'piano-chord', repeat: 'hold', holdBars: 2, rate: '1/8' };
+// proje ayarından (proj.piano) pianoEvents / render seçenekleri
+function pianoOpts(p, swing) {
+  const q = Object.assign({}, PIANO_DEFAULTS, p || {});
+  const st = PIANO_STYLES[q.style] || PIANO_STYLES['piano-chord'];
+  return { inst: st.inst, pattern: st.pattern, repeat: ['off', 'hold', 'fade'].includes(q.repeat) ? q.repeat : 'hold', holdBars: clamp(Math.round(q.holdBars) || 2, 1, 16), rate: ARP_RATES[q.rate] ? q.rate : '1/8', swing: swing || 0.5 };
+}
+const sameVoicing = (a, b) => !!a && !!b && a.bass === b.bass && a.notes.length === b.notes.length && a.notes.every((m, i) => m === b.notes[i]);
+// Art arda gelen AYNI akor (aynı seslendirme, aynı bölüm) tek vuruşta birleşir: ilk ölçünün başında bir kez basılır,
+// sonraki ölçüye sürer. En fazla holdBars ölçü; sonrasında yeniden basılır.
+function holdGroups(chords, g, o) {
+  const groups = [], maxQ = o.holdBars * g.barQ;
   for (const c of chords) {
     if (!c.voicing) continue;
-    const t = c.q0 * g.spq, dur = (c.q1 - c.q0) * g.spq;
-    ev.push({ t, dur, midi: c.voicing.bass, vel: 78, q0: c.q0, q1: c.q1 });
-    for (const m of c.voicing.notes) ev.push({ t, dur, midi: m, vel: 62, q0: c.q0, q1: c.q1 });
+    const last = groups[groups.length - 1];
+    if (o.repeat !== 'off' && last && last.section === c.section && Math.abs(last.q1 - c.q0) < 1e-6 && sameChord(last.chord, c.chord) && sameVoicing(last.voicing, c.voicing) && c.q1 - last.q0 <= maxQ + 1e-6) {
+      last.q1 = c.q1; last.n++;
+    } else groups.push({ q0: c.q0, q1: c.q1, chord: c.chord, voicing: c.voicing, section: c.section, n: 1 });
+  }
+  return groups;
+}
+// Nota olayları (oynatma + MIDI + mix): {t, dur, midi, vel, q0, q1, [hold, rel, fade, arp]}
+//  dur = olayın kapladığı süre (MIDI nota uzunluğu); hold = piyanoda tuşun basılı kaldığı süre; rel = bırakma süresi;
+//  fade = synth'te seviye dur boyunca söner; arp = arpej notası.
+function pianoEvents(chords, g, opts = {}) {
+  const o = Object.assign({ inst: 'piano', pattern: 'chord', repeat: 'off', holdBars: 2, rate: '1/8', swing: 0.5 }, opts);
+  const ev = [];
+  for (const gr of holdGroups(chords, g, o)) {
+    const t = gr.q0 * g.spq, dur = (gr.q1 - gr.q0) * g.spq, fade = o.repeat === 'fade' && gr.n > 1;
+    const v = gr.voicing;
+    if (o.pattern === 'arp') {
+      // bas + akor sesleri aşağıdan yukarı, sonra geri (yukarı-aşağı); tutulan akorda desen kesintisiz sürer
+      const tones = [v.bass, ...v.notes].sort((a, b) => a - b), k = tones.length;
+      const seq = [];
+      for (let i = 0; i < k; i++) seq.push(i);
+      for (let i = k - 2; i >= 1; i--) seq.push(i);
+      const stepQ = ARP_RATES[o.rate] || 0.5, steps = Math.max(1, Math.floor((gr.q1 - gr.q0) / stepQ + 1e-6));
+      for (let i = 0; i < steps; i++) {
+        const q = swingMap(gr.q0 + i * stepQ, g, o.swing, 0.5), idx = seq[i % seq.length]; // swing: zayıf sekizlikler oranına kayar
+        const f = fade ? 1 - 0.65 * ((q - gr.q0) / (gr.q1 - gr.q0)) : 1; // fade: desen yavaşça kısılır
+        const vel = Math.round((idx === 0 ? 74 : 60) * f);
+        const d = stepQ * g.spq * (o.inst === 'piano' ? 1.8 : 0.95);
+        ev.push({ t: q * g.spq, dur: d, midi: tones[idx], vel, q0: q, q1: Math.min(gr.q1, q + d / g.spq), arp: true, inst: o.inst });
+      }
+      continue;
+    }
+    if (o.pattern === 'shuffle') {
+      // her vuruşta aynı hücre: X (güçlü akor) . t (zayıf ghost akor, vuruşun 3'te 2'sinde = "let"); ghost swing oranına oturur
+      const P = g.pulseQ, nb = Math.max(1, Math.floor((gr.q1 - gr.q0) / P + 1e-6));
+      for (let j = 0; j < nb; j++) {
+        const qx = gr.q0 + j * P, qg = swingMap(qx + (P * 2) / 3, g, o.swing, 2 / 3), f = fade ? 1 - 0.65 * (j / nb) : 1;
+        const xd = (qg - qx) * g.spq * 0.95;
+        const hit = (q, d, mids, vel) => { for (const m of mids) ev.push({ t: q * g.spq, dur: d, midi: m, vel: Math.max(1, Math.round(vel * f)), q0: q, q1: q + d / g.spq, shuf: true, inst: o.inst }); };
+        hit(qx, xd, [v.bass], 80); hit(qx, xd, v.notes, 66);
+        if (qg < gr.q1 - 1e-6) hit(qg, Math.max(0.05, Math.min(qx + P, gr.q1) - qg) * g.spq * 0.6, v.notes, 30); // t: hafif ghost
+      }
+      continue;
+    }
+    const add = (midi, vel) => {
+      const e = { t, dur, midi, vel, q0: gr.q0, q1: gr.q1, inst: o.inst };
+      if (fade) { e.fade = true; e.hold = dur * 0.35; e.rel = clamp(dur * 0.9, 0.8, 6); }
+      ev.push(e);
+    };
+    add(v.bass, 78);
+    for (const m of v.notes) add(m, 62);
   }
   return ev;
 }
@@ -1857,7 +2123,7 @@ function chordChart(proj, d) {
     const bars = [];
     for (let b = s.startBar; b <= s.endBar; b++) {
       const cs = d.chords.filter((c) => c.bar === b && c.section === s.id).map((c) => chordName(Object.assign({}, c.chord, { bass: c.chord.bass ?? (c.inversion ? c.voicing.bassPc : null) }), c.flats));
-      bars.push(' ' + (cs.join(' ') || '%') + ' ');
+      bars.push(' ' + (cs.join(' ') || (b < (d.chordStart || 1) ? '' : '%')) + ' '); // akorların girdiği ilk ölçüden önce hücre boş (otomatik)
     }
     for (let i = 0; i < bars.length; i += 4) lines.push('|' + bars.slice(i, i + 4).join('|') + '|');
     lines.push('');
@@ -1994,19 +2260,38 @@ function blankChart(proj, d) {
   }
   return lines.join('\n');
 }
-function exportMidi(proj, d, drumLoop = null) {
+// Genel alt bölme (proj.swing.ratio; derive'da g.swing olur) gitar ve basa da uygulanır: gitar parçasının kendi swing'i (0..1: 0 düz, 1 üçleme)
+// en az genel orana denk gelir (elle ayarlanan daha büyük değer korunur); bas olayları aynı vuruş içi eşleme (swingMap) ile kayar.
+const swingToPart = (r) => (r > 0.5 ? Math.min(1.5, (r - 0.5) * 6) : 0); // 1 = tam üçleme (%67); %70 → 1,2
+// drums: davul loop'u (eski kullanım) ya da { name, events } (bölüm düzenlemesi + fill'li hazır olaylar)
+function exportMidi(proj, d, drums = null) {
   const g = d.g;
   const vocal = d.notes.filter((n) => n.effMidi != null).map((n) => ({ q0: n.q0, q1: n.q1, midi: n.effMidi, vel: 96 }));
-  const piano = pianoEvents(d.chords, g).map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
+  const sw = proj.swing && proj.swing.ratio, po = pianoOpts(proj.piano, sw);
+  const ins = proj.guitar && proj.guitar.instrument ? proj.guitar.instrument : 'piano'; // piyano / gitar / ikisi
+  const pev = proj.sections && proj.sections.some((s) => s.arr && s.arr.piano)
+    ? arrangePiano(d.chords, g, (id) => { const sc = proj.sections.find((x) => x.id === id); return pianoOpts(Object.assign({}, proj.piano, sc && sc.arr && sc.arr.piano ? { style: sc.arr.piano } : {}), sw); })
+    : pianoEvents(d.chords, g, po);
+  const piano = pev.map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
+  const gtr = ins !== 'piano' && root.Core && root.Core.guitarEvents
+    ? root.Core.guitarEvents(root.Core.guitarSlotsFrom(d), g, (sl) => root.Core.guitarPartFor(proj.guitar, sl.section)).filter((e) => e.midi != null)
+      .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) })) : [];
+  const bt = proj.bass && proj.bass.enabled && root.Core && root.Core.Bass ? proj.bass : null;
+  const bass = bt ? root.Core.Bass.bassEvents(bt, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + Math.max(0.05, (e.dur * (e.gate ?? 1)) / g.spq), midi: e.midi, vel: e.vel })) : [];
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
   const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
+  // GM programı: piyano 0 · synth akor "Pad 3 polysynth" 90 · synth arpej "Lead 2 sawtooth" 81
+  const program = po.inst === 'piano' ? 0 : po.pattern === 'arp' ? 81 : 90;
+  const dr = drums && drums.K ? { name: drums.name, events: root.Core.drumEvents(drums, g, d.bars, (proj.drums && proj.drums.startBar) || 1) } : drums;
   return writeMidi({
     quarterBpm: g.quarterBpm, meter: proj.settings.meter, markers,
     tracks: [
       { name: 'Vokal (düzeltilmiş melodi)', channel: 0, program: 53, notes: vocal },
-      { name: 'Piyano akorları', channel: 1, program: 0, notes: piano, texts },
-      ...(drumLoop && root.Core && root.Core.drumEvents ? [{ name: 'Davul — ' + drumLoop.name, channel: 9, program: 0,
-        notes: root.Core.drumEvents(drumLoop, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + 0.1, midi: root.Core.GM_DRUM[e.kind], vel: Math.round(30 + 90 * e.vel) })) }] : []),
+      ...(ins === 'guitar' ? [] : [{ name: po.inst === 'piano' && po.pattern === 'chord' ? 'Piyano akorları' : PIANO_STYLES[`${po.inst}-${po.pattern}`].name, channel: 1, program, notes: piano, texts }]),
+      ...(gtr.length ? [{ name: 'Gitar', channel: 2, program: 25, notes: gtr, ...(ins === 'guitar' ? { texts } : {}) }] : []),
+      ...(bass.length ? [{ name: 'Bas', channel: 3, program: proj.bass.instrumentType === 'synth' ? 38 : 33, notes: bass }] : []),
+      ...(dr && dr.events && dr.events.length && root.Core && root.Core.GM_DRUM ? [{ name: 'Davul — ' + dr.name, channel: 9, program: 0,
+        notes: dr.events.map((e) => ({ q0: e.q, q1: e.q + 0.1, midi: root.Core.GM_DRUM[e.kind], vel: Math.round(30 + 90 * e.vel) })) }] : []),
     ],
   });
 }
@@ -2070,6 +2355,155 @@ function measureLatency(x, sr, clickTimes, opts = {}) {
   return { offsets, detected: valid.length, latencyMs: Math.round(med * 1000), madMs: Math.round(mad * 1000 * 10) / 10 };
 }
 
+// ---------------------------------------------------------------- MIDI İÇE AKTARMA (.mid → proje)
+// Tam okuyucu: tempo / ölçü olayları, iz adları, notalar (kapanışlarıyla), metin ve marker olayları.
+function readMidiFile(bytes) {
+  const d = bytes;
+  const u32 = (i) => ((d[i] << 24) | (d[i + 1] << 16) | (d[i + 2] << 8) | d[i + 3]) >>> 0;
+  if (d.length < 14 || d[0] !== 0x4d || d[1] !== 0x54 || d[2] !== 0x68 || d[3] !== 0x64) return { error: 'Bu bir MIDI dosyası değil (MThd başlığı yok).' };
+  const fmt = (d[8] << 8) | d[9], ntr = (d[10] << 8) | d[11], div = (d[12] << 8) | d[13];
+  if (div & 0x8000) return { error: 'SMPTE zamanlı MIDI desteklenmiyor (çeyrek nota bölümlü dosya gerekir).' };
+  if (fmt === 2) return { error: 'Format 2 (bağımsız şarkılı) MIDI desteklenmiyor.' };
+  const ppq = div, utf = new TextDecoder('utf-8'), tempos = [], sigs = [], tracks = [];
+  let p = 8 + u32(4);
+  for (let t = 0; t < ntr && p + 8 <= d.length; t++) {
+    if (d[p] !== 0x4d || d[p + 1] !== 0x54 || d[p + 2] !== 0x72 || d[p + 3] !== 0x6b) break;
+    const len = u32(p + 4), end = Math.min(d.length, p + 8 + len);
+    p += 8;
+    const tr = { index: t, name: '', notes: [], texts: [], programs: {}, channels: new Set(), lastTick: 0 };
+    const open = new Map();
+    let tick = 0, run = 0;
+    const rv = () => { let v = 0, b; do { b = d[p++]; v = (v << 7) | (b & 0x7f); } while ((b & 0x80) && p < end); return v; };
+    const close = (key, at) => { const o = open.get(key); if (!o) return; const st = o.pop(); if (!o.length) open.delete(key); if (st) tr.notes.push({ tick0: st.tick, tick1: Math.max(at, st.tick + 1), midi: st.midi, vel: st.vel, ch: st.ch }); };
+    while (p < end) {
+      tick += rv();
+      let st = d[p];
+      if (st === 0xff) {
+        p++; const type = d[p++], l = rv(), data = d.slice(p, p + l); p += l;
+        if (type === 0x03) tr.name = utf.decode(data);
+        else if (type === 0x01 || type === 0x06) tr.texts.push({ tick, text: utf.decode(data), type });
+        else if (type === 0x51 && l === 3) tempos.push({ tick, micro: (data[0] << 16) | (data[1] << 8) | data[2] });
+        else if (type === 0x58 && l >= 2) sigs.push({ tick, num: data[0], den: Math.pow(2, data[1]) });
+        continue;
+      }
+      if (st === 0xf0 || st === 0xf7) { p++; p += rv(); continue; }
+      if (st & 0x80) { run = st; p++; } else st = run;
+      const hi = st & 0xf0, ch = st & 15;
+      tr.channels.add(ch);
+      if (hi === 0x90 || hi === 0x80) {
+        const n = d[p++], v = d[p++];
+        const key = ch * 128 + n;
+        if (hi === 0x90 && v > 0) { if (!open.has(key)) open.set(key, []); open.get(key).push({ tick, midi: n, vel: v, ch }); } else close(key, tick);
+      } else if (hi === 0xc0) { tr.programs[ch] = d[p++]; } else if (hi === 0xd0) p += 1; else p += 2;
+    }
+    for (const key of [...open.keys()]) while (open.has(key)) close(key, tick); // kapanmayan notalar iz sonunda biter
+    tr.lastTick = tick; tr.notes.sort((a, b) => a.tick0 - b.tick0 || a.midi - b.midi);
+    tracks.push(tr);
+    p = end;
+  }
+  return { ppq, tracks, tempos, sigs };
+}
+const MIDI_BAD_NAME = /(^|\s)(bas|bass|piyano|piano|akor|chord|davul|drum|pad|synth klavye)/i;
+const MIDI_GOOD_NAME = /vokal|vocal|melod|lead|voice|şarkı|sarki|ses\b/i;
+// iz seçimi: davul olmayan, "melodi" gibi adlı, tek seslilik oranı yüksek, ağırlıklı olarak yüksek perdeli iz
+function pickMelodyTrack(info) {
+  const cands = info.tracks.filter((t) => t.notes.length >= 4 && !(t.channels.size && [...t.channels].every((c) => c === 9)));
+  const score = (t) => {
+    const ns = t.notes; let mono = 0;
+    for (let i = 0; i < ns.length; i++) if (i + 1 >= ns.length || ns[i + 1].tick0 >= ns[i].tick1 - 1) mono++;
+    const mean = ns.reduce((a, n) => a + n.midi, 0) / ns.length;
+    return (MIDI_GOOD_NAME.test(t.name) ? 3 : 0) - (MIDI_BAD_NAME.test(t.name) ? 3 : 0) + 2 * (mono / ns.length) + (mean - 60) / 60 + Math.min(1, ns.length / 50);
+  };
+  cands.sort((a, b) => score(b) - score(a));
+  return { best: cands[0] || null, cands: cands.map((t) => ({ index: t.index, name: t.name || `İz ${t.index + 1}`, count: t.notes.length })) };
+}
+// .mid → proje parçaları. opts.track: melodi izi (iz numarası). Notalar çeyrek cinsinden (q0, q1): tempo değişince müzikal yer korunur.
+function importMidi(bytes, opts = {}) {
+  const info = readMidiFile(bytes);
+  if (info.error) return { error: info.error };
+  const warnings = [];
+  const pick = pickMelodyTrack(info);
+  const mt = opts.track != null ? info.tracks.find((t) => t.index === opts.track) : pick.best;
+  if (!mt || !mt.notes.length) return { error: 'MIDI dosyasında melodi olarak kullanılabilecek bir nota izi bulunamadı.' };
+  // ölçü + tempo (ilk olay): uygulama BPM'i vuruş (♩ ya da 6/8'de ♩.) sayar
+  const sg = info.sigs.slice().sort((a, b) => a.tick - b.tick)[0];
+  let meter = '4/4';
+  if (sg) { const k = `${sg.num}/${sg.den}`; if (METERS[k]) meter = k; else warnings.push(`${k} ölçüsü desteklenmiyor; 4/4 olarak açıldı (nota yerleri ölçü çizgilerine oturmayabilir).`); }
+  if (info.sigs.length > 1) warnings.push('Ölçü değişimleri yok sayıldı (ilk ölçü kullanıldı).');
+  const tp = info.tempos.slice().sort((a, b) => a.tick - b.tick), micro = tp.length ? tp[0].micro : 500000;
+  if (tp.length > 1 && tp.some((x) => Math.abs(x.micro - micro) > 2000)) warnings.push('Tempo değişimleri yok sayıldı (ilk tempo kullanıldı).');
+  const bpm = Math.round(((60000000 / micro) / METERS[meter].pulseQ) * 10) / 10;
+  const g = makeGrid({ bpm, meter });
+  const Q = (tick) => tick / info.ppq;
+  // melodi: tek ses (aynı anda başlayanlardan en tiz; üst üste binenlerde sonraki not önceki notayı keser)
+  const raw = mt.notes.map((n) => ({ q0: Q(n.tick0), q1: Q(n.tick1), midi: n.midi, vel: n.vel }));
+  const mono = [];
+  for (const n of raw) {
+    const last = mono[mono.length - 1];
+    if (last && Math.abs(n.q0 - last.q0) < 1e-6) { if (n.midi > last.midi) mono[mono.length - 1] = n; continue; }
+    if (last && n.q0 < last.q1 - 1e-6) last.q1 = n.q0;
+    mono.push(n);
+  }
+  const notes = mono.filter((n) => n.q1 - n.q0 >= 0.05);
+  if (notes.length < mono.length) warnings.push(`${mono.length - notes.length} çok kısa nota atıldı.`);
+  if (mono.length < raw.length) warnings.push(`Melodi izi çok sesliydi: ${raw.length - mono.length} nota tek sese indirildi (en tiz nota / sonraki nota öncelikli).`);
+  let endQ = 0;
+  for (const t of info.tracks) for (const n of t.notes) endQ = Math.max(endQ, Q(n.tick1));
+  endQ = Math.max(endQ, notes[notes.length - 1].q1);
+  const bars = Math.max(4, Math.ceil(endQ / g.barQ - 1e-6));
+  // bölümler: marker (ve 'Ad — Ton' biçimli metin) olayları; uygulamanın örtük "Tümü" bölümü atlanır
+  const marks = [];
+  for (const t of info.tracks) for (const x of t.texts) if (x.type === 6 && x.text.trim() && x.text.trim() !== 'Tümü') marks.push({ q: Q(x.tick), text: x.text.trim() });
+  marks.sort((a, b) => a.q - b.q);
+  const sections = marks.map((m, i) => {
+    const [nm, ...rest] = m.text.split(/\s[—–-]\s/);
+    const key = rest.length ? parseKeyText(rest.join(' — ')) : null;
+    const sb = Math.floor(m.q / g.barQ + 1e-6) + 1, nx = marks[i + 1] ? Math.floor(marks[i + 1].q / g.barQ + 1e-6) : bars;
+    return { name: nm.trim() || 'Bölüm', startBar: sb, endBar: Math.max(sb, nx), tonic: key ? key.tonic : null, mode: key ? key.mode : null };
+  }).filter((s, i, a) => i === 0 || s.startBar > a[i - 1].startBar);
+  for (let i = 0; i < sections.length - 1; i++) sections[i].endBar = Math.min(sections[i].endBar, sections[i + 1].startBar - 1);
+  // akorlar: akor adı metinleri (uygulamanın kendi MIDI çıktısı: piyano izinde her akorun başında). Sonraki metne kadar sürer
+  let chordTrack = null, chordEvents = [];
+  for (const t of info.tracks) {
+    const ev = t.texts.filter((x) => x.type === 1).map((x) => ({ q: Q(x.tick), chord: parseChord(x.text) })).filter((x) => x.chord);
+    if (ev.length >= 2 && ev.length > chordEvents.length) { chordEvents = ev; chordTrack = t; }
+  }
+  const locks = [];
+  let chordStartBar = 1;
+  if (chordEvents.length) {
+    chordEvents.sort((a, b) => a.q - b.q);
+    const per = g.split ? 2 : 1, unitQ = g.barQ / per, nU = bars * per, at = new Array(nU).fill(null);
+    for (const e of chordEvents) { const u = Math.round(e.q / unitQ); if (u >= 0 && u < nU) at[u] = e.chord; }
+    let cur = null;
+    for (let u = 0; u < nU; u++) { if (at[u]) cur = at[u]; else at[u] = cur; }
+    chordStartBar = Math.floor(Math.max(0, Math.round(chordEvents[0].q / unitQ)) / per) + 1;
+    const lk = (bar, half, c) => locks.push({ bar, half, chord: { root: c.root, q: c.q, bass: c.bass ?? null }, src: 'chart' });
+    for (let b = chordStartBar; b <= bars; b++) {
+      const a = at[(b - 1) * per], c = per === 2 ? at[(b - 1) * per + 1] : a;
+      if (!a) continue;
+      if (per === 1 || !c || (a.root === c.root && a.q === c.q && a.bass === c.bass)) lk(b, null, a); else { lk(b, 0, a); lk(b, 1, c); }
+    }
+  }
+  // uygulamanın kendi çıktısındaki iz adlarından ayarlar: akor sesi, bas, davul (loop adı + ilk vuruşun ölçüsü)
+  let pianoStyle = null, bassOn = false, drum = null;
+  for (const t of info.tracks) {
+    if (t === chordTrack) {
+      if (t.name === 'Piyano akorları') pianoStyle = 'piano-chord';
+      else pianoStyle = Object.keys(PIANO_STYLES).find((k) => PIANO_STYLES[k].name === t.name) || null;
+    }
+    if (t.name === 'Bas') bassOn = true;
+    const dm = /^Davul — (.+)$/.exec(t.name);
+    if (dm && t.notes.length) drum = { name: dm[1], startBar: Math.floor(Q(t.notes[0].tick0) / g.barQ + 1e-6) + 1 };
+  }
+  if (!drum) { const dt = info.tracks.find((t) => t.notes.length && t.channels.size && [...t.channels].every((c) => c === 9)); if (dt) drum = { name: null, startBar: Math.floor(Q(dt.notes[0].tick0) / g.barQ + 1e-6) + 1 }; }
+  if (sections.length) { // son bölüm: melodinin ve son akor metninin bittiği ölçüye kadar
+    const lastQ = Math.max(notes[notes.length - 1].q1, chordEvents.length ? chordEvents[chordEvents.length - 1].q : 0);
+    const L = sections[sections.length - 1];
+    L.endBar = Math.max(L.startBar, Math.ceil(lastQ / g.barQ - 1e-6));
+  }
+  return { settings: { bpm, meter }, notes, endQ, bars, sections, locks, chordStartBar, pianoStyle, bassOn, drum, warnings, melodyTrack: { index: mt.index, name: mt.name || `İz ${mt.index + 1}` }, trackChoices: pick.cands, ppq: info.ppq, chordCount: chordEvents.length };
+}
+
 const Core = {
   PC_SHARP, PC_FLAT, MODES, MODE_ORDER, METERS, CHORD_Q, TEST_SCORE,
   PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS, IN_TUNE_CENTS,
@@ -2078,7 +2512,8 @@ const Core = {
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
   nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
-  writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, synthPianoSample, synthTestVocal,
+  writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, renderSynth, SYNTH, synthEnv, synthPianoSample, synthTestVocal,
+  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, readMidiFile, importMidi, pickMelodyTrack, arrangePiano, swingMap, swingUnmap, estimateSwing, swingToPart, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
   bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
 };

@@ -23,46 +23,61 @@
     <button id="btnPlay" title="Boşluk tuşu">▶ Çal</button>
     <button id="btnStop" title="Başa sar">■</button>
     <span id="posReadout" class="mono">1 · 1</span>
+    <button id="btnLoop" title="Seçili bölümü (ya da imleçten 4 ölçüyü) döngüde çal; ⟳ düğmeleriyle alternatifleri hemen dinle">🔁 Döngü</button>
     <button id="btnAB" class="ab" title="Orijinal / düzeltilmiş vokal">A/B: Düzeltilmiş</button>
     <span id="pianoBadge" class="tag" title="Oynatma ve mix'te kullanılan piyano">Piyano: yükleniyor…</span>
   </div>
   <div class="group">
+    <button id="btnDemo" class="accent" title="Ölçü + ton + akorlar + davul + bas tek tuşla; sonra çalar">✨ Demo yap</button>
     <button id="btnTest" class="accent">Test melodisi üret</button>
+    <button id="btnUndo" title="Geri al (Ctrl+Z)" disabled>↶</button><button id="btnRedo" title="Yinele (Ctrl+Shift+Z)" disabled>↷</button>
     <button id="btnNew">Yeni</button>
     <button id="btnOpen">Proje aç</button>
+    <button id="btnOpenMidi" title="Daha önce MIDI olarak kaydettiğin çalışmayı (melodi, bölümler, akorlar, bas, davul) projeye çevirip devam et">MIDI aç</button>
     <button id="btnSave">Proje kaydet</button>
     <label class="chk" title="Orijinal kaydı proje dosyasına WAV olarak göm"><input type="checkbox" id="chkEmbed" checked> sesi göm</label>
     <input type="file" id="fileProject" accept=".json,application/json" hidden>
+    <input type="file" id="fileMidi" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
   </div>
   <div id="status" role="status"></div>
 </header>
 
 <main id="dawView">
   <aside id="panels">
-    <details class="step" open>
-      <summary><b>1</b> Proje ayarı</summary>
+    <div class="row panel-tools"><button id="btnOpenAll" class="small" title="Bütün bölümleri aç">▾ Hepsini aç</button><button id="btnCloseAll" class="small" title="Yalnızca 1 ve 2 açık kalsın">▸ Hepsini kapat</button><span class="hint">Bölüm başlıklarına tıkla; sağdaki rozet o bölümün şu anki durumunu gösterir.</span></div>
+    <details class="step" data-key="s1" open>
+      <summary><b>1</b> Proje ayarı <span class="chip" id="chipS1"></span></summary>
       <div class="grid2">
         <label>BPM <small id="bpmUnit">(♩ = çeyrek nota)</small><input type="number" id="inBpm" min="30" max="300" step="1" value="120"></label>
         <label>Ölçü<select id="inMeter"><option>4/4</option><option>3/4</option><option>2/4</option><option>6/8</option></select></label>
         <label title="Yalnızca 4/4'te: yarım zaman hissinde trampet 3. vuruştadır">Click deseni<select id="inClickFeel"><option value="normal">1. vuruş vurgulu</option><option value="halftime">3. vuruş vurgulu — yarım zaman (tık tık tıss tık)</option></select></label>
+        <label title="Zayıf vuruşun (ve) vuruş içindeki yeri: düz %50, üçleme %67 (her vuruş 3'e bölünür, 12/8 hissi), arası swing">Alt bölme<select id="inSubdiv"><option value="straight">Düz (%50)</option><option value="triplet">Üçleme — her vuruş 3'e bölünür (%67)</option><option value="swing">Swing — özel oran</option></select></label>
+        <label id="swingWrap" title="Zayıf sekizliğin vuruş içindeki yeri (%). Ör. shuffle kaydında ölçülen ≈ %70 (saf üçleme %67)" hidden>Swing oranı (%)<input type="number" id="inSwing" min="50" max="75" step="1" value="67"></label>
         <label>Gecikme telafisi (ms)<input type="number" id="inLatency" min="-500" max="1000" step="1" value="0"></label>
         <div class="row" style="margin:0">
           <button id="btnLatencyCal" title="8 click çalar; her click'te el çırpın">Kalibre et</button>
           <button id="btnLatencyGuess" title="Ses kartının bildirdiği çıkış gecikmesi (kaba tahmin)">Tahmin</button>
         </div>
       </div>
+      <div class="row"><button id="btnSwingMeasure" title="Melodinin zayıf vuruşlardaki nota başlangıçlarından swing oranını ölç">Swing'i kayıttan ölç</button></div>
+      <div id="swingInfo" class="hint"></div>
+      <p class="hint"><b>Alt bölme:</b> oran vuruşun "ve"sinin yeridir (%50 düz, %67 üçleme, ölçülen shuffle ≈ %70). Davul, bas, akor desenleri, quantize ızgarası ve cetvel aynı orana oturur — gitar shuffle çalarken bas düz kalmaz. Üçleme modunda quantize ızgarası olarak "1/8 üçleme" de seçebilirsin.</p>
       <p class="hint">Gecikme telafisi yalnızca kayıtlara uygulanır: kayıt bu kadar ms öne çekilir. <b>Kalibre et</b>: kulaklıkla 8 click dinleyin, her click'te mikrofona yakın el çırpın; click–alkış ofsetlerinin medyanı kaydedilir.</p>
       <div id="latencyInfo" class="hint"></div>
     </details>
 
-    <details class="step" open>
-      <summary><b>2</b> Kayıt / yükleme</summary>
+    <details class="step" data-key="s2" open>
+      <summary><b>2</b> Kayıt / yükleme <span class="chip" id="chipS2"></span></summary>
       <div class="row">
         <button id="btnRec" class="rec">● Kaydet</button>
         <button id="btnRecStop" disabled>■ Durdur</button>
         <label class="grow">Click<input type="range" id="inClickVol" min="0" max="1" step="0.05" value="0.6"></label>
       </div>
       <p class="hint">Önce 1 ölçü count-in çalar. Click yalnızca çıkışa (kulaklığa) gider, kayda karışmaz — hoparlör değil kulaklık kullanın.</p>
+      <div class="row"><button id="btnMidiLoad" title="Proje JSON'u yerine MIDI kaydettiysen: MIDI'den devam et">MIDI yükle (.mid)</button>
+        <label class="grow" id="midiTrackRow" hidden>MIDI melodi izi<select id="inMidiTrack"></select></label></div>
+      <div id="midiInfo" class="hint"></div>
+      <p class="hint"><b>MIDI'den devam:</b> proje JSON'u kaydetmediysen, bu uygulamadan aldığın .mid dosyasını aç: melodi (düzeltilmiş notalar), bölümler ve tonlar, akorlar (📄), ölçü / BPM, akor sesi, bas ve davul geri gelir. Başka programlardan MIDI de açılır (melodi izi otomatik seçilir). Ses kaydı olmadığı için melodi synth ile çalar.</p>
       <div class="row">
         <label class="file-btn">WAV/MP3 yükle<input type="file" id="fileAudio" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac" hidden></label>
         <label class="grow">Hizalama
@@ -81,10 +96,16 @@
         <label>Kayıt ofseti (ms)<input type="number" id="inOffset" step="1" value="0"></label>
         <div id="audioInfo" class="hint"></div>
       </div>
+      <fieldset id="shiftBox">
+        <legend>Şarkıyı kaydır — başta boşluk bırak</legend>
+        <p class="hint">Bütün şarkıyı birlikte 1–2 ölçü kaydırır: ses, ölçü çizgileri, bölümler, akor kilitleri ve düzenlemeler birlikte gider. Başta boşluk (giriş) bırakmak ya da fazla boşluğu azaltmak için. Orijinal kayıt değişmez.</p>
+        <div class="row"><button data-shift="1" title="Şarkı 1 ölçü geç başlasın">+1 ölçü boşluk</button><button data-shift="2" title="Şarkı 2 ölçü geç başlasın">+2 ölçü boşluk</button><button data-shift="-1" title="Başta 1 ölçü boşluğu al">−1 ölçü</button><button data-shift="-2" title="Başta 2 ölçü boşluğu al">−2 ölçü</button></div>
+        <div id="shiftInfo" class="hint"></div>
+      </fieldset>
     </details>
 
-    <details class="step" open>
-      <summary><b>3</b> Pitch detection</summary>
+    <details class="step" data-key="s3">
+      <summary><b>3</b> Pitch detection <span class="chip" id="chipS3"></span></summary>
       <div class="grid2">
         <label>Min f0 (Hz)<input type="number" id="inFmin" min="40" max="400" value="65"></label>
         <label>Max f0 (Hz)<input type="number" id="inFmax" min="200" max="2000" value="1000"></label>
@@ -98,7 +119,7 @@
       <div id="pitchInfo" class="hint"></div>
     </details>
 
-    <details class="step" open>
+    <details class="step" data-key="s3b">
       <summary><b>3b</b> Etiket düzeltme</summary>
       <p class="hint">Ses değişmez, yalnızca analizdeki nota değişir. Pitch detection yanlış algıladığında kullanın. Etiketler <b>4. adımdaki ton önerisine</b> ve akor bulmaya girer; ses düzeltmeleri (autotune, manuel kaydırma) ton önerisine girmez.</p>
       <div class="row">
@@ -108,8 +129,8 @@
       <p class="hint">Her modda <kbd>Alt</kbd>+sürükle etiketi düzeltir; bu mod açıkken düz sürükleme de etiket düzeltir (ya da seçip <kbd>↑</kbd>/<kbd>↓</kbd>).</p>
     </details>
 
-    <details class="step" open>
-      <summary><b>4</b> Bölümler ve ton</summary>
+    <details class="step" data-key="s4">
+      <summary><b>4</b> Bölümler ve ton <span class="chip" id="chipS4"></span></summary>
       <p class="hint">Zaman çizelgesindeki <b>bölüm şeridinde</b> sürükleyerek ölçü aralığı seçin ya da buradan ekleyin.</p>
       <div class="row">
         <select id="inSecName"><option>Verse</option><option>Nakarat</option><option>Köprü</option><option>Intro</option><option>Outro</option><option>Pre-nakarat</option></select>
@@ -121,13 +142,15 @@
       <div id="sectionList"></div>
     </details>
 
-    <details class="step" open>
-      <summary><b>5</b> Ses düzeltme (elle ve autotune)</summary>
+    <details class="step" data-key="s5">
+      <summary><b>5</b> Ses düzeltme (elle ve autotune) <span class="chip" id="chipS5"></span></summary>
       <p class="hint"><b>Elle:</b> piano-roll'da notayı tut ve yukarı/aşağı sürükle. Sürüklerken ne olacağı notanın üstünde yazar. Hiçbiri orijinal kaydı değiştirmez; her biri notaya tıklayınca en üstteki <b>✕</b> ile geri alınır.</p>
       <table class="ops-legend">
         <tr><td><b>Sürükle</b> / <kbd>↑</kbd><kbd>↓</kbd></td><td><b>Notayı taşı</b></td><td class="hint">Yanlış nota söyledin: ses yeni yarım sese kayar, akorlar da yeni notayı kullanır.</td></tr>
         <tr><td><kbd>Shift</kbd>+sürükle</td><td><b>İnce akort</b></td><td class="hint">Nota doğru, biraz pes/tiz: yalnızca cent; nota ve akorlar aynı kalır.</td></tr>
         <tr><td><kbd>Alt</kbd>+sürükle</td><td><b>Etiketi düzelt</b></td><td class="hint">Program yanlış algıladı: ses aynı, yalnızca analizdeki nota değişir.</td></tr>
+        <tr><td>Boş yerde <b>sürükle</b></td><td><b>Birçok notayı seç</b></td><td class="hint">Seçili notalardan birini sürükle: hepsi birlikte taşınır (yukarı/aşağı = perde, sağa/sola = zaman). <kbd>Shift</kbd>+sürükle ya da <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+tık seçime ekler; <kbd>Ctrl</kbd>+<kbd>A</kbd> hepsini seçer.</td></tr>
+        <tr><td><b>Çift tık</b></td><td><b>Notayı böl</b></td><td class="hint">Program iki heceyi tek ses sandıysa notaya çift tıkla: o yerden ikiye bölünür, her parçanın perdesi yeniden hesaplanır.</td></tr>
       </table>
       <div id="editSummary"></div>
       <fieldset>
@@ -162,16 +185,20 @@
       <div id="renderInfo" class="hint"></div>
     </details>
 
-    <details class="step" open>
-      <summary><b>6–7</b> Akor bulma ve düzenleme</summary>
+    <details class="step" data-key="s67">
+      <summary><b>6–7</b> Akor bulma ve düzenleme <span class="chip" id="chipS67"></span></summary>
       <p class="hint">Akorlar <b>4. adımdaki ton</b> ve <b>5. adımdaki düzeltmelerden sonra duyduğun notalara</b> göre bulunur: notayı başka sese çektiysen (sürükle / ↑↓ / autotune'un scale'e çekmesi) yeni nota, zamanını kaydırdıysan (quantize / sağa-sola) yeni yeri kullanılır.</p>
       <label title="Süreli Viterbi bütün bölümü birlikte arar ve en iyi 3 alternatifi verir; ölçü ölçü motor her ölçüde yerel karar verir">Motor
         <select id="inEngine"><option value="viterbi">süreli Viterbi (bölüm boyunca, 3 alternatif)</option><option value="greedy">ölçü ölçü (eski)</option></select></label>
+      <div class="row"><label class="grow" title="Akor motoru bu ölçüyü 1. ölçü sayar; öncesinde akor ve piyano çalmaz. Zaman çizelgesinde cetveldeki 🎹 bayrağını sürükleyerek de ayarlanır"><b>🎹 Akorlar şu ölçüden girsin</b><input type="number" id="inChordStart" min="1" value="1"></label><button id="btnChordHere" title="Oynatma imlecinin (kırmızı çizgi) olduğu ölçü">İmleçten</button></div>
+      <div id="chordStartInfo" class="hint"></div>
+      <div class="row"><button id="btnApplyAfter" class="accent" title="Son ✂ işaretinin ya da elle yazdığın akorun ölçüsünden SONRAKİ akorları motor bütün olarak belirler; öncesi aynen kalır">↧ Son elle yaptığımdan sonrasını otomatik uygula <span id="afterInfo"></span></button></div>
+      <p class="hint"><b>Öncelik:</b> 1) ✂ ile seçtiğin değişim noktaları · 2) elle yazdığın akorlar · 3) motor. Akor değişimini işaretlediğin an o noktadaki akor motorca yeniden belirlenir (diğerleri yerinde kalır). Sonra istediğin akorları elle yaz; en son bu düğmeyle şarkının kalanını bir bütün olarak tamamlat — son yaptığın ölçüye kadar hiçbir şey değişmez.</p>
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
         <button id="btnApplySug" title="Kilitlerin dışındaki akorları motorun şimdiki önerisine göre yeniden hesaplar">Motorun önerilerini uygula <span id="sugCount"></span></button></div>
       <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Bir akoru kilitlediğinde <b>diğer akorlar değişmez</b>; motor başka bir şey önerirse akorun altında turuncu <b>→</b> ile gösterilir, nedeni sağdaki panelde yazar. Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
-      <div class="sub marks">
-        <b>✂ Akor değişim noktaları</b>
+      <details class="sub marks" data-key="marks">
+        <summary><b>✂ Akor değişim noktaları ve tap</b> <span class="hint">(işaretler, ölçü başında değiş, dinlerken işaretle)</span></summary>
         <p class="hint">Akor satırının <b>üst kenarındaki küçük noktalara</b> tıkla (dolu = ölçü başı, içi boş = ölçü ortası; kesikli çizgi yarım ölçüyü gösterir): <b>✂</b> burada akor değişsin → <b>=</b> burada değişmesin → işaret yok. Hangi akorun geleceğini motor seçer; işaret koyunca diğer akorlar değişmez. Akora tıklayınca sağdaki panelde de "✂ Tam burada değiştir / Ölçünün ortasında değiştir" var.</p>
         <div class="row"><label class="chk"><input type="checkbox" id="inDownbeatOnly"> Akorlar yalnızca <b>ölçü başında (1. vuruşta)</b> değişsin <small class="hint">(ölçü ortası değişimi yok; ✂ ile işaretlediğin ölçü ortaları hariç)</small></label></div>
         <div class="row"><label class="chk"><input type="checkbox" id="inOnlyMarked"> Akor <b>yalnızca</b> ✂ işaretli noktalarda değişsin <small class="hint">(işaret konan bölümlerde)</small></label>
@@ -183,7 +210,7 @@
           <div class="row"><button id="btnTap" class="accent">◆ Değişim noktası (T) <span id="tapCount"></span></button><button id="btnTapUndo">Son noktayı sil</button><button id="btnTapClear" class="danger">✕ Hepsini temizle</button></div>
           <div id="tapInfo"></div>
         </div>
-      </div>
+      </details>
       <details id="chartBox" class="sub">
         <summary>📄 Kendi akorlarım — şablon yükle</summary>
         <p class="hint">Kendi şarkının akorlarını yaz ya da .txt yükle; melodinin üzerinde kilitli akor olarak çalar. Her <b>| hücre |</b> 1 ölçü; hücrede 2 akor = yarım ölçü; <b>%</b> = önceki ölçü; <b>/</b> = önceki akor sürer; <b>boş hücre</b> = otomatik (motor seçer). Çizgisiz de yazabilirsin: <code>C#m:2 D E:0.5</code> (ölçü). <code>[Nakarat] B Dorian — ölçü 5–8</code> bölüm başlığıdır (ton ve aralık isteğe bağlı).</p>
@@ -200,6 +227,8 @@
         <div id="chartMsg"></div>
       </details>
       <div id="altBox"></div>
+      <details class="sub" id="advBox" data-key="adv">
+        <summary><b>⚙ Akor motoru ayarları</b> <span class="hint">(değişim eşiği X, N, M, renk, stil modeli: λ, λ_ritim, sıcaklık)</span></summary>
       <label>Değişim eşiği X <output id="outPct">%25</output><input type="range" id="inPct" min="0" max="100" step="5" value="25"></label>
       <div class="grid2">
         <label>Aynı akor en fazla N ölçü<input type="number" id="inMaxBars" min="1" max="16" value="4"></label>
@@ -216,10 +245,71 @@
         <label title="0 = hep en iyi aday; artınca en iyi 3 aday arasından puanla orantılı örnekler">Sıcaklık <output id="outChordTemp">0</output><input type="range" id="inChordTemp" min="0" max="3" step="0.1" value="0"></label>
         <button id="btnReseed" title="Sıcaklık > 0 iken yeni örnek">Yeniden örnekle</button>
       </fieldset>
+      <details class="sub" id="paramHelp">
+        <summary>ℹ Bu ayarlar ne yapar? Veriye ne kadar güvenmeli?</summary>
+        <div class="hint">
+          <p><b>Değişim eşiği X</b> — mevcut akor, yenisi onu en az %X geçmedikçe değişmez. Ör. mevcut akor 10 puan, X = %25 → yeni akor ≥ 12,5 almalı. Yüksek X = daha az değişim, 0 = azıcık daha iyi görünen her akora geç.</p>
+          <p><b>Geçiş ağırlığı λ</b> — "değişeceksem hangi akora?" için veri setindeki geçiş alışkanlıklarının ağırlığı. Puana λ·ln(P·7) eklenir (7 = moddaki akor sayısı): veride rastgele seçimden 2× olası akor +0,69·λ, 4× olası +1,39·λ, 10 kat seyrek −2,3·λ. λ = 0: yalnızca melodi ve teori; büyük λ: melodi uyumu yerine "senin şarkılarında böyle gider".</p>
+          <p><b>Ritim ağırlığı λ_ritim</b> — "değiş mi kal mı?": akorların veride ne kadar sürdüğü. Bu akor n ölçüdür çalıyorsa değişme olasılığı h için λ_ritim·ln(h/(1−h)): h = %70 → +0,85 (değiş yönünde), h = %20 → −1,39 (kal yönünde). Süre verisi yoksa karara katılmaz.</p>
+          <p><b>Sıcaklık</b> — 0 = hep en iyi aday. &gt; 0 iken en iyi 3 aday arasından puanla orantılı seçer: puanlar 10 / 9 / 8 iken T = 1 → %66 / %24 / %9, T = 3 → %45 / %32 / %23. "Yeniden örnekle" yeni bir zar atar; tek tek deneme üretmek içindir, doğruluk ayarı değildir.</p>
+          <p><b>Veriye güven:</b> uygulamada hazır veri seti yoktur; model yalnızca senin eklediğin şarkılardan kurulur (testlerde 6 sentetik şarkı var, gerçek değil). Bir modda 20'den az şarkı varsa uygulama "az veri" uyarır ve havuzdan yumuşatır. Bu ayarları (λ, λ_ritim, X, M) <b>veriye bakıp ayarlamak</b> için kabaca modda 20+ şarkı, toplamda 30+ gerçek akor şemalı şarkı gerekir; ondan önce varsayılanlarda (λ = 1, λ_ritim = 1, T = 0) kal ya da veri azken λ'yı 0,5'e çek. Kendi verinde doğru ayar için "Stil verisi ve öneri → Doğrulama" (şarkı bazlı dışarıda bırakma).</p>
+          <p><b>Senin elle seçtiklerin her zaman üstündür:</b> kilitli akor, ✂ işaretleri, onayladığın ton, notaya verdiğin etiket, ölçü ve BPM, elle seçtiğin loop / bas kalıbı bu ayarlara ve puanlara bakılmadan korunur.</p>
+        </div>
+      </details>
+      </details>
     </details>
 
-    <details class="step" open>
-      <summary><b>8</b> Piyano ve mikser</summary>
+    <details class="step" data-key="s8">
+      <summary><b>8</b> Akor sesi (piyano / synth) <span class="chip" id="chipS8"></span></summary>
+      <div class="grid2">
+        <label title="Akorların hangi çalgıyla ve hangi desenle çalınacağı">Akor sesi <button id="btnStyleNext" class="small" title="Sıradaki akor sesini dene ve hemen dinle">⟳</button><select id="inPianoStyle"><option value="piano-chord">Piyano — akor</option><option value="piano-arp">Piyano — arpej</option><option value="synth-chord">Synth klavye — akor</option><option value="synth-arp">Synth klavye — arpej</option><option value="piano-shuffle">Piyano — shuffle (X . t)</option><option value="synth-shuffle">Synth klavye — shuffle (X . t)</option></select></label>
+        <label id="arpWrap" title="Arpejde her notanın süresi" hidden>Arpej hızı<select id="inArpRate"><option value="1/4">1/4 (vuruş)</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
+      </div>
+      <div class="grid2">
+        <label title="Aynı akor art arda gelince her ölçüde yeniden basılması gerekmez">Aynı akor üst üste gelince<select id="inPianoRepeat"><option value="off">Her ölçüde yeniden bas</option><option value="hold">Bir kez bas, sürsün</option><option value="fade">Bir kez bas, sönsün (fade-out)</option></select></label>
+        <label id="holdWrap" title="Tek vuruşun en fazla kaç ölçü süreceği; sonra akor yeniden basılır">En fazla kaç ölçü sürsün<input type="number" id="inHoldBars" min="1" max="16" value="2"></label>
+      </div>
+      <p class="hint">Aynı akor art arda gelince ilk ölçünün başında bir kez basılır ve ikinci ölçüye sürer (ya da söner); arpejde desen kesintisiz devam eder (fade'de yavaşça kısılır).</p>
+      <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
+      <div id="pianoInfo" class="hint"></div>
+    </details>
+
+    
+    <details class="step" data-key="s8b">
+      <summary><b>8b</b> Davul (loop ve 45 ritim kalıbı) <span class="chip" id="chipS8b"></span></summary>
+      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü her zaman 1. adımdan kendin de seçebilirsin; loop proje ölçüsüne göre seçilir.</p>
+      <div id="meterEst"></div>
+      <label class="chk"><input type="checkbox" id="inDrumsOn"> Oynatırken davul çalsın</label>
+      <div class="row"><label class="grow" title="Loop'un 1. ölçüsü bu ölçüdür; öncesinde davul çalmaz. Cetveldeki 🥁 bayrağını sürükleyerek de ayarlanır"><b>🥁 Davul şu ölçüden girsin</b><input type="number" id="inDrumStart" min="1" value="1"></label><button id="btnDrumHere" title="Oynatma imlecinin (kırmızı çizgi) olduğu ölçü">İmleçten</button></div>
+      <div id="drumStartInfo" class="hint"></div>
+      <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>
+        <button id="btnDrumPreview" title="Seçili loop'u 2 ölçü dinle">▶ Loop</button><button id="btnDrumStop">■</button><button id="btnDrumNext" title="Sıradaki loop'u (puan sırasıyla) dene ve hemen dinle">⟳ Başka</button></div>
+      <label class="chk" title="Bir bölümün son vuruşunda trampet fill'i; sonraki bölüm hemen başlıyorsa"><input type="checkbox" id="inDrumFills" checked> Bölüm geçişlerinde davul fill'i</label>
+      <div id="drumInfo"></div>
+      <div id="drumRank" class="rank"></div>
+      <pre id="drumGrid" class="drum-grid"></pre>
+    </details>
+
+    <details class="step" data-key="s8c" id="guitarStep">
+      <summary><b>8c</b> Gitar (ritim katmanı) <span class="chip" id="chipS8c"></span></summary>
+      <p class="hint">Akor zaman çizelgesinden gitar partisi üretir. Altı katmanı (vuruş modu, ritim kalıbı, voicing, süsleme, nota süresi, ton/FX) ayrı ayrı seçip birleştirirsin; her seçim anında sese yansır. Ses, Karplus-Strong ile tarayıcıda üretilir (örnek dosyası yok, çevrimdışı çalışır).</p>
+      <div class="row"><span class="grow">Çalan enstrüman</span>
+        <span class="seg" id="gInstr"><label><input type="radio" name="gInstr" value="piano"><span>Piyano</span></label><label><input type="radio" name="gInstr" value="guitar"><span>Gitar</span></label><label><input type="radio" name="gInstr" value="both"><span>İkisi</span></label></span></div>
+      <div class="row"><label class="grow">Parti şu bölüm için<select id="gTarget"></select></label></div>
+      <div id="gSecInfo"></div>
+      <div id="guitarPanel"></div>
+      <div class="row"><button id="btnGAudition" title="Seçili kombinasyonu 2 ölçülük döngüde çalar (projedeki gerçek akorlarla; akor yoksa Am–F–C–G)">▶ Dinle (2 ölçü döngü)</button><button id="btnGStop">■</button></div>
+      <div id="gPresets"></div>
+    </details>
+
+    <details class="step" data-key="s8d" id="bassStep">
+      <summary><b>8d</b> Bas (üretilen bas hattı) <span class="chip" id="chipS8d"></span></summary>
+      <p class="hint">Akor izinden ve bölümlerin tonundan bas hattı üretir; ses analiz edilmez, hiçbir nota elle yazılmaz. Beğenmediğin ölçüleri kilitle, zarla ya da şeritte düzenle. Bas şeridi zaman çizelgesinin altında.</p>
+      <div id="bassPanel"></div>
+    </details>
+
+    <details class="step" data-key="s8e">
+      <summary><b>8e</b> Mikser <span class="chip" id="chipS8e"></span></summary>
       <div class="mixer">
         <div class="strip" data-track="vocal">
           <b>Vokal</b>
@@ -228,7 +318,7 @@
           <button class="mute">M</button><button class="solo">S</button>
         </div>
         <div class="strip" data-track="piano">
-          <b>Piyano</b>
+          <b title="Piyano ya da synth klavye">Akor</b>
           <input type="range" min="-40" max="6" step="1" value="-6" class="vol" aria-label="Piyano ses seviyesi">
           <output>-6 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
@@ -239,30 +329,29 @@
           <output>-8 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
         </div>
+        <div class="strip" data-track="guitar">
+          <b>Gitar</b>
+          <input type="range" min="-40" max="6" step="1" value="-4" class="vol" aria-label="Gitar ses seviyesi">
+          <output>-4 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
+        <div class="strip" data-track="bass">
+          <b>Bas</b>
+          <input type="range" min="-40" max="6" step="1" value="-4" class="vol" aria-label="Bas ses seviyesi">
+          <output>-4 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
       </div>
-      <label class="chk"><input type="checkbox" id="inPedal"> Pedal bas (bölüm tonikinde)</label>
       <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
-      <div id="pianoInfo" class="hint"></div>
     </details>
 
-    <details class="step" open>
-      <summary><b>8b</b> Davul (basit loop)</summary>
-      <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü her zaman 1. adımdan kendin de seçebilirsin; loop proje ölçüsüne göre seçilir.</p>
-      <div id="meterEst"></div>
-      <label class="chk"><input type="checkbox" id="inDrumsOn"> Oynatırken davul çalsın</label>
-      <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>
-        <button id="btnDrumPreview" title="Seçili loop'u 2 ölçü dinle">▶ Loop</button><button id="btnDrumStop">■</button></div>
-      <div id="drumInfo"></div>
-      <pre id="drumGrid" class="drum-grid"></pre>
-    </details>
-
-    <details class="step" open>
+    <details class="step" data-key="s9">
       <summary><b>9</b> Dışa aktarım</summary>
       <div class="grid2">
         <button id="btnExpMidi">MIDI (akor + melodi)</button>
         <button id="btnExpChart">Akor şeması (.txt)</button>
         <button id="btnExpVocal">Düzeltilmiş vokal WAV</button>
-        <button id="btnExpMix">Vokal + piyano (+ davul) WAV</button>
+        <button id="btnExpMix">Vokal + piyano / gitar / bas (+ davul) WAV</button>
       </div>
     </details>
   </aside>
@@ -279,6 +368,7 @@
       <span class="legend"><i class="lg in"></i>scale içi <i class="lg out"></i>scale dışı <i class="lg raw"></i>ham perde <i class="lg cor"></i>düzeltilmiş perde</span>
     </div>
     <div id="tlScroll"><div id="tlInner"><canvas id="tl"></canvas></div></div>
+    <div id="bassLane"><canvas id="bsCv" aria-label="Bas şeridi"></canvas><div id="bsBarMenu"></div></div>
     <div id="inspector"><p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p></div>
   </section>
 </main>
