@@ -304,3 +304,5 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
 .matrix-cell.manual.on { background: var(--accent); color: #111; }
 .matrix-dim { opacity: .55; }
 #matrixTable { overflow-x: auto; }
+
+#packSuggestions small { display: block; font-size: 10px; opacity: .75; }

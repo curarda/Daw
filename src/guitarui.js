@@ -248,7 +248,7 @@ $('#guitarPanel').addEventListener('input', (e) => {
   gRefreshSound();
 });
 $('#guitarPanel').addEventListener('change', (e) => { if (e.target.dataset && e.target.dataset.s) renderGuitar(); });
-$$('input[name=gInstr]').forEach((r) => r.addEventListener('change', (e) => { S.proj.guitar.instrument = e.target.value; renderMatrix(); if (Player.playing) Player.play(); }));
+$$('input[name=gInstr]').forEach((r) => r.addEventListener('change', (e) => { S.proj.guitar.instrument = e.target.value; renderMatrix(); renderPacks(); if (Player.playing) Player.play(); }));
 $('#gTarget').addEventListener('change', (e) => { GT.target = e.target.value; GT.sel = null; renderGuitar(); if (GT.auditioning) gRefreshSound(); });
 $('#gSecInfo').addEventListener('click', (e) => {
   if (e.target.closest('#gSecOwn')) { gState().parts[GT.target] = jclone(gState().parts._all); gChanged(); }

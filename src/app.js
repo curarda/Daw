@@ -204,6 +204,7 @@ function refresh() {
   }
   renderSections();
   renderMatrix();
+  renderPacks();
   renderInspector();
   renderInfo();
   renderDrums();
@@ -2454,12 +2455,55 @@ function deleteSection(id) {
   refresh();
   status(`“${s.name}” bölümü silindi (ölçü ${s.startBar}–${s.endBar}).`);
 }
-// Matris eylemleri komşu düzenlemelerle birleşmeyen ayrı geri alma adımlarıdır.
+// Paket paneli; uyarılar yalnızca son uygulama için gösterilir.
+const PACK_UI = { project: null, warnings: [], kept: [] };
+const PACK_LAYER_NAMES = { piano: 'Akor', guitar: 'Gitar', bass: 'Bas', drums: 'Davul' };
+function renderPacks() {
+  const p = S.proj;
+  C.migratePack(p);
+  if (PACK_UI.project !== p) { PACK_UI.project = p; PACK_UI.warnings = []; PACK_UI.kept = []; }
+  const ranked = C.rankPacks(p), select = $('#inPack'), selected = select.value;
+  const record = (id) => C.PACKS.find((pack) => pack.id === id);
+  const fit = (r) => r.fits ? 'BPM aralığına uyuyor' : `±${r.distance} BPM dışında`;
+  $('#chipPack').textContent = record(p.pack.id)?.name || 'yok';
+  select.innerHTML = ranked.map((r) => `<option value="${r.id}">${esc(record(r.id).name)} — ${fit(r)}</option>`).join('');
+  select.value = ranked.some((r) => r.id === selected) ? selected : ranked.some((r) => r.id === p.pack.id) ? p.pack.id : ranked[0]?.id || '';
+  $('#packSuggestions').innerHTML = C.topSuggestions(p).map((r) => `<button data-pack="${r.id}">${esc(record(r.id).name)}<small>${fit(r)}</small></button>`).join('');
+  $('#packUnavailable').hidden = !!ranked.length;
+  for (const el of [select, $('#btnPackApply'), $('#btnPackNext'), ...$$('[data-pack-lock]')]) el.disabled = !ranked.length;
+  for (const el of $$('[data-pack-lock]')) { const locked = p.pack.locks[el.dataset.packLock]; el.setAttribute('aria-pressed', String(locked)); el.classList.toggle('on', locked); }
+  const messages = [...PACK_UI.warnings, ...(PACK_UI.kept.length ? ['Kilitli katmanlar korundu: ' + PACK_UI.kept.map((l) => PACK_LAYER_NAMES[l]).join(', ')] : [])];
+  $('#packWarnings').innerHTML = messages.map((msg) => `<li>${esc(msg)}</li>`).join('');
+}
+function applyPackUI(id) {
+  if (!id || !S.d) return;
+  try {
+    const restarting = matrixEdit(() => {
+      const result = C.applyPack(S.proj, S.d, id);
+      PACK_UI.project = S.proj; PACK_UI.warnings = result.warnings; PACK_UI.kept = result.kept;
+      $('#inPack').value = id;
+    });
+    clearTimeout(BS.timer);
+    const name = C.PACKS.find((p) => p.id === id).name;
+    const message = [`Tür paketi: ${name}`, ...PACK_UI.warnings, ...(PACK_UI.kept.length ? ['Kilitli katmanlar korundu: ' + PACK_UI.kept.map((l) => PACK_LAYER_NAMES[l]).join(', ')] : [])].join(' · ');
+    status(message);
+    if (restarting) restarting.then(() => status(message));
+  } catch (e) { status(e.message, 'err'); }
+}
+$('#packSuggestions').onclick = (e) => { const b = e.target.closest('[data-pack]'); if (b) applyPackUI(b.dataset.pack); };
+$('#btnPackApply').onclick = () => applyPackUI($('#inPack').value);
+$('#btnPackNext').onclick = () => applyPackUI(C.nextPack(S.proj, S.proj.pack.id || $('#inPack').value));
+$('#packLocks').onclick = (e) => {
+  const b = e.target.closest('[data-pack-lock]'); if (!b || b.disabled) return;
+  matrixEdit(() => { const l = b.dataset.packLock; S.proj.pack.locks[l] = !S.proj.pack.locks[l]; });
+};
+
+// Matris ve paket eylemleri komşu düzenlemelerle birleşmeyen ayrı geri alma adımlarıdır.
 function matrixEdit(fn) {
   histCommit(); HIST.t = -Infinity;
   fn(); GT.cache = null;
   refresh(); HIST.t = -Infinity;
-  if (Player.playing) Player.play();
+  if (Player.playing) return Player.play();
 }
 function renderMatrix() {
   const p = S.proj, d = S.d, matrix = p.matrix || { enabled: false, rows: {} };
@@ -2497,7 +2541,7 @@ $('#matrixTable').onclick = (e) => {
     const { section: id, layer } = button.dataset;
     const sec = S.d.sections.find((s) => s.id === id);
     const row = rows[id] || (rows[id] = {});
-    row[layer] = typeof row[layer] === 'boolean' ? null : !C.matrixTemplate(sec.implicit ? '_all' : sec.typeNorm)[layer];
+    row[layer] = typeof row[layer] === 'boolean' ? null : !C.matrixTemplate(sec.implicit ? '_all' : sec.typeNorm, S.proj)[layer];
   });
 };
 
