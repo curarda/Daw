@@ -276,7 +276,7 @@
 
     
     <details class="step" data-key="s8b">
-      <summary><b>8b</b> Davul (basit loop) <span class="chip" id="chipS8b"></span></summary>
+      <summary><b>8b</b> Davul (loop ve 45 ritim kalıbı) <span class="chip" id="chipS8b"></span></summary>
       <p class="hint">Melodinin vurgularına (uzun, yüksek sesli, tepe notalar) ve tempoya bakarak önce ölçüyü tahmin eder, sonra ölçüye + BPM'e + vurgulara en uyan loop'u seçer. Ölçüyü her zaman 1. adımdan kendin de seçebilirsin; loop proje ölçüsüne göre seçilir.</p>
       <div id="meterEst"></div>
       <label class="chk"><input type="checkbox" id="inDrumsOn"> Oynatırken davul çalsın</label>
@@ -290,17 +290,26 @@
       <pre id="drumGrid" class="drum-grid"></pre>
     </details>
 
-    <details class="step" data-key="s8c">
-      <summary><b>8c</b> Bas <span class="chip" id="chipS8c"></span></summary>
-      <p class="hint">Akorların altına bas hattı: davulun kick'ine kilitli kök, pop, kök–beşli, sekizlik, yarım notalar, uzun kök, yürüyen bas, vals. "Otomatik" davul loop'una ve ölçüye göre seçer. Bölüm başına farklısı için bölüme tıklayıp "Bu bölümün düzenlemesi"ni kullan.</p>
-      <label class="chk"><input type="checkbox" id="inBassOn"> Oynatırken bas çalsın</label>
-      <div class="row"><label class="grow">Bas kalıbı<select id="inBassPattern"></select></label><button id="btnBassNext" title="Sıradaki kalıbı dene ve hemen dinle">⟳ Başka</button></div>
-      <div id="bassInfo" class="hint"></div>
-      <div id="bassRank" class="rank"></div>
+    <details class="step" data-key="s8c" id="guitarStep">
+      <summary><b>8c</b> Gitar (ritim katmanı) <span class="chip" id="chipS8c"></span></summary>
+      <p class="hint">Akor zaman çizelgesinden gitar partisi üretir. Altı katmanı (vuruş modu, ritim kalıbı, voicing, süsleme, nota süresi, ton/FX) ayrı ayrı seçip birleştirirsin; her seçim anında sese yansır. Ses, Karplus-Strong ile tarayıcıda üretilir (örnek dosyası yok, çevrimdışı çalışır).</p>
+      <div class="row"><span class="grow">Çalan enstrüman</span>
+        <span class="seg" id="gInstr"><label><input type="radio" name="gInstr" value="piano"><span>Piyano</span></label><label><input type="radio" name="gInstr" value="guitar"><span>Gitar</span></label><label><input type="radio" name="gInstr" value="both"><span>İkisi</span></label></span></div>
+      <div class="row"><label class="grow">Parti şu bölüm için<select id="gTarget"></select></label></div>
+      <div id="gSecInfo"></div>
+      <div id="guitarPanel"></div>
+      <div class="row"><button id="btnGAudition" title="Seçili kombinasyonu 2 ölçülük döngüde çalar (projedeki gerçek akorlarla; akor yoksa Am–F–C–G)">▶ Dinle (2 ölçü döngü)</button><button id="btnGStop">■</button></div>
+      <div id="gPresets"></div>
     </details>
 
-    <details class="step" data-key="s8d">
-      <summary><b>8d</b> Mikser <span class="chip" id="chipS8d"></span></summary>
+    <details class="step" data-key="s8d" id="bassStep">
+      <summary><b>8d</b> Bas (üretilen bas hattı) <span class="chip" id="chipS8d"></span></summary>
+      <p class="hint">Akor izinden ve bölümlerin tonundan bas hattı üretir; ses analiz edilmez, hiçbir nota elle yazılmaz. Beğenmediğin ölçüleri kilitle, zarla ya da şeritte düzenle. Bas şeridi zaman çizelgesinin altında.</p>
+      <div id="bassPanel"></div>
+    </details>
+
+    <details class="step" data-key="s8e">
+      <summary><b>8e</b> Mikser <span class="chip" id="chipS8e"></span></summary>
       <div class="mixer">
         <div class="strip" data-track="vocal">
           <b>Vokal</b>
@@ -320,10 +329,16 @@
           <output>-8 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
         </div>
+        <div class="strip" data-track="guitar">
+          <b>Gitar</b>
+          <input type="range" min="-40" max="6" step="1" value="-4" class="vol" aria-label="Gitar ses seviyesi">
+          <output>-4 dB</output>
+          <button class="mute">M</button><button class="solo">S</button>
+        </div>
         <div class="strip" data-track="bass">
           <b>Bas</b>
-          <input type="range" min="-40" max="6" step="1" value="-5" class="vol" aria-label="Bas ses seviyesi">
-          <output>-5 dB</output>
+          <input type="range" min="-40" max="6" step="1" value="-4" class="vol" aria-label="Bas ses seviyesi">
+          <output>-4 dB</output>
           <button class="mute">M</button><button class="solo">S</button>
         </div>
       </div>
@@ -336,7 +351,7 @@
         <button id="btnExpMidi">MIDI (akor + melodi)</button>
         <button id="btnExpChart">Akor şeması (.txt)</button>
         <button id="btnExpVocal">Düzeltilmiş vokal WAV</button>
-        <button id="btnExpMix">Vokal + piyano (+ davul) WAV</button>
+        <button id="btnExpMix">Vokal + piyano / gitar / bas (+ davul) WAV</button>
       </div>
     </details>
   </aside>
@@ -353,6 +368,7 @@
       <span class="legend"><i class="lg in"></i>scale içi <i class="lg out"></i>scale dışı <i class="lg raw"></i>ham perde <i class="lg cor"></i>düzeltilmiş perde</span>
     </div>
     <div id="tlScroll"><div id="tlInner"><canvas id="tl"></canvas></div></div>
+    <div id="bassLane"><canvas id="bsCv" aria-label="Bas şeridi"></canvas><div id="bsBarMenu"></div></div>
     <div id="inspector"><p class="hint">Başlamak için bir kayıt yapın, dosya yükleyin ya da <b>Test melodisi üret</b>'e basın.</p></div>
   </section>
 </main>
