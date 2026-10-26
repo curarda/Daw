@@ -1,8 +1,49 @@
 // Ortak düzenlenmiş olay akışı; ses üretimi ve zamanlama tüketicilerde kalır.
 (function (root) {
 const C = root.Core;
-function effectiveLayers(sectionId) {
-  return { piano: true, guitar: true, bass: true, drums: true };
+const layers = ['piano', 'guitar', 'bass', 'drums'];
+function matrixTemplate(typeNorm) {
+  const light = ['intro', 'bridge', 'outro'].includes(typeNorm);
+  return { piano: true, guitar: true, bass: !light, drums: !light && typeNorm !== 'verse' };
+}
+function setMatrixEnabled(proj, on) {
+  return { ...proj, matrix: { ...proj.matrix, enabled: !!on, rows: proj.matrix?.rows || {} } };
+}
+function migrateMatrix(proj) {
+  if (!Object.prototype.hasOwnProperty.call(proj, 'matrix')) proj.matrix = { enabled: false, rows: {} };
+  return proj;
+}
+function effectiveCell(proj, d, sectionId, layer) {
+  const ins = proj.guitar?.instrument || 'piano';
+  if (layer === 'piano' && ins === 'guitar' || layer === 'guitar' && ins === 'piano' || layer === 'bass' && !proj.bass?.enabled) return false;
+  if (!proj.matrix || proj.matrix.enabled === false) return true;
+  const section = d.sections.find((s) => s.id === sectionId);
+  // Bölümler arasındaki boşluklar genel düzeni izler.
+  if (!section) return true;
+  const cell = proj.matrix.rows?.[sectionId]?.[layer];
+  return typeof cell === 'boolean' ? cell : matrixTemplate(section.implicit ? '_all' : section.typeNorm)[layer];
+}
+function effectiveLayers(proj, d, sectionId) {
+  return Object.fromEntries(layers.map((layer) => [layer, effectiveCell(proj, d, sectionId, layer)]));
+}
+function gateEvents(events, proj, d, layer) {
+  const g = d.g;
+  const sectionAt = (q) => d.sections.find((s) => q >= (s.startBar - 1) * g.barQ && q < s.endBar * g.barQ);
+  const boundaries = [...new Set(d.sections.flatMap((s) => [(s.startBar - 1) * g.barQ, s.endBar * g.barQ]))].sort((a, b) => a - b);
+  const gated = events.flatMap((e) => {
+    const q = e.t / g.spq;
+    if (!effectiveCell(proj, d, sectionAt(q)?.id, layer)) return [];
+    if (layer === 'drums') return [e];
+    const end = (e.t + e.dur) / g.spq;
+    const boundary = boundaries.find((b) => b > q && b < end && !effectiveCell(proj, d, sectionAt(b)?.id, layer));
+    if (boundary == null) return [e];
+    const dur = boundary * g.spq - e.t, clipped = { ...e, dur };
+    if (e.q1 != null) clipped.q1 = boundary;
+    if (e.hold != null) clipped.hold = Math.min(e.hold, dur);
+    return [clipped];
+  });
+  if (events.fxTable) gated.fxTable = events.fxTable;
+  return gated;
 }
 function arrangedEvents(d, proj, opts = {}) {
   const out = { piano: [], guitar: [], bass: [], drums: [] };
@@ -32,11 +73,12 @@ function arrangedEvents(d, proj, opts = {}) {
         const a = arr(section(b)?.id).drums;
         return a === 'off' ? null : (a && byId(a)) || (ds.on ? globalLoop : null);
       };
-      const fill = (b) => ds.fills && !opts.previewDrums && b < d.bars && section(b) && section(b + 1) && section(b).id !== section(b + 1).id && !!plan(b) && !!plan(b + 1);
+      const fill = (b) => ds.fills && !opts.previewDrums && b < d.bars && section(b) && section(b + 1) && section(b).id !== section(b + 1).id && !!plan(b) && !!plan(b + 1) && (!proj.matrix || proj.matrix.enabled === false || (effectiveCell(proj, d, section(b).id, 'drums') && effectiveCell(proj, d, section(b + 1).id, 'drums')));
       out.drums = C.arrangeDrums(g, d.bars, ds.startBar || 1, plan, fill, sw);
     }
   }
+  if (proj.matrix && proj.matrix.enabled !== false) for (const layer of layers) out[layer] = gateEvents(out[layer], proj, d, layer);
   return out;
 }
-Object.assign(C, { arrangedEvents, effectiveLayers });
+Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers });
 })(typeof window !== 'undefined' ? window : globalThis);

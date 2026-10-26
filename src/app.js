@@ -43,6 +43,7 @@ window.__dawAPI = {
   },
   stop: () => Player.stop(),
   arrangement: () => ({ drums: drumEventsAll(), bass: arrangedEventsAll(['bass']).bass, piano: pianoEventsAll() }), // bölüm düzenlemeli olaylar (testler)
+  renderStems: (sr, lenSec) => renderStems(sr, lenSec),
   hist: () => HIST,
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir; durs: ölçü cinsinden süreler
@@ -236,6 +237,7 @@ function importMidiBytes(bytes, name, trackIdx, keep) {
   S.proj = C.newProject(); S.audio = null; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.sel = null; S.pos = 0;
   const p = S.proj;
   p.settings.bpm = r.settings.bpm; p.settings.meter = r.settings.meter;
+  p.matrix = { enabled: false, rows: {} };
   p.audio = { offsetSec: 0, alignMode: 'none', leadBars: 0, source: 'midi' };
   p.pitch.tuning = 'a440'; // MIDI notaları tam yarım sestir
   p.sections = r.sections.map((x) => ({ id: uid(), name: x.name, startBar: x.startBar, endBar: x.endBar, tonic: x.tonic, mode: x.mode }));
@@ -1069,6 +1071,7 @@ const Player = {
     const rounds = [{ lo: from, hi: region ? region.to : Infinity, tau0: from }];
     if (region && !pv) for (let k = 0; k < Math.min(200, Math.ceil(600 / len)); k++) rounds.push({ lo: region.from, hi: region.to, tau0: from + (region.to - from) + k * len });
     const pev = ins === 'guitar' ? [] : pianoEventsAll(), dev = drumEventsAll(), mev = melodyEvents();
+    if (window.__dawAPI.onScheduledEvents) window.__dawAPI.onScheduledEvents({ piano: pev, drums: dev, guitar: gtr ? gtr.events : [] });
     if (S.proj.bass.enabled && !opts.noBass && S.proj.bass.bars.some((b) => b.notes.length)) scheduleBassPlay(T, rounds, g, bCtx());
     const poInst = C.pianoOpts(S.proj.piano).inst;
     // ses saati ağır hazırlıktan SONRA alınır: tap kaydı (onStart) sayımı bu ana göre ölçer
@@ -3385,7 +3388,7 @@ async function openProject(file) {
   Player.stop(true); HIST.reset = true;
   const audioData = p.audioData, midiData = p.midiData;
   delete p.audioData; delete p.midiData; delete p.savedAt;
-  S.proj = mergeDefaults(C.newProject(), p);
+  S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(p));
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   if (midiData) S.midi = { name: midiData.name, bytes: null, notes: midiData.notes, endQ: midiData.endQ, tracks: [], trackIndex: null, warnings: [] };

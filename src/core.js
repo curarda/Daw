@@ -1882,6 +1882,7 @@ function newProject() {
     audio: { offsetSec: 0, alignMode: 'none', leadBars: 0 }, // leadBars: şarkının başındaki boş ölçü sayısı (kaydırma)
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],
+    matrix: { enabled: false, rows: {} },
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
@@ -2274,7 +2275,10 @@ function exportMidi(proj, d, drums = null) {
   const piano = events.piano.map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
   const gtr = events.guitar.filter((e) => e.midi != null)
     .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) }));
-  const bass = events.bass.map((e) => ({ q0: e.q, q1: e.q + Math.max(0.05, (e.dur * (e.gate ?? 1)) / g.spq), midi: e.midi, vel: e.vel }));
+  const bass = events.bass.map((e) => {
+    const durQ = e.dur / g.spq, length = Math.max(0.05, durQ * (e.gate ?? 1));
+    return { q0: e.q, q1: e.q + (proj.matrix?.enabled ? Math.min(durQ, length) : length), midi: e.midi, vel: e.vel };
+  });
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
   const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
   // GM programı: piyano 0 · synth akor "Pad 3 polysynth" 90 · synth arpej "Lead 2 sawtooth" 81

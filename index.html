@@ -2593,6 +2593,7 @@ function newProject() {
     audio: { offsetSec: 0, alignMode: 'none', leadBars: 0 }, // leadBars: şarkının başındaki boş ölçü sayısı (kaydırma)
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],
+    matrix: { enabled: false, rows: {} },
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
@@ -2985,7 +2986,10 @@ function exportMidi(proj, d, drums = null) {
   const piano = events.piano.map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
   const gtr = events.guitar.filter((e) => e.midi != null)
     .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) }));
-  const bass = events.bass.map((e) => ({ q0: e.q, q1: e.q + Math.max(0.05, (e.dur * (e.gate ?? 1)) / g.spq), midi: e.midi, vel: e.vel }));
+  const bass = events.bass.map((e) => {
+    const durQ = e.dur / g.spq, length = Math.max(0.05, durQ * (e.gate ?? 1));
+    return { q0: e.q, q1: e.q + (proj.matrix?.enabled ? Math.min(durQ, length) : length), midi: e.midi, vel: e.vel };
+  });
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
   const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
   // GM programı: piyano 0 · synth akor "Pad 3 polysynth" 90 · synth arpej "Lead 2 sawtooth" 81
@@ -6424,8 +6428,49 @@ Object.assign(C, { buildTimeMap, identityMap, wsolaWarp, QUANT_GRIDS, quantizeTa
 // Ortak düzenlenmiş olay akışı; ses üretimi ve zamanlama tüketicilerde kalır.
 (function (root) {
 const C = root.Core;
-function effectiveLayers(sectionId) {
-  return { piano: true, guitar: true, bass: true, drums: true };
+const layers = ['piano', 'guitar', 'bass', 'drums'];
+function matrixTemplate(typeNorm) {
+  const light = ['intro', 'bridge', 'outro'].includes(typeNorm);
+  return { piano: true, guitar: true, bass: !light, drums: !light && typeNorm !== 'verse' };
+}
+function setMatrixEnabled(proj, on) {
+  return { ...proj, matrix: { ...proj.matrix, enabled: !!on, rows: proj.matrix?.rows || {} } };
+}
+function migrateMatrix(proj) {
+  if (!Object.prototype.hasOwnProperty.call(proj, 'matrix')) proj.matrix = { enabled: false, rows: {} };
+  return proj;
+}
+function effectiveCell(proj, d, sectionId, layer) {
+  const ins = proj.guitar?.instrument || 'piano';
+  if (layer === 'piano' && ins === 'guitar' || layer === 'guitar' && ins === 'piano' || layer === 'bass' && !proj.bass?.enabled) return false;
+  if (!proj.matrix || proj.matrix.enabled === false) return true;
+  const section = d.sections.find((s) => s.id === sectionId);
+  // Bölümler arasındaki boşluklar genel düzeni izler.
+  if (!section) return true;
+  const cell = proj.matrix.rows?.[sectionId]?.[layer];
+  return typeof cell === 'boolean' ? cell : matrixTemplate(section.implicit ? '_all' : section.typeNorm)[layer];
+}
+function effectiveLayers(proj, d, sectionId) {
+  return Object.fromEntries(layers.map((layer) => [layer, effectiveCell(proj, d, sectionId, layer)]));
+}
+function gateEvents(events, proj, d, layer) {
+  const g = d.g;
+  const sectionAt = (q) => d.sections.find((s) => q >= (s.startBar - 1) * g.barQ && q < s.endBar * g.barQ);
+  const boundaries = [...new Set(d.sections.flatMap((s) => [(s.startBar - 1) * g.barQ, s.endBar * g.barQ]))].sort((a, b) => a - b);
+  const gated = events.flatMap((e) => {
+    const q = e.t / g.spq;
+    if (!effectiveCell(proj, d, sectionAt(q)?.id, layer)) return [];
+    if (layer === 'drums') return [e];
+    const end = (e.t + e.dur) / g.spq;
+    const boundary = boundaries.find((b) => b > q && b < end && !effectiveCell(proj, d, sectionAt(b)?.id, layer));
+    if (boundary == null) return [e];
+    const dur = boundary * g.spq - e.t, clipped = { ...e, dur };
+    if (e.q1 != null) clipped.q1 = boundary;
+    if (e.hold != null) clipped.hold = Math.min(e.hold, dur);
+    return [clipped];
+  });
+  if (events.fxTable) gated.fxTable = events.fxTable;
+  return gated;
 }
 function arrangedEvents(d, proj, opts = {}) {
   const out = { piano: [], guitar: [], bass: [], drums: [] };
@@ -6455,13 +6500,14 @@ function arrangedEvents(d, proj, opts = {}) {
         const a = arr(section(b)?.id).drums;
         return a === 'off' ? null : (a && byId(a)) || (ds.on ? globalLoop : null);
       };
-      const fill = (b) => ds.fills && !opts.previewDrums && b < d.bars && section(b) && section(b + 1) && section(b).id !== section(b + 1).id && !!plan(b) && !!plan(b + 1);
+      const fill = (b) => ds.fills && !opts.previewDrums && b < d.bars && section(b) && section(b + 1) && section(b).id !== section(b + 1).id && !!plan(b) && !!plan(b + 1) && (!proj.matrix || proj.matrix.enabled === false || (effectiveCell(proj, d, section(b).id, 'drums') && effectiveCell(proj, d, section(b + 1).id, 'drums')));
       out.drums = C.arrangeDrums(g, d.bars, ds.startBar || 1, plan, fill, sw);
     }
   }
+  if (proj.matrix && proj.matrix.enabled !== false) for (const layer of layers) out[layer] = gateEvents(out[layer], proj, d, layer);
   return out;
 }
-Object.assign(C, { arrangedEvents, effectiveLayers });
+Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers });
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="stylecore">/* =====================================================================
@@ -7850,6 +7896,7 @@ window.__dawAPI = {
   },
   stop: () => Player.stop(),
   arrangement: () => ({ drums: drumEventsAll(), bass: arrangedEventsAll(['bass']).bass, piano: pianoEventsAll() }), // bölüm düzenlemeli olaylar (testler)
+  renderStems: (sr, lenSec) => renderStems(sr, lenSec),
   hist: () => HIST,
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir; durs: ölçü cinsinden süreler
@@ -8043,6 +8090,7 @@ function importMidiBytes(bytes, name, trackIdx, keep) {
   S.proj = C.newProject(); S.audio = null; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.sel = null; S.pos = 0;
   const p = S.proj;
   p.settings.bpm = r.settings.bpm; p.settings.meter = r.settings.meter;
+  p.matrix = { enabled: false, rows: {} };
   p.audio = { offsetSec: 0, alignMode: 'none', leadBars: 0, source: 'midi' };
   p.pitch.tuning = 'a440'; // MIDI notaları tam yarım sestir
   p.sections = r.sections.map((x) => ({ id: uid(), name: x.name, startBar: x.startBar, endBar: x.endBar, tonic: x.tonic, mode: x.mode }));
@@ -8876,6 +8924,7 @@ const Player = {
     const rounds = [{ lo: from, hi: region ? region.to : Infinity, tau0: from }];
     if (region && !pv) for (let k = 0; k < Math.min(200, Math.ceil(600 / len)); k++) rounds.push({ lo: region.from, hi: region.to, tau0: from + (region.to - from) + k * len });
     const pev = ins === 'guitar' ? [] : pianoEventsAll(), dev = drumEventsAll(), mev = melodyEvents();
+    if (window.__dawAPI.onScheduledEvents) window.__dawAPI.onScheduledEvents({ piano: pev, drums: dev, guitar: gtr ? gtr.events : [] });
     if (S.proj.bass.enabled && !opts.noBass && S.proj.bass.bars.some((b) => b.notes.length)) scheduleBassPlay(T, rounds, g, bCtx());
     const poInst = C.pianoOpts(S.proj.piano).inst;
     // ses saati ağır hazırlıktan SONRA alınır: tap kaydı (onStart) sayımı bu ana göre ölçer
@@ -11192,7 +11241,7 @@ async function openProject(file) {
   Player.stop(true); HIST.reset = true;
   const audioData = p.audioData, midiData = p.midiData;
   delete p.audioData; delete p.midiData; delete p.savedAt;
-  S.proj = mergeDefaults(C.newProject(), p);
+  S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(p));
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   if (midiData) S.midi = { name: midiData.name, bytes: null, notes: midiData.notes, endQ: midiData.endQ, tracks: [], trackIndex: null, warnings: [] };
@@ -11271,7 +11320,7 @@ const jclone = (x) => JSON.parse(JSON.stringify(x));
 // ---- parti → ses (çalma, ön dinleme ve mix WAV aynı yolu kullanır; render önbellekli)
 function guitarTrack(sr) {
   const g = S.d.g, slots = C.guitarSlotsFrom(S.d);
-  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts);
+  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts) + JSON.stringify(S.d.sections.map((s) => [s.id, s.startBar, s.endBar, C.effectiveLayers(S.proj, S.d, s.id)]));
   if (GT.cache && GT.cache.key === key) return GT.cache;
   const events = arrangedEventsAll(['guitar']).guitar;
   const n = Math.ceil((S.d.bars * g.barSec + 2.5) * sr);
@@ -11623,6 +11672,7 @@ function scheduleBassPlay(T, rounds, g, ctx) {
   const voices = makeBassVoices(tr, rc, (n) => Tone.connect(n, Player.bassCh));
   Player.bassVoices = voices;
   const ev = arrangedEventsAll(['bass']).bass, au = bassAutomation(tr, ctx, g);
+  if (window.__dawAPI.onScheduledEvents) window.__dawAPI.onScheduledEvents({ bass: ev });
   // rounds: Player.play'in turları ({lo, hi} zaman çizelgesi aralığı, tau0 = lo'nun Transport zamanı); döngü yoksa tek tur
   for (const r of rounds) {
     const at = (t) => r.tau0 + (Math.max(t, r.lo) - r.lo), from = r.lo;

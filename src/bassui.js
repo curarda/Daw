@@ -85,6 +85,7 @@ function scheduleBassPlay(T, rounds, g, ctx) {
   const voices = makeBassVoices(tr, rc, (n) => Tone.connect(n, Player.bassCh));
   Player.bassVoices = voices;
   const ev = arrangedEventsAll(['bass']).bass, au = bassAutomation(tr, ctx, g);
+  if (window.__dawAPI.onScheduledEvents) window.__dawAPI.onScheduledEvents({ bass: ev });
   // rounds: Player.play'in turları ({lo, hi} zaman çizelgesi aralığı, tau0 = lo'nun Transport zamanı); döngü yoksa tek tur
   for (const r of rounds) {
     const at = (t) => r.tau0 + (Math.max(t, r.lo) - r.lo), from = r.lo;
