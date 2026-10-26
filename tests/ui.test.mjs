@@ -1839,6 +1839,59 @@ try {
     return `vokal ${off.rms.toFixed(1)} → ${on.rms.toFixed(1)} dBFS, tepe ${on.peak.toFixed(1)} · miks: akor ${mx.p}, gitar ${mx.g}, bas ${mx.b}, davul ${mx.d} dB · Demo açar, elle ayara dokunmaz`;
   });
 
+  await step('Punch-in: seçilen ölçüler yeniden çekilir (canlı perde göstergesi, ön çalma), yalnızca bölge değişir, take\'ler arası geçiş, erken bitirme, geçersiz aralık', async () => {
+    await resetTest();
+    await page.fill('#inBpm', '120'); await page.dispatchEvent('#inBpm', 'change');
+    await page.click('#btnRec');
+    await page.waitForFunction(() => /Kayıt — ölçü 3/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+    assert.equal(await page.isHidden('#livePitch'), false, 'kayıtta canlı perde göstergesi açık');
+    await page.click('#btnRecStop');
+    await waitStatus(/Analiz tamam/);
+    assert.equal(await page.isHidden('#livePitch'), true, 'kayıt bitince gösterge kapanır');
+    const bars = await S(() => window.__daw.d.bars);
+    assert.ok(bars >= 2);
+    await S(() => { window.__before = Float32Array.from(window.__daw.audio.data); });
+    // geçersiz aralık
+    await page.fill('#inPunchA', '99'); await page.dispatchEvent('#inPunchA', 'input');
+    assert.equal(await page.isDisabled('#btnPunch'), true);
+    await page.fill('#inPunchA', '1'); await page.dispatchEvent('#inPunchA', 'input');
+    await page.fill('#inPunchB', '2'); await page.dispatchEvent('#inPunchB', 'input');
+    assert.equal(await page.isDisabled('#btnPunch'), false);
+    assert.match(await page.textContent('#punchInfo'), /Ölçü 1–2 yeniden çekilecek/);
+    await page.selectOption('#inPunchPre', '0');
+    await page.click('#btnPunch');
+    await page.waitForFunction(() => /Punch-in — ölçü/.test(document.querySelector('#status').textContent), null, { timeout: 60000 });
+    assert.equal(await page.isHidden('#livePitch'), false, 'punch-in sırasında canlı perde göstergesi');
+    assert.equal(await page.isDisabled('#btnPunchStop'), false);
+    await page.waitForFunction(() => /Punch-in tamam/.test(document.querySelector('#status').textContent), null, { timeout: 60000 });
+    assert.equal(await page.isHidden('#livePitch'), true);
+    const g = await S(() => { const c = window.__daw.comps[0], a = window.__daw.audio.data, b = window.__before; let out = 0, inn = 0, rms = 0; for (let i = 0; i < Math.max(a.length, b.length); i++) { const d = Math.abs((a[i] || 0) - (b[i] || 0)); if (i >= c.fa && i < c.fb) { inn += d; rms += (a[i] || 0) ** 2; } else out = Math.max(out, d); } return { n: window.__daw.comps.length, takes: c.takes.map((t) => t.name), cur: c.cur, fa: c.fa, fb: c.fb, out, inn, rms: Math.sqrt(rms / (c.fb - c.fa)), len: a.length, len0: b.length }; });
+    assert.equal(g.n, 1); assert.deepEqual(g.takes, ['Orijinal', 'Take 2']); assert.equal(g.cur, 1);
+    assert.equal(g.out, 0, 'bölge dışı örnekler birebir aynı');
+    assert.ok(g.inn > 0 && g.rms > 1e-3, `bölge yeni take ile değişti (RMS ${g.rms.toFixed(4)})`);
+    assert.equal(g.len, g.len0);
+    assert.equal(await page.locator('#takeList button[data-take]').count(), 2);
+    const after = await S(() => { window.__after = Float32Array.from(window.__daw.audio.data); return 1; });
+    // orijinale dön → birebir eski kayıt; tekrar Take 2
+    await page.click('#takeList button[data-take="0"]');
+    await waitStatus(/Orijinal\./);
+    assert.equal(await S(() => { const a = window.__daw.audio.data, b = window.__before; let m = 0; for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; }), 0, 'Orijinal: eski kayıt birebir');
+    await page.click('#takeList button[data-take="1"]');
+    await waitStatus(/Take 2\./);
+    assert.equal(await S(() => { const a = window.__daw.audio.data, b = window.__after; let m = 0; for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; }), 0, 'Take 2 birebir geri geldi');
+    // erken bitirme: aynı aralık → aynı bölgeye üçüncü take
+    await page.click('#btnPunch');
+    await page.waitForFunction(() => /Punch-in — ölçü/.test(document.querySelector('#status').textContent), null, { timeout: 60000 });
+    await page.waitForTimeout(1400);
+    await page.click('#btnPunchStop');
+    await page.waitForFunction(() => /Punch-in tamam/.test(document.querySelector('#status').textContent), null, { timeout: 60000 });
+    assert.deepEqual(await S(() => window.__daw.comps.map((c) => c.takes.map((t) => t.name))), [['Orijinal', 'Take 2', 'Take 3']]);
+    // yeni ses → take\'ler temizlenir
+    await resetTest();
+    assert.equal(await S(() => window.__daw.comps.length), 0);
+    return `bölge dışı birebir, bölge RMS ${g.rms.toFixed(3)}, 3 take (orijinal / yeni / erken bitirilen), take geçişleri birebir`;
+  });
+
   await step('Alt bölme / swing: düz · üçleme (12/8) · özel oran; kayıttan ölç; davul, bas ve akor shuffle (X . t) aynı ızgarada; quantize ve cetvel orana uyar; geri alınır', async () => {
     const tl = await resetTest();
     assert.equal(await page.inputValue('#inSubdiv'), 'straight'); assert.equal(await page.isHidden('#swingWrap'), true);

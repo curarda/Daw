@@ -74,6 +74,7 @@
         <label class="grow">Click<input type="range" id="inClickVol" min="0" max="1" step="0.05" value="0.6"></label>
       </div>
       <p class="hint">Önce 1 ölçü count-in çalar. Click yalnızca çıkışa (kulaklığa) gider, kayda karışmaz — hoparlör değil kulaklık kullanın.</p>
+      <div id="livePitch" class="livepitch" hidden aria-live="off"><div class="lp-bar"><i class="lp-mid"></i><b id="lpNeedle"></b></div><span id="lpText">♪ —</span></div>
       <div class="row"><button id="btnMidiLoad" title="Proje JSON'u yerine MIDI kaydettiysen: MIDI'den devam et">MIDI yükle (.mid)</button>
         <label class="grow" id="midiTrackRow" hidden>MIDI melodi izi<select id="inMidiTrack"></select></label></div>
       <div id="midiInfo" class="hint"></div>
@@ -96,6 +97,25 @@
         <label>Kayıt ofseti (ms)<input type="number" id="inOffset" step="1" value="0"></label>
         <div id="audioInfo" class="hint"></div>
       </div>
+      <details class="sub" id="punchBox" data-key="punch">
+        <summary><b>⏺ Punch-in</b> <span class="hint">(yalnızca bir bölümü yeniden çek)</span></summary>
+        <p class="hint">Yeniden söylemek istediğin ölçüleri seç: öncesi çalar (fon müziği + eski vokal), bölge başlayınca kayıt girer, bölge bitince kendiliğinden biter. <b>Kulaklık kullan.</b> Eski ve yeni take'ler saklanır; aralarında tek tıkla geçersin. Söylerken canlı perde göstergesi çıkar.</p>
+        <div class="row">
+          <label title="Yeniden çekilecek ilk ölçü">Ölçü <input type="number" id="inPunchA" min="1" value="1" style="width:64px"></label>
+          <label title="Son ölçü (dahil)">– <input type="number" id="inPunchB" min="1" value="1" style="width:64px"></label>
+          <button id="btnPunchSec" class="small" title="Zaman çizelgesinde seçili bölümün ölçüleri">Seçili bölüm</button>
+          <button id="btnPunchLoop" class="small" title="🔁 döngü bölgesinin ölçüleri">Döngü bölgesi</button>
+          <button id="btnPunchPos" class="small" title="İmlecin olduğu ölçü">İmleçten</button>
+        </div>
+        <div class="row">
+          <label title="Bölgeden önce kaç ölçü çalıp sonra kayda girilsin">Ön çalma <select id="inPunchPre"><option value="0">yok</option><option value="1" selected>1 ölçü</option><option value="2">2 ölçü</option></select></label>
+          <label class="chk"><input type="checkbox" id="inPunchClick" checked> Metronom</label>
+          <label class="chk" title="Ön çalmada eski vokali de duy (bölge başlayınca susar)"><input type="checkbox" id="inPunchOld" checked> Eski vokal ön çalmada</label>
+        </div>
+        <div class="row"><button id="btnPunch" class="rec">⏺ Punch-in</button><button id="btnPunchStop" disabled>■ Bitir</button></div>
+        <div id="punchInfo" class="hint"></div>
+        <div id="takeList"></div>
+      </details>
       <fieldset id="shiftBox">
         <legend>Şarkıyı kaydır — başta boşluk bırak</legend>
         <p class="hint">Bütün şarkıyı birlikte 1–2 ölçü kaydırır: ses, ölçü çizgileri, bölümler, akor kilitleri ve düzenlemeler birlikte gider. Başta boşluk (giriş) bırakmak ya da fazla boşluğu azaltmak için. Orijinal kayıt değişmez.</p>

@@ -137,6 +137,7 @@ function toAudioBuffer(data, sr) {
 
 // ---------------------------------------------------------------- pipeline
 function setAudio(data, sr, name, source) {
+  S.comps = []; if (typeof renderTakes === 'function') renderTakes();
   HIST.reset = true; // yeni ses: geri alma geçmişi sıfırlanır (ses verisi geri alınamaz)
   S.midi = null;
   S.audio = { data, sr, name };
@@ -191,7 +192,7 @@ function refresh() {
     + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor (ör. ✂ noktasının iki yanında aynı akor kilitli); bu bölüm işaretler olmadan dolduruldu.</div>` : '');
   const nch = S.proj.chordLocks.filter((l) => l.src === 'chart').length;
   $('#chartCount').textContent = nch ? `(${nch})` : ''; $('#btnChartRemove').disabled = !nch;
-  renderFinishInfo(); renderVfxInfo();
+  renderFinishInfo(); renderVfxInfo(); punchInfoUpdate();
   { const lb = lastManualBar(); $('#afterInfo').textContent = lb ? `(ölçü ${lb}'den sonrası)` : ''; $('#btnApplyAfter').disabled = !lb; }
   const ns = S.d.chords.filter((c) => c.pinSuggest).length;
   $('#sugCount').textContent = ns ? `(${ns})` : ''; $('#btnApplySug').disabled = !ns;
@@ -1289,7 +1290,7 @@ function updateReadout() {
 
 // ---------------------------------------------------------------- kayıt (count-in + click kulaklığa)
 const WORKLET_SRC = `class RecProc extends AudioWorkletProcessor {
-  constructor() { super(); this.on = true; this.buf = new Float32Array(8192); this.n = 0; this.f0 = 0;
+  constructor() { super(); this.on = true; this.buf = new Float32Array(2048); this.n = 0; this.f0 = 0;
     this.port.onmessage = (e) => { if (e.data === 'stop') { this.flush(); this.on = false; } }; }
   flush() { if (this.n) { this.port.postMessage({ frame: this.f0, data: this.buf.slice(0, this.n) }); this.n = 0; } }
   process(inputs) {
@@ -1387,6 +1388,7 @@ const Rec = {
       const el = ctx.currentTime - t0;
       if (el < g.barSec) status(`Count-in… ${Math.max(1, Math.ceil((g.barSec - el) / g.pulseSec))}`, 'busy');
       else status(`● Kayıt — ölçü ${Math.floor((el - g.barSec) / g.barSec) + 1}`, 'busy');
+      liveMeter(st);
     };
     sched();
     st.timer = setInterval(sched, 40);
@@ -1399,6 +1401,7 @@ const Rec = {
     this.st = null;
     clearInterval(st.timer);
     const data = await closeCapture(st);
+    hideLivePitch();
     $('#btnRec').classList.remove('on'); $('#btnRecStop').disabled = true;
     if (!data.length) { status('Kayıt boş.', 'err'); return; }
     const sr = st.ctx.sampleRate;
@@ -1411,6 +1414,207 @@ const Rec = {
     await analyze();
   },
 };
+
+// ---------------------------------------------------------------- CANLI PERDE GÖSTERGESİ (kayıt ve punch-in sırasında)
+function captureTail(st, n = 2048) {
+  const parts = []; let need = n;
+  for (let k = st.chunks.length - 1; k >= 0 && need > 0; k--) { const c = st.chunks[k]; parts.unshift(c.length > need ? c.subarray(c.length - need) : c); need -= Math.min(need, c.length); }
+  const out = new Float32Array(n - Math.max(0, need)); let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
+function liveMeter(st) {
+  const tail = captureTail(st, 2048);
+  showLivePitch(tail.length >= 2048 ? C.livePitch(tail, st.ctx.sampleRate) : null);
+}
+function showLivePitch(r) {
+  const box = $('#livePitch');
+  if (!box) return;
+  box.hidden = false;
+  const nd = $('#lpNeedle');
+  if (!r) { $('#lpText').textContent = '♪ —'; nd.className = ''; nd.style.left = '50%'; return; }
+  const a = Math.abs(r.cents);
+  $('#lpText').textContent = `♪ ${r.note} ${r.cents > 0 ? '+' : ''}${r.cents}¢`;
+  nd.className = a <= 20 ? 'ok' : a <= 40 ? 'warn' : 'bad';
+  nd.style.left = (50 + Math.max(-50, Math.min(50, r.cents))) + '%';
+}
+const hideLivePitch = () => { const b = $('#livePitch'); if (b) b.hidden = true; };
+
+// ---------------------------------------------------------------- PUNCH-IN: yalnızca seçilen ölçüleri yeniden çek
+// Fon müziği (miksin render'ı) + click, mikrofon yakalamasıyla AYNI AudioContext'te çalınır → örnek hassasiyetinde hizalı.
+// Yeni take, eski kaydın [bölge başı, bölge sonu) aralığına 10 ms kenar geçişiyle yerleştirilir; eski ve yeni take'ler saklanır (S.comps)
+// ve tek tıkla değiştirilir. Take'ler oturum boyunca durur (proje dosyasına yalnızca çalan hali gömülür).
+S.comps = [];
+const MAX_TAKES = 6;
+function punchRegion() {
+  const a = Math.round(+$('#inPunchA').value), b = Math.round(+$('#inPunchB').value);
+  if (!S.d || !(a >= 1) || !(b >= a) || b > S.d.bars) return null;
+  const g = S.d.g;
+  return { a, b, tA: (a - 1) * g.barSec, tB: b * g.barSec };
+}
+function setPunchRegion(a, b) {
+  if (!S.d) return;
+  a = Math.max(1, Math.min(S.d.bars, a)); b = Math.max(a, Math.min(S.d.bars, b));
+  $('#inPunchA').value = a; $('#inPunchB').value = b;
+  punchInfoUpdate(); draw();
+}
+function punchInfoUpdate() {
+  const r = punchRegion(), el = $('#punchInfo');
+  if (!el || Punch.st) return;
+  el.textContent = !S.audio ? 'Punch-in için önce bir kayıt ya da yüklenmiş ses gerekli.' : r ? `Ölçü ${r.a}–${r.b} yeniden çekilecek (${(r.tB - r.tA).toFixed(1)} sn).` : 'Geçerli bir ölçü aralığı gir.';
+  $('#btnPunch').disabled = !S.audio || !r;
+}
+async function renderPunchBacking(sr, tS, tA, tB, withOld) {
+  const st = await renderStems(sr, tB + 1.0);
+  const n = Math.round((tB + 1.0) * sr), mix = new Float32Array(n);
+  const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || m.guitar.solo || m.bass.solo;
+  const gain = (k) => (m[k].mute || (anySolo && !m[k].solo) ? 0 : dbToGain(m[k].vol));
+  for (const k of ['vocal', 'piano', 'guitar', 'bass', 'drums']) {
+    const arr = st[k], gk = arr ? gain(k) : 0;
+    if (!gk) continue;
+    let end = Math.min(n, arr.length);
+    if (k === 'vocal') { if (!withOld) continue; end = Math.min(end, Math.round(tA * sr)); } // eski vokal bölge başında susar
+    const fade = Math.round(0.02 * sr);
+    for (let i = 0; i < end; i++) mix[i] += arr[i] * gk * (k === 'vocal' && i > end - fade ? (end - i) / fade : 1);
+  }
+  const i0 = Math.max(0, Math.floor(tS * sr));
+  return mix.subarray(i0);
+}
+const Punch = {
+  st: null,
+  async start() {
+    if (this.st || Rec.st || Cal.on) return;
+    if (!S.audio || !S.d) { status('Punch-in için önce bir kayıt ya da yüklenmiş ses gerekli.', 'err'); return; }
+    const r = punchRegion();
+    if (!r) { status('Geçerli bir ölçü aralığı gir (1–' + S.d.bars + ').', 'err'); return; }
+    if (Player.playing) Player.stop();
+    const g = S.d.g, pre = +$('#inPunchPre').value, tS = Math.max(0, r.tA - pre * g.barSec);
+    let st;
+    try { st = await openCapture(); } catch (e) { status('Mikrofon izni alınamadı: ' + e.message, 'err'); return; }
+    const ctx = st.ctx, sr = ctx.sampleRate;
+    let back;
+    try {
+      await busy('Fon müziği hazırlanıyor…', async () => { await tick(); back = await renderPunchBacking(sr, tS, r.tA, r.tB, $('#inPunchOld').checked); });
+    } catch (e) { await closeCapture(st); return; }
+    const T0 = ctx.currentTime + 0.5;
+    const buf = ctx.createBuffer(1, Math.max(1, back.length), sr);
+    buf.copyToChannel(back, 0);
+    const src = ctx.createBufferSource();
+    src.buffer = buf; src.connect(ctx.destination); src.start(T0);
+    Object.assign(st, { src, region: r, p: { T0, tS, sr, firstFrame: 0 }, tS, T0 });
+    const vol = +$('#inClickVol').value, click = $('#inPunchClick').checked;
+    let q = Math.ceil(tS / g.spq / g.clickQ - 1e-6) * g.clickQ;
+    const sched = () => {
+      const now = ctx.currentTime, horizon = now + 0.25;
+      while (click && T0 + q * g.spq - tS < horizon && q * g.spq <= r.tB + 1e-6) {
+        const kind = C.clickKind(g, q % g.barQ, S.proj.settings.clickFeel), at = T0 + q * g.spq - tS;
+        if (at >= now - 0.01) { if (kind === 'snare') noiseClickAt(ctx, at, vol); else clickAt(ctx, at, CLICK_HZ[kind], vol * (kind === 'weak' ? 0.6 : 1)); }
+        q += g.clickQ;
+      }
+      const song = tS + (now - T0);
+      if (song < r.tA) status(`Ön çalma… ölçü ${Math.max(1, Math.floor(Math.max(0, song) / g.barSec) + 1)} → ${r.a}'da gir`, 'busy');
+      else status(`● Punch-in — ölçü ${Math.min(r.b, Math.floor(song / g.barSec) + 1)} (${r.a}–${r.b})`, 'busy');
+      liveMeter(st);
+      if (now >= T0 + (r.tB - tS) + 0.2) Punch.finish(false);
+    };
+    st.timer = setInterval(sched, 40);
+    this.st = st;
+    $('#btnPunch').disabled = true; $('#btnPunchStop').disabled = false; $('#btnRec').disabled = true;
+    S.punchShow = r; draw();
+  },
+  async finish(early) {
+    const st = this.st;
+    if (!st) return;
+    this.st = null;
+    clearInterval(st.timer);
+    const r = st.region, ctx = st.ctx, sr = ctx.sampleRate;
+    const nowSong = st.tS + (ctx.currentTime - st.T0);
+    try { st.src.stop(); } catch (e) { /* zaten bitti */ }
+    const take = await closeCapture(st);
+    hideLivePitch();
+    $('#btnPunchStop').disabled = true; $('#btnRec').disabled = false;
+    S.punchShow = null;
+    const tEnd = early ? Math.min(r.tB, nowSong - 0.12) : r.tB;
+    if (st.firstFrame == null || tEnd - r.tA < 0.3) { status('Punch-in çok kısa kaldı: kayıt değişmedi.', 'err'); punchInfoUpdate(); draw(); return; }
+    const p = Object.assign({}, st.p, { firstFrame: st.firstFrame, latSec: (S.proj.settings.latencyMs || 0) / 1000 });
+    const ia = C.punchTakeIndex(r.tA, p), ib = C.punchTakeIndex(tEnd, p);
+    const raw = new Float32Array(Math.max(0, ib - ia));
+    for (let i = 0; i < raw.length; i++) { const j = ia + i; if (j >= 0 && j < take.length) raw[i] = take[j]; }
+    await applyPunch(r, tEnd, raw, sr);
+  },
+};
+// yeni take'i (raw: yakalama hızında, bölge başından tEnd'e) kayda yerleştirir
+async function applyPunch(r, tEnd, raw, capSr) {
+  const fileSr = S.audio.sr, off = S.d.off;
+  let seg = fileSr === capSr ? raw : C.resample(raw, capSr, fileSr);
+  let faFull = Math.round((r.tA + off) * fileSr);
+  const fbFull = Math.round((r.tB + off) * fileSr), n = fbFull - faFull;
+  const want = Math.min(n, Math.round((tEnd - r.tA) * fileSr));
+  if (seg.length !== want) { const t = new Float32Array(want); t.set(seg.subarray(0, Math.min(want, seg.length))); seg = t; }
+  // dosya başından önceye taşan kısım atılır (başa boşluk eklemek bütün analizi kaydırırdı)
+  let cut = 0;
+  if (faFull < 0) { cut = -faFull; faFull = 0; seg = seg.subarray(Math.min(cut, seg.length)); }
+  if (!seg.length) { status('Punch-in bölgesi kaydın başından önce kalıyor.', 'err'); return; }
+  const fa = faFull, fb = fbFull;
+  const base = S.audio.data;
+  const old = new Float32Array(fb - fa); // eski içerik (dosya sonundan taşan kısım sessizlik)
+  for (let i = 0; i < old.length; i++) { const j = fa + i; if (j < base.length) old[i] = base[j]; }
+  const sp = C.punchSplice(base, fa, fa + seg.length, seg, Math.round(0.01 * fileSr));
+  const region = sp.data.slice(fa, fb > sp.data.length ? sp.data.length : fb);
+  const full = new Float32Array(fb - fa); full.set(region.subarray(0, full.length));
+  // take listesi: aynı ölçü aralığı → yeni take eklenir; çakışan farklı aralıklar kapanır
+  let comp = S.comps.find((c) => c.a === r.a && c.b === r.b);
+  const dropped = S.comps.filter((c) => c !== comp && !(c.b < r.a || c.a > r.b));
+  S.comps = S.comps.filter((c) => !dropped.includes(c));
+  if (!comp) { comp = { id: 'c' + Date.now().toString(36), a: r.a, b: r.b, fa, fb, takes: [{ name: 'Orijinal', data: old }], cur: 0 }; S.comps.push(comp); }
+  if (comp.takes.length >= MAX_TAKES) comp.takes.splice(1, 1); // en eski ara take'i at (orijinal kalır)
+  comp.takes.push({ name: 'Take ' + (comp.takes.length + 1), data: full });
+  comp.cur = comp.takes.length - 1;
+  S.audio.data = sp.data; S.corrected = null; S.correctedShift = null;
+  Player.buffersDirty = true; HIST.reset = true;
+  status(`Punch-in yerleştirildi: ölçü ${r.a}–${r.b}. Perde yeniden analiz ediliyor…${dropped.length ? ' (çakışan önceki bölgenin take\'leri kapandı)' : ''}`, 'busy');
+  await analyze();
+  renderTakes(); punchInfoUpdate();
+  status(`⏺ Punch-in tamam: ölçü ${r.a}–${r.b} (${comp.takes[comp.cur].name}). Take'ler arasında geçebilirsin; bu bölgedeki elle nota düzeltmelerini kontrol et.`);
+}
+async function switchTake(compId, idx) {
+  const c = S.comps.find((x) => x.id === compId);
+  if (!c || !c.takes[idx] || c.cur === idx) return;
+  const d = Float32Array.from(S.audio.data), t = c.takes[idx].data;
+  for (let i = 0; i < t.length && c.fa + i < d.length; i++) d[c.fa + i] = t[i];
+  S.audio.data = d; c.cur = idx; S.corrected = null; S.correctedShift = null;
+  Player.buffersDirty = true; HIST.reset = true;
+  status(`${c.takes[idx].name} yerleştiriliyor (ölçü ${c.a}–${c.b})…`, 'busy');
+  await analyze();
+  renderTakes();
+  status(`Ölçü ${c.a}–${c.b}: ${c.takes[idx].name}.`);
+}
+function renderTakes() {
+  const el = $('#takeList');
+  if (!el) return;
+  const h = S.comps.map((c) => `<div class="take-row"><b>Ölçü ${c.a}–${c.b}</b>${c.takes.map((t, i) => `<button class="small${i === c.cur ? ' on' : ''}" data-comp="${c.id}" data-take="${i}" title="Bu take'i çal / yerleştir">${esc(t.name)}</button>`).join('')}<button class="small" data-keep="${c.id}" title="Şu anki take'i sabitle, diğerlerini sil (bellek)">sabitle</button></div>`).join('');
+  if (el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; }
+}
+$('#takeList').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  if (b.dataset.take != null) switchTake(b.dataset.comp, +b.dataset.take);
+  if (b.dataset.keep) { S.comps = S.comps.filter((c) => c.id !== b.dataset.keep); renderTakes(); status('Take sabitlendi: diğer take\'ler silindi.'); }
+});
+$('#btnPunch').onclick = () => Punch.start();
+$('#btnPunchStop').onclick = () => Punch.finish(true);
+$('#inPunchA').addEventListener('input', () => { punchInfoUpdate(); draw(); });
+$('#inPunchB').addEventListener('input', () => { punchInfoUpdate(); draw(); });
+$('#btnPunchSec').onclick = () => {
+  const sec = S.sel && S.sel.type === 'section' ? S.d && S.d.sections.find((x) => x.id === S.sel.id && !x.implicit) : null;
+  if (!sec) { status('Önce zaman çizelgesinde bir bölüme tıkla.', 'err'); return; }
+  setPunchRegion(sec.startBar, sec.endBar);
+};
+$('#btnPunchLoop').onclick = () => {
+  if (!S.d || !S.loop.on) { status('Önce 🔁 döngüyü aç (bölge oradan alınır).', 'err'); return; }
+  const g = S.d.g; setPunchRegion(Math.floor(S.loop.from / g.barSec + 1e-6) + 1, Math.ceil(S.loop.to / g.barSec - 1e-6));
+};
+$('#btnPunchPos').onclick = () => { if (S.d) { const b = barAtPlayheadQ(); setPunchRegion(b, b); } };
 
 // ---------------------------------------------------------------- gecikme kalibrasyonu (8 click + alkış)
 const Cal = {
@@ -1582,6 +1786,12 @@ function draw() {
     const lx0 = Math.max(TL.KW, qToX(S.loop.from / g.spq)), lx1 = Math.min(W, qToX(S.loop.to / g.spq));
     if (lx1 > lx0) { c.fillStyle = 'rgba(95,208,138,0.22)'; c.fillRect(lx0, 0, lx1 - lx0, TL.RULER); c.strokeStyle = 'rgba(95,208,138,0.7)'; c.beginPath(); c.moveTo(lx0 + 0.5, 0); c.lineTo(lx0 + 0.5, H); c.moveTo(lx1 - 0.5, 0); c.lineTo(lx1 - 0.5, H); c.stroke(); }
   }
+  // punch-in bölgesi (⏺): cetvelde kırmızı bant (panel açıkken ya da kayıt sürerken)
+  { const pr = S.punchShow || ($('#punchBox') && $('#punchBox').open && S.audio ? punchRegion() : null);
+    if (pr) {
+      const px0 = Math.max(TL.KW, qToX(pr.tA / g.spq)), px1 = Math.min(W, qToX(pr.tB / g.spq));
+      if (px1 > px0) { c.fillStyle = 'rgba(255,90,95,0.20)'; c.fillRect(px0, 0, px1 - px0, TL.RULER); c.strokeStyle = 'rgba(255,90,95,0.8)'; c.strokeRect(px0 + 0.5, 0.5, px1 - px0 - 1, TL.RULER - 1); c.fillStyle = '#ffb3b5'; c.fillText('⏺ punch-in', px0 + 4, TL.RULER - 4); }
+    } }
   // akor değişim noktaları (tap): cetvelde ◆, akor satırında ince çizgi
   if (d && S.proj.taps && S.proj.taps.length) {
     for (const t of S.proj.taps) {
@@ -3095,7 +3305,7 @@ $('#btnTest').onclick = () => loadTest();
 $('#btnNew').onclick = () => {
   if ((S.audio || S.midi) && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
   Player.stop(true); HIST.reset = true; S.loop.on = false; $('#btnLoop').classList.remove('on');
-  S.proj = C.newProject(); S.audio = null; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  S.proj = C.newProject(); S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   syncInputs(); refresh(); status('Yeni proje.');
 };
@@ -3189,7 +3399,7 @@ async function openProject(file) {
   delete p.audioData; delete p.midiData; delete p.savedAt;
   S.proj = mergeDefaults(C.newProject(), p);
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
-  S.audio = null; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   if (midiData) S.midi = { name: midiData.name, bytes: null, notes: midiData.notes, endQ: midiData.endQ, tracks: [], trackIndex: null, warnings: [] };
   if (audioData) {
     const w = C.decodeWav(C.base64ToBytes(audioData.wavBase64).buffer);

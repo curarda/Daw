@@ -25,7 +25,8 @@ I wanted to hear how my own singing would sit over chords, and to get a chord pr
 8. **Fast demo:** one **✨ Demo yap** button estimates meter and tempo, confirms the keys, and switches on chords, drums and the generated bass line; **🔁 loop** a section and press **⟳** to hear the next drum loop or chord sound right away; **Ctrl+Z / Ctrl+Shift+Z** undo and redo everything except recording and mixer levels.
 9. **Learn from your choices:** press **✅ Progresyonu bitirdim** when a progression is done. The whole progression is learned as a weighted song (transitions, three-chord context, openings and closings, durations), and for every chord you chose by hand its relation to the chord before and after it counts as a like. 👍 / 👎 on the chord panel do the same, and 👍 / 👎 next to ⟳ teach the drum-loop and chord-sound ranking. Anything you pick by hand always wins.
 10. **Vocal cleanup and auto mix:** optional noise reduction, compressor, level matching (−18 dBFS) and reverb on the recorded vocal, the same processed sound for playback and export; 🎚 sets the instrument levels relative to the vocal, and the master output is limited to −1 dBFS.
-11. **Export:** MIDI (vocal, piano / guitar, bass, drums), chord sheet (.txt), corrected vocal WAV, vocal + piano / guitar / bass (+ drums) mix WAV, and a project JSON file.
+11. **Punch-in:** re-record only the bars you pick while the backing music, metronome and the old vocal play before the region; the new take is spliced into just that range (sample-aligned, same AudioContext) and the old and new takes are kept so you can switch between them. A live pitch meter (note name and cents) shows while you sing.
+12. **Export:** MIDI (vocal, piano / guitar, bass, drums), chord sheet (.txt), corrected vocal WAV, vocal + piano / guitar / bass (+ drums) mix WAV, and a project JSON file.
 
 ## Run locally
 

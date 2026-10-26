@@ -1209,6 +1209,47 @@ await step('Otomatik miks: sesler vokale göre (akor −7, gitar −6, bas −5,
   return Object.entries(levels).map(([k, v]) => `${k} ${v} dB`).join(' · ');
 });
 
+await step('Punch-in çekirdeği: canlı perde (YIN; nota + sent), punchSplice (kenar geçişi, başa / sona ekleme), şarkı zamanı → yakalama örneği eşlemesi', () => {
+  const sr = 44100, tone = (hz, n = 2048, a = 0.3) => Float32Array.from({ length: n }, (_, i) => a * Math.sin(2 * Math.PI * hz * i / sr) + 0.1 * a * Math.sin(2 * Math.PI * 2 * hz * i / sr));
+  for (const hz of [82.41, 110, 220, 440, 880]) {
+    const r = Core.livePitch(tone(hz, hz < 100 ? 4096 : 2048), sr);
+    assert.ok(r && Math.abs(r.hz / hz - 1) < 0.005, `${hz} Hz → ${r && r.hz.toFixed(2)}`);
+  }
+  const a440 = Core.livePitch(tone(440), sr);
+  assert.equal(a440.note, 'A4'); assert.ok(Math.abs(a440.cents) <= 2 && a440.clarity > 0.9);
+  const sharp = Core.livePitch(tone(440 * Math.pow(2, 25 / 1200)), sr);
+  assert.ok(Math.abs(sharp.cents - 25) <= 3 && sharp.note === 'A4', `+25 sent: ${sharp.cents}`);
+  const flat = Core.livePitch(tone(440 * Math.pow(2, -30 / 1200)), sr);
+  assert.ok(Math.abs(flat.cents + 30) <= 3, `−30 sent: ${flat.cents}`);
+  let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+  assert.equal(Core.livePitch(Float32Array.from({ length: 2048 }, () => 0.2 * rnd()), sr), null, 'gürültü: perde yok');
+  assert.equal(Core.livePitch(new Float32Array(2048), sr), null, 'sessizlik: perde yok');
+  assert.equal(Core.livePitch(tone(440, 2048, 0.001), sr), null, 'çok kısık: perde yok');
+  // punchSplice
+  const base = Float32Array.from({ length: 1000 }, (_, i) => i + 1);
+  const seg = new Float32Array(200).fill(-5);
+  const r1 = Core.punchSplice(base, 300, 500, seg, 20);
+  assert.equal(r1.data.length, 1000); assert.equal(r1.pad, 0);
+  for (let i = 0; i < 300; i++) assert.equal(r1.data[i], base[i]); for (let i = 500; i < 1000; i++) assert.equal(r1.data[i], base[i]);
+  assert.equal(r1.data[400], -5, 'orta: yeni take');
+  assert.ok(r1.data[300] > 285 && r1.data[300] < 305 && r1.data[499] > 480 && r1.data[499] < 505, 'kenarlar eski kayda yakın başlar / biter');
+  let maxJump = 0; for (let i = 1; i < 1000; i++) maxJump = Math.max(maxJump, Math.abs(r1.data[i] - r1.data[i - 1]));
+  assert.ok(maxJump < 40, `kenar geçişi yumuşak (en büyük sıçrama ${maxJump.toFixed(1)} < sert kesme ~305)`);
+  const hard = Core.punchSplice(base, 300, 500, seg, 0);
+  assert.equal(hard.data[300], -5); assert.equal(hard.data[499], -5);
+  const r2 = Core.punchSplice(base, -50, 100, new Float32Array(150).fill(9), 10);
+  assert.equal(r2.pad, 50); assert.equal(r2.data.length, 1050); assert.equal(r2.fa, 0); assert.equal(r2.fb, 150);
+  assert.equal(r2.data[75], 9); assert.equal(r2.data[160], base[110], 'eski kayıt pad kadar kaydı');
+  const r3 = Core.punchSplice(base, 950, 1100, new Float32Array(150).fill(7), 10);
+  assert.equal(r3.data.length, 1100); assert.equal(r3.data[1050], 7); assert.equal(r3.data[940], base[940]);
+  assert.throws(() => Core.punchSplice(base, 10, 20, new Float32Array(5), 0));
+  // şarkı zamanı → yakalama örneği: yakalanan i. örneğin şarkı zamanı tS + ((firstFrame + i)/sr − T0) − lat
+  const p = { T0: 12.5, tS: 6.0, latSec: 0.08, sr, firstFrame: 523000 };
+  const songTimeOf = (i) => p.tS + ((p.firstFrame + i) / sr - p.T0) - p.latSec;
+  for (const tau of [6.0, 9.375, 14.2]) { const i = Core.punchTakeIndex(tau, p); assert.ok(Math.abs(songTimeOf(i) - tau) <= 1 / sr, `τ=${tau}: ${songTimeOf(i)}`); }
+  return `canlı perde ±0,5 % / ±3 sent · splice: kenar sıçraması ${maxJump.toFixed(0)} · +50 başa ekleme, sona uzatma`;
+});
+
 await step('Senin ✂ işaretin motordan önce gelir: işaret konan ölçüde akor hemen yeniden belirlenir (diğerleri yerinde); ölçü ölçü motor da ölçü başı işaretlerini uygular', () => {
   const nm2 = (dd) => dd.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${Core.chordName(c.chord)}`).join(' ');
   for (const engine of ['viterbi', 'greedy']) {
