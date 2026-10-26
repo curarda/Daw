@@ -1883,6 +1883,7 @@ function newProject() {
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],
     matrix: { enabled: false, rows: {} },
+    pack: { id: null, locks: { piano: false, guitar: false, bass: false, drums: false } },
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),

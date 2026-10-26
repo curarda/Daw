@@ -2,7 +2,9 @@
 (function (root) {
 const C = root.Core;
 const layers = ['piano', 'guitar', 'bass', 'drums'];
-function matrixTemplate(typeNorm) {
+function matrixTemplate(typeNorm, proj) {
+  const template = activePack(proj)?.template;
+  if (template) return { ...(template[typeNorm] || template.other) };
   const light = ['intro', 'bridge', 'outro'].includes(typeNorm);
   return { piano: true, guitar: true, bass: !light, drums: !light && typeNorm !== 'verse' };
 }
@@ -11,7 +13,12 @@ function setMatrixEnabled(proj, on) {
 }
 function migrateMatrix(proj) {
   if (!Object.prototype.hasOwnProperty.call(proj, 'matrix')) proj.matrix = { enabled: false, rows: {} };
+  if (C.migratePack) C.migratePack(proj);
   return proj;
+}
+function activePack(proj) { return C.PACKS?.find((p) => p.id === proj?.pack?.id && p.meters.includes(proj.settings.meter)); }
+function isLastChorus(proj, d, id) {
+  return !!proj.matrix && proj.matrix.enabled !== false && !!activePack(proj) && id != null && d.sections.filter((s) => s.typeNorm === 'chorus').at(-1)?.id === id;
 }
 function effectiveCell(proj, d, sectionId, layer) {
   const ins = proj.guitar?.instrument || 'piano';
@@ -21,7 +28,7 @@ function effectiveCell(proj, d, sectionId, layer) {
   // Bölümler arasındaki boşluklar genel düzeni izler.
   if (!section) return true;
   const cell = proj.matrix.rows?.[sectionId]?.[layer];
-  return typeof cell === 'boolean' ? cell : matrixTemplate(section.implicit ? '_all' : section.typeNorm)[layer];
+  return typeof cell === 'boolean' ? cell : isLastChorus(proj, d, sectionId) || matrixTemplate(section.implicit ? '_all' : section.typeNorm, proj)[layer];
 }
 function effectiveLayers(proj, d, sectionId) {
   return Object.fromEntries(layers.map((layer) => [layer, effectiveCell(proj, d, sectionId, layer)]));
@@ -71,7 +78,7 @@ function arrangedEvents(d, proj, opts = {}) {
       const plan = (b) => {
         if (opts.previewDrums) return byId(opts.previewDrums);
         const a = arr(section(b)?.id).drums;
-        return a === 'off' ? null : (a && byId(a)) || (ds.on ? globalLoop : null);
+        return a === 'off' ? null : (a && byId(a)) || (ds.on ? (isLastChorus(proj, d, section(b)?.id) ? byId(activePack(proj).drums.alt) : globalLoop) : null);
       };
       const fill = (b) => ds.fills && !opts.previewDrums && b < d.bars && section(b) && section(b + 1) && section(b).id !== section(b + 1).id && !!plan(b) && !!plan(b + 1) && (!proj.matrix || proj.matrix.enabled === false || (effectiveCell(proj, d, section(b).id, 'drums') && effectiveCell(proj, d, section(b + 1).id, 'drums')));
       out.drums = C.arrangeDrums(g, d.bars, ds.startBar || 1, plan, fill, sw);
