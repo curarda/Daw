@@ -1110,6 +1110,51 @@ await step('Senin ✂ işaretin motordan önce gelir: işaret konan ölçüde ak
   return 'yapışkan motorda ✂ işaretli ölçüde akor kökü değişir, diğerleri yerinde; = işaretinde değişmez (iki motor)';
 });
 
+await step('MIDI içe aktarma: kendi .mid çıktımız projeye geri döner (melodi, bölümler + ton, akorlar, ölçü / BPM, akor sesi, bas, davul); üçüncü taraf MIDI: iz seçimi, tek sese indirme, 6/8 BPM, bilinmeyen ölçü uyarısı', () => {
+  const p2 = JSON.parse(JSON.stringify(proj));
+  p2.sections[0].tonic = 1; p2.sections[0].mode = 'phrygian'; p2.sections[1].tonic = 11; p2.sections[1].mode = 'dorian';
+  p2.piano = { style: 'synth-arp', repeat: 'hold', holdBars: 2, rate: '1/8' };
+  const dd = Core.derive(p2, st);
+  const L = Core.DRUM_LOOPS.find((l) => l.id === 'push332');
+  const drumEv = Core.arrangeDrums(dd.g, dd.bars, 2, () => L, null);
+  const bassEv = Core.bassEvents(dd.chords, dd.g, { patternFor: () => 'pop' });
+  const bytes = Core.exportMidi(p2, dd, { name: L.name, events: drumEv }, bassEv);
+  const r = Core.importMidi(bytes);
+  assert.ok(!r.error, r.error);
+  assert.equal(r.settings.meter, '4/4'); assert.equal(r.settings.bpm, 120);
+  assert.equal(r.melodyTrack.name, 'Vokal (düzeltilmiş melodi)');
+  assert.equal(r.notes.length, dd.notes.length);
+  r.notes.forEach((n, i) => { assert.equal(n.midi, dd.notes[i].effMidi); assert.ok(Math.abs(n.q0 - dd.notes[i].q0) < 1e-3 && Math.abs(n.q1 - dd.notes[i].q1) < 1e-3, `nota ${i}`); });
+  assert.deepEqual(r.sections.map((x) => [x.name, x.startBar, x.endBar, x.tonic, x.mode]), [['Verse', 1, 4, 1, 'phrygian'], ['Nakarat', 5, 8, 11, 'dorian']]);
+  // akorlar: her ölçü / yarım ölçü akoru geri gelir
+  const back = {};
+  for (const l of r.locks) (back[l.bar] ||= []).push(`${l.half ?? ''}${Core.chordName(l.chord)}`);
+  for (const c of dd.chords) assert.ok((back[c.bar] || []).some((x) => x.endsWith(Core.chordName(c.chord))), `ölçü ${c.bar}: ${Core.chordName(c.chord)} geri gelmedi`);
+  assert.ok(r.locks.every((l) => l.src === 'chart'));
+  assert.equal(r.pianoStyle, 'synth-arp'); assert.equal(r.bassOn, true);
+  assert.deepEqual(r.drum, { name: L.name, startBar: 2 });
+  assert.equal(r.chordStartBar, 1);
+  // 6/8, 90 BPM (♩.) → MIDI'de çeyrek BPM 135; sadece melodi izi + bilinmeyen ölçü olmadan
+  const g68 = Core.makeGrid({ bpm: 90, meter: '6/8' });
+  const mel = [60, 62, 64, 65, 67, 69, 71, 72].map((m, i) => ({ q0: i * 1.5, q1: i * 1.5 + 1.4, midi: m, vel: 90 }));
+  const chords3 = [{ q0: 0, q1: 3, midi: 48, vel: 70 }, { q0: 0, q1: 3, midi: 55, vel: 70 }, { q0: 0, q1: 3, midi: 64, vel: 70 }, { q0: 3, q1: 6, midi: 50, vel: 70 }, { q0: 3, q1: 6, midi: 57, vel: 70 }, { q0: 3, q1: 6, midi: 65, vel: 70 }];
+  const mid68 = Core.writeMidi({ quarterBpm: g68.quarterBpm, meter: '6/8', tracks: [{ name: 'Pad', channel: 1, program: 0, notes: chords3 }, { name: 'Track 2', channel: 0, program: 0, notes: mel }] });
+  const r68 = Core.importMidi(mid68);
+  assert.equal(r68.settings.meter, '6/8'); assert.ok(Math.abs(r68.settings.bpm - 90) < 0.11, 'BPM ♩. cinsinden: ' + r68.settings.bpm);
+  assert.equal(r68.melodyTrack.name, 'Track 2', 'adı olmayan iz: tek sesli ve tiz olan melodi seçilir');
+  assert.equal(r68.notes.length, 8); assert.equal(r68.chordCount, 0); assert.equal(r68.locks.length, 0);
+  assert.equal(Core.importMidi(mid68, { track: 1 }).melodyTrack.name, 'Pad', 'iz elle seçilebilir');
+  assert.ok(Core.importMidi(mid68, { track: 1 }).warnings.some((w) => /tek sese/.test(w)), 'çok sesli iz tek sese indirilir');
+  // bilinmeyen ölçü: 5/4 → uyarı, 4/4
+  const mid54 = Core.writeMidi({ quarterBpm: 100, meter: '5/4', tracks: [{ name: 'Lead', channel: 0, notes: mel }] });
+  const r54 = Core.importMidi(mid54);
+  assert.equal(r54.settings.meter, '4/4'); assert.ok(r54.warnings.some((w) => /5\/4/.test(w)));
+  // bozuk dosya
+  assert.match(Core.importMidi(new Uint8Array([1, 2, 3, 4])).error, /MIDI dosyası değil/);
+  // üst üste binen / kapanmayan nota ve running status
+  return `kendi çıktımız: ${r.notes.length} nota, ${r.sections.length} bölüm, ${r.locks.length} akor kilidi, ${r.pianoStyle}, bas, davul ölçü ${r.drum.startBar} · 6/8: ${r68.settings.bpm} BPM · 5/4 uyarısı`;
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nTüm adımlar geçti.');

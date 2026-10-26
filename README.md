@@ -16,7 +16,7 @@ I wanted to hear how my own singing would sit over chords, and to get a chord pr
 ## What it does
 
 1. **Project setup:** tempo, time signature (4/4, 3/4, 2/4, 6/8) and click pattern, with latency calibration.
-2. **Record or load:** count-in with metronome, or load a WAV/MP3 and align it to the bar grid.
+2. **Record or load:** count-in with metronome, or load a WAV/MP3 and align it to the bar grid. Projects saved only as **MIDI** can be reopened (**MIDI aç**): melody, sections and keys, chords, tempo, chord sound, bass and drums come back, and you keep editing (the melody plays as a synth).
 3. **Pitch detection:** finds note events (start, length, pitch in cents) and separates them from breaths and silence.
 4. **Sections and key:** mark sections and get key and mode suggestions for each one.
 5. **Pitch and timing correction:** optional autotune (TD-PSOLA) and quantization, both reversible. Drag on empty space to select many notes and move them together (pitch and time), double-click a note to split it in two when the detector heard one sound, and shift the whole song by 1–2 bars to leave an intro gap.

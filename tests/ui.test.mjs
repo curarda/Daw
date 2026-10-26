@@ -1239,6 +1239,77 @@ try {
     return `✂ 6. ölçü → akor yenilendi · 7. ölçü elle A · düğme: ≤7 aynı, 8+ motor (${after.filter((c) => +c.split(':')[0] > 7).join(' ')})`;
   });
 
+  await step('MIDI aç: kendi .mid çıktını projeye çevirip devam et (melodi, bölümler, akorlar 📄, bas, davul); ses yok → synth melodi; düzenle, BPM değiştir, kaydet / aç, geri al', async () => {
+    await resetTest();
+    // Demo ile davul + bas aç, bölümlere ton ver; MIDI olarak dışa aktar
+    await page.click('#btnDemo');
+    await page.waitForFunction(() => /Demo hazır/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+    await S(() => window.__dawAPI.stop());
+    const orig = await S(() => ({ notes: window.__daw.d.notes.map((n) => [n.effMidi, Math.round(n.q0 * 100) / 100, Math.round(n.q1 * 100) / 100]), chords: window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`), secs: window.__daw.d.sections.map((s) => [s.name, s.startBar, s.endBar, s.tonic, s.mode]), loop: window.__daw.proj.drums.loop }));
+    const mid = await download('#btnExpMidi');
+    const midPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.tmp-proje.mid');
+    writeFileSync(midPath, mid.data);
+    try {
+      // yeni proje → MIDI aç
+      page.removeAllListeners('dialog'); page.once('dialog', (d) => d.accept());
+      await page.click('#btnNew');
+      assert.equal(await S(() => window.__daw.audio), null);
+      await page.setInputFiles('#fileMidi', midPath);
+      await page.waitForFunction(() => /MIDI açıldı/.test(document.querySelector('#status').textContent), null, { timeout: 15000 });
+      const back = await S(() => ({ notes: window.__daw.d.notes.map((n) => [n.effMidi, Math.round(n.q0 * 100) / 100, Math.round(n.q1 * 100) / 100]), chords: window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`), secs: window.__daw.d.sections.map((s) => [s.name, s.startBar, s.endBar, s.tonic, s.mode]), midi: !!window.__daw.midi, audio: window.__daw.audio, source: window.__daw.proj.audio.source, bass: window.__daw.proj.bass.on, drums: window.__daw.proj.drums.on, loop: window.__daw.proj.drums.loop, bpm: window.__daw.proj.settings.bpm, locks: window.__daw.proj.chordLocks.filter((l) => l.src === 'chart').length }));
+      assert.deepEqual(back.notes, orig.notes, 'melodi aynı notalar, aynı yerler'); assert.deepEqual(back.secs, orig.secs, 'bölümler ve tonlar');
+      assert.deepEqual(back.chords, orig.chords, 'akorlar aynı');
+      assert.equal(back.midi, true); assert.equal(back.audio, null); assert.equal(back.source, 'midi'); assert.equal(back.bass, true); assert.equal(back.drums, true); assert.equal(back.bpm, 120); assert.ok(back.locks > 0);
+      assert.match(await page.textContent('#chipS2'), /MIDI · 24 nota/);
+      assert.match(await page.textContent('#audioInfo'), /MIDI: .*mid · 24 nota/);
+      // melodi synth ile çalar (ses yok); nota tıklayınca synth çalar
+      const h0 = await S(() => window.__dawAPI.player().synthHits || 0);
+      await page.click('#btnPlay');
+      await page.waitForFunction((h) => (window.__dawAPI.player().synthHits || 0) > h + 6, h0, { timeout: 20000 });
+      await page.click('#btnPlay');
+      // notayı sürükle (MIDI'de de çalışır): +2 yarım ses; geri al
+      const tl = await page.locator('#tl').boundingBox();
+      const b0 = await noteBox(0);
+      const e0 = (await effs())[0];
+      await page.mouse.move(tl.x + (b0.x0 + b0.x1) / 2, tl.y + b0.y); await page.mouse.down();
+      await page.mouse.move(tl.x + (b0.x0 + b0.x1) / 2, tl.y + b0.y - 2 * b0.rowH, { steps: 8 }); await page.mouse.up();
+      assert.equal((await effs())[0], e0 + 2);
+      await pause();
+      await page.keyboard.press('Control+z');
+      await page.waitForFunction((v) => window.__daw.d.notes[0].effMidi === v, e0, { timeout: 5000 });
+      // BPM 60: melodi müzikal yerinde kalır (çeyrek konumları aynı), saniyeler iki katı
+      const qs0 = await q0s();
+      await page.fill('#inBpm', '60'); await page.dispatchEvent('#inBpm', 'change');
+      const after = await S(() => ({ q: window.__daw.d.notes.map((n) => Math.round(n.q0 * 100) / 100), sec: window.__daw.d.notes[3].tl0, spq: window.__daw.d.g.spq }));
+      assert.deepEqual(after.q, qs0.map((v) => Math.round(v * 100) / 100), 'BPM değişince nota çeyrek konumları korunur'); assert.ok(Math.abs(after.sec - qs0[3] * 1) < 1e-6, 'saniye = çeyrek × 1 s (60 BPM)');
+      await page.fill('#inBpm', '120'); await page.dispatchEvent('#inBpm', 'change');
+      // proje JSON kaydet → yeni → aç: MIDI projesi (ses yok) geri gelir
+      const pj = await download('#btnSave');
+      const j = JSON.parse(pj.data.toString());
+      assert.ok(j.midiData && j.midiData.notes.length === 24 && !j.audioData);
+      const projPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '.tmp-proje-midi.json');
+      writeFileSync(projPath, pj.data);
+      try {
+        page.removeAllListeners('dialog'); page.once('dialog', (d) => d.accept());
+        await page.click('#btnNew');
+        await page.setInputFiles('#fileProject', projPath);
+        await page.waitForFunction(() => window.__daw.midi && window.__daw.d && window.__daw.d.notes.length === 24, null, { timeout: 15000 });
+        assert.deepEqual(await S(() => window.__daw.d.chords.map((c) => `${c.bar}${c.half != null ? '.' + c.half : ''}:${window.__dawAPI.C.chordName(c.chord)}`)), orig.chords);
+      } finally { rmSync(projPath, { force: true }); }
+      // mix WAV (synth melodi) ve MIDI çıktısı çalışır; vokal WAV'ı açıklayıcı hata verir
+      const mix = await download('#btnExpMix');
+      assert.equal(mix.data.slice(0, 4).toString(), 'RIFF');
+      await page.click('#btnExpVocal');
+      assert.match(await page.textContent('#status'), /MIDI projesinde vokal kaydı yok/);
+      // bozuk dosya
+      writeFileSync(midPath, Buffer.from([1, 2, 3, 4, 5]));
+      await page.setInputFiles('#fileMidi', midPath);
+      await page.waitForFunction(() => /MIDI açılamadı/.test(document.querySelector('#status').textContent), null, { timeout: 5000 });
+      assert.ok(await S(() => !!window.__daw.midi), 'bozuk dosya mevcut projeyi bozmaz');
+      return `MIDI geri geldi: ${back.notes.length} nota, ${back.secs.length} bölüm, ${back.chords.length} akor, bas, davul (${back.loop}); synth melodi çaldı; BPM 60'ta çeyrek konumları sabit; JSON kaydet / aç; mix WAV ${(mix.data.length / 1e6).toFixed(1)} MB`;
+    } finally { rmSync(midPath, { force: true }); }
+  });
+
   await step('✨ Demo yap: ölçü + ton + akor + davul + bas tek tuşla, çalar; verse sade / nakarat dolu; tek Ctrl+Z ile geri', async () => {
     await resetTest();
     const pre = await S(() => ({ drums: window.__daw.proj.drums.on, bass: window.__daw.proj.bass.on, secs: window.__daw.proj.sections.map((s) => s.tonic) }));

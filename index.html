@@ -270,9 +270,11 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
     <button id="btnUndo" title="Geri al (Ctrl+Z)" disabled>↶</button><button id="btnRedo" title="Yinele (Ctrl+Shift+Z)" disabled>↷</button>
     <button id="btnNew">Yeni</button>
     <button id="btnOpen">Proje aç</button>
+    <button id="btnOpenMidi" title="Daha önce MIDI olarak kaydettiğin çalışmayı (melodi, bölümler, akorlar, bas, davul) projeye çevirip devam et">MIDI aç</button>
     <button id="btnSave">Proje kaydet</button>
     <label class="chk" title="Orijinal kaydı proje dosyasına WAV olarak göm"><input type="checkbox" id="chkEmbed" checked> sesi göm</label>
     <input type="file" id="fileProject" accept=".json,application/json" hidden>
+    <input type="file" id="fileMidi" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
   </div>
   <div id="status" role="status"></div>
 </header>
@@ -309,6 +311,10 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
         <label class="grow">Click<input type="range" id="inClickVol" min="0" max="1" step="0.05" value="0.6"></label>
       </div>
       <p class="hint">Önce 1 ölçü count-in çalar. Click yalnızca çıkışa (kulaklığa) gider, kayda karışmaz — hoparlör değil kulaklık kullanın.</p>
+      <div class="row"><button id="btnMidiLoad" title="Proje JSON'u yerine MIDI kaydettiysen: MIDI'den devam et">MIDI yükle (.mid)</button>
+        <label class="grow" id="midiTrackRow" hidden>MIDI melodi izi<select id="inMidiTrack"></select></label></div>
+      <div id="midiInfo" class="hint"></div>
+      <p class="hint"><b>MIDI'den devam:</b> proje JSON'u kaydetmediysen, bu uygulamadan aldığın .mid dosyasını aç: melodi (düzeltilmiş notalar), bölümler ve tonlar, akorlar (📄), ölçü / BPM, akor sesi, bas ve davul geri gelir. Başka programlardan MIDI de açılır (melodi izi otomatik seçilir). Ses kaydı olmadığı için melodi synth ile çalar.</p>
       <div class="row">
         <label class="file-btn">WAV/MP3 yükle<input type="file" id="fileAudio" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac" hidden></label>
         <label class="grow">Hizalama
@@ -2235,10 +2241,11 @@ const SYNTH = {
   level: 0.2,
   chord: { a: 0.015, d: 0.4, s: 0.6, r: 0.6, cut0: 2600, cut1: 1500, det: 7 },
   arp: { a: 0.004, d: 0.22, s: 0.12, r: 0.25, cut0: 4200, cut1: 1100, det: 6 },
+  lead: { a: 0.01, d: 0.12, s: 0.8, r: 0.12, cut0: 3600, cut1: 3000, det: 5 }, // MIDI melodisi (vokal yerine)
 };
 // zarf: atak → sürekli seviyeye çökme → (dur sonunda) bırakma; fade: tutma boyunca üstel olarak %6'ya iner. t: nota başından saniye
-function synthEnv(arp, dur, fade) {
-  const P = arp ? SYNTH.arp : SYNTH.chord;
+function synthEnv(arp, dur, fade, lead) {
+  const P = lead ? SYNTH.lead : arp ? SYNTH.arp : SYNTH.chord;
   const hold = (t) => {
     const a = t < P.a ? t / P.a : P.s + (1 - P.s) * Math.exp(-(t - P.a) / (P.d / 3));
     return fade ? a * Math.pow(0.06, Math.min(t, dur) / dur) : a;
@@ -2249,7 +2256,7 @@ function synthEnv(arp, dur, fade) {
 function renderSynth(events, sr, length, gain = 1) {
   const out = new Float32Array(length);
   for (const e of events) {
-    const P = e.arp ? SYNTH.arp : SYNTH.chord, env = synthEnv(!!e.arp, e.dur, !!e.fade);
+    const P = e.lead ? SYNTH.lead : e.arp ? SYNTH.arp : SYNTH.chord, env = synthEnv(!!e.arp, e.dur, !!e.fade, !!e.lead);
     const f = midiToHz(e.midi), start = Math.round(e.t * sr), total = Math.round((e.dur + env.tail) * sr);
     const v = gain * SYNTH.level * Math.pow((e.vel || 80) / 127, 1.4);
     const inc1 = (f * Math.pow(2, P.det / 1200)) / sr, inc2 = (f * Math.pow(2, -P.det / 1200)) / sr, inc3 = f / sr;
@@ -3075,6 +3082,155 @@ function measureLatency(x, sr, clickTimes, opts = {}) {
   return { offsets, detected: valid.length, latencyMs: Math.round(med * 1000), madMs: Math.round(mad * 1000 * 10) / 10 };
 }
 
+// ---------------------------------------------------------------- MIDI İÇE AKTARMA (.mid → proje)
+// Tam okuyucu: tempo / ölçü olayları, iz adları, notalar (kapanışlarıyla), metin ve marker olayları.
+function readMidiFile(bytes) {
+  const d = bytes;
+  const u32 = (i) => ((d[i] << 24) | (d[i + 1] << 16) | (d[i + 2] << 8) | d[i + 3]) >>> 0;
+  if (d.length < 14 || d[0] !== 0x4d || d[1] !== 0x54 || d[2] !== 0x68 || d[3] !== 0x64) return { error: 'Bu bir MIDI dosyası değil (MThd başlığı yok).' };
+  const fmt = (d[8] << 8) | d[9], ntr = (d[10] << 8) | d[11], div = (d[12] << 8) | d[13];
+  if (div & 0x8000) return { error: 'SMPTE zamanlı MIDI desteklenmiyor (çeyrek nota bölümlü dosya gerekir).' };
+  if (fmt === 2) return { error: 'Format 2 (bağımsız şarkılı) MIDI desteklenmiyor.' };
+  const ppq = div, utf = new TextDecoder('utf-8'), tempos = [], sigs = [], tracks = [];
+  let p = 8 + u32(4);
+  for (let t = 0; t < ntr && p + 8 <= d.length; t++) {
+    if (d[p] !== 0x4d || d[p + 1] !== 0x54 || d[p + 2] !== 0x72 || d[p + 3] !== 0x6b) break;
+    const len = u32(p + 4), end = Math.min(d.length, p + 8 + len);
+    p += 8;
+    const tr = { index: t, name: '', notes: [], texts: [], programs: {}, channels: new Set(), lastTick: 0 };
+    const open = new Map();
+    let tick = 0, run = 0;
+    const rv = () => { let v = 0, b; do { b = d[p++]; v = (v << 7) | (b & 0x7f); } while ((b & 0x80) && p < end); return v; };
+    const close = (key, at) => { const o = open.get(key); if (!o) return; const st = o.pop(); if (!o.length) open.delete(key); if (st) tr.notes.push({ tick0: st.tick, tick1: Math.max(at, st.tick + 1), midi: st.midi, vel: st.vel, ch: st.ch }); };
+    while (p < end) {
+      tick += rv();
+      let st = d[p];
+      if (st === 0xff) {
+        p++; const type = d[p++], l = rv(), data = d.slice(p, p + l); p += l;
+        if (type === 0x03) tr.name = utf.decode(data);
+        else if (type === 0x01 || type === 0x06) tr.texts.push({ tick, text: utf.decode(data), type });
+        else if (type === 0x51 && l === 3) tempos.push({ tick, micro: (data[0] << 16) | (data[1] << 8) | data[2] });
+        else if (type === 0x58 && l >= 2) sigs.push({ tick, num: data[0], den: Math.pow(2, data[1]) });
+        continue;
+      }
+      if (st === 0xf0 || st === 0xf7) { p++; p += rv(); continue; }
+      if (st & 0x80) { run = st; p++; } else st = run;
+      const hi = st & 0xf0, ch = st & 15;
+      tr.channels.add(ch);
+      if (hi === 0x90 || hi === 0x80) {
+        const n = d[p++], v = d[p++];
+        const key = ch * 128 + n;
+        if (hi === 0x90 && v > 0) { if (!open.has(key)) open.set(key, []); open.get(key).push({ tick, midi: n, vel: v, ch }); } else close(key, tick);
+      } else if (hi === 0xc0) { tr.programs[ch] = d[p++]; } else if (hi === 0xd0) p += 1; else p += 2;
+    }
+    for (const key of [...open.keys()]) while (open.has(key)) close(key, tick); // kapanmayan notalar iz sonunda biter
+    tr.lastTick = tick; tr.notes.sort((a, b) => a.tick0 - b.tick0 || a.midi - b.midi);
+    tracks.push(tr);
+    p = end;
+  }
+  return { ppq, tracks, tempos, sigs };
+}
+const MIDI_BAD_NAME = /(^|\s)(bas|bass|piyano|piano|akor|chord|davul|drum|pad|synth klavye)/i;
+const MIDI_GOOD_NAME = /vokal|vocal|melod|lead|voice|şarkı|sarki|ses\b/i;
+// iz seçimi: davul olmayan, "melodi" gibi adlı, tek seslilik oranı yüksek, ağırlıklı olarak yüksek perdeli iz
+function pickMelodyTrack(info) {
+  const cands = info.tracks.filter((t) => t.notes.length >= 4 && !(t.channels.size && [...t.channels].every((c) => c === 9)));
+  const score = (t) => {
+    const ns = t.notes; let mono = 0;
+    for (let i = 0; i < ns.length; i++) if (i + 1 >= ns.length || ns[i + 1].tick0 >= ns[i].tick1 - 1) mono++;
+    const mean = ns.reduce((a, n) => a + n.midi, 0) / ns.length;
+    return (MIDI_GOOD_NAME.test(t.name) ? 3 : 0) - (MIDI_BAD_NAME.test(t.name) ? 3 : 0) + 2 * (mono / ns.length) + (mean - 60) / 60 + Math.min(1, ns.length / 50);
+  };
+  cands.sort((a, b) => score(b) - score(a));
+  return { best: cands[0] || null, cands: cands.map((t) => ({ index: t.index, name: t.name || `İz ${t.index + 1}`, count: t.notes.length })) };
+}
+// .mid → proje parçaları. opts.track: melodi izi (iz numarası). Notalar çeyrek cinsinden (q0, q1): tempo değişince müzikal yer korunur.
+function importMidi(bytes, opts = {}) {
+  const info = readMidiFile(bytes);
+  if (info.error) return { error: info.error };
+  const warnings = [];
+  const pick = pickMelodyTrack(info);
+  const mt = opts.track != null ? info.tracks.find((t) => t.index === opts.track) : pick.best;
+  if (!mt || !mt.notes.length) return { error: 'MIDI dosyasında melodi olarak kullanılabilecek bir nota izi bulunamadı.' };
+  // ölçü + tempo (ilk olay): uygulama BPM'i vuruş (♩ ya da 6/8'de ♩.) sayar
+  const sg = info.sigs.slice().sort((a, b) => a.tick - b.tick)[0];
+  let meter = '4/4';
+  if (sg) { const k = `${sg.num}/${sg.den}`; if (METERS[k]) meter = k; else warnings.push(`${k} ölçüsü desteklenmiyor; 4/4 olarak açıldı (nota yerleri ölçü çizgilerine oturmayabilir).`); }
+  if (info.sigs.length > 1) warnings.push('Ölçü değişimleri yok sayıldı (ilk ölçü kullanıldı).');
+  const tp = info.tempos.slice().sort((a, b) => a.tick - b.tick), micro = tp.length ? tp[0].micro : 500000;
+  if (tp.length > 1 && tp.some((x) => Math.abs(x.micro - micro) > 2000)) warnings.push('Tempo değişimleri yok sayıldı (ilk tempo kullanıldı).');
+  const bpm = Math.round(((60000000 / micro) / METERS[meter].pulseQ) * 10) / 10;
+  const g = makeGrid({ bpm, meter });
+  const Q = (tick) => tick / info.ppq;
+  // melodi: tek ses (aynı anda başlayanlardan en tiz; üst üste binenlerde sonraki not önceki notayı keser)
+  const raw = mt.notes.map((n) => ({ q0: Q(n.tick0), q1: Q(n.tick1), midi: n.midi, vel: n.vel }));
+  const mono = [];
+  for (const n of raw) {
+    const last = mono[mono.length - 1];
+    if (last && Math.abs(n.q0 - last.q0) < 1e-6) { if (n.midi > last.midi) mono[mono.length - 1] = n; continue; }
+    if (last && n.q0 < last.q1 - 1e-6) last.q1 = n.q0;
+    mono.push(n);
+  }
+  const notes = mono.filter((n) => n.q1 - n.q0 >= 0.05);
+  if (notes.length < mono.length) warnings.push(`${mono.length - notes.length} çok kısa nota atıldı.`);
+  if (mono.length < raw.length) warnings.push(`Melodi izi çok sesliydi: ${raw.length - mono.length} nota tek sese indirildi (en tiz nota / sonraki nota öncelikli).`);
+  let endQ = 0;
+  for (const t of info.tracks) for (const n of t.notes) endQ = Math.max(endQ, Q(n.tick1));
+  endQ = Math.max(endQ, notes[notes.length - 1].q1);
+  const bars = Math.max(4, Math.ceil(endQ / g.barQ - 1e-6));
+  // bölümler: marker (ve 'Ad — Ton' biçimli metin) olayları; uygulamanın örtük "Tümü" bölümü atlanır
+  const marks = [];
+  for (const t of info.tracks) for (const x of t.texts) if (x.type === 6 && x.text.trim() && x.text.trim() !== 'Tümü') marks.push({ q: Q(x.tick), text: x.text.trim() });
+  marks.sort((a, b) => a.q - b.q);
+  const sections = marks.map((m, i) => {
+    const [nm, ...rest] = m.text.split(/\s[—–-]\s/);
+    const key = rest.length ? parseKeyText(rest.join(' — ')) : null;
+    const sb = Math.floor(m.q / g.barQ + 1e-6) + 1, nx = marks[i + 1] ? Math.floor(marks[i + 1].q / g.barQ + 1e-6) : bars;
+    return { name: nm.trim() || 'Bölüm', startBar: sb, endBar: Math.max(sb, nx), tonic: key ? key.tonic : null, mode: key ? key.mode : null };
+  }).filter((s, i, a) => i === 0 || s.startBar > a[i - 1].startBar);
+  for (let i = 0; i < sections.length - 1; i++) sections[i].endBar = Math.min(sections[i].endBar, sections[i + 1].startBar - 1);
+  // akorlar: akor adı metinleri (uygulamanın kendi MIDI çıktısı: piyano izinde her akorun başında). Sonraki metne kadar sürer
+  let chordTrack = null, chordEvents = [];
+  for (const t of info.tracks) {
+    const ev = t.texts.filter((x) => x.type === 1).map((x) => ({ q: Q(x.tick), chord: parseChord(x.text) })).filter((x) => x.chord);
+    if (ev.length >= 2 && ev.length > chordEvents.length) { chordEvents = ev; chordTrack = t; }
+  }
+  const locks = [];
+  let chordStartBar = 1;
+  if (chordEvents.length) {
+    chordEvents.sort((a, b) => a.q - b.q);
+    const per = g.split ? 2 : 1, unitQ = g.barQ / per, nU = bars * per, at = new Array(nU).fill(null);
+    for (const e of chordEvents) { const u = Math.round(e.q / unitQ); if (u >= 0 && u < nU) at[u] = e.chord; }
+    let cur = null;
+    for (let u = 0; u < nU; u++) { if (at[u]) cur = at[u]; else at[u] = cur; }
+    chordStartBar = Math.floor(Math.max(0, Math.round(chordEvents[0].q / unitQ)) / per) + 1;
+    const lk = (bar, half, c) => locks.push({ bar, half, chord: { root: c.root, q: c.q, bass: c.bass ?? null }, src: 'chart' });
+    for (let b = chordStartBar; b <= bars; b++) {
+      const a = at[(b - 1) * per], c = per === 2 ? at[(b - 1) * per + 1] : a;
+      if (!a) continue;
+      if (per === 1 || !c || (a.root === c.root && a.q === c.q && a.bass === c.bass)) lk(b, null, a); else { lk(b, 0, a); lk(b, 1, c); }
+    }
+  }
+  // uygulamanın kendi çıktısındaki iz adlarından ayarlar: akor sesi, bas, davul (loop adı + ilk vuruşun ölçüsü)
+  let pianoStyle = null, bassOn = false, drum = null;
+  for (const t of info.tracks) {
+    if (t === chordTrack) {
+      if (t.name === 'Piyano akorları') pianoStyle = 'piano-chord';
+      else pianoStyle = Object.keys(PIANO_STYLES).find((k) => PIANO_STYLES[k].name === t.name) || null;
+    }
+    if (t.name === 'Bas') bassOn = true;
+    const dm = /^Davul — (.+)$/.exec(t.name);
+    if (dm && t.notes.length) drum = { name: dm[1], startBar: Math.floor(Q(t.notes[0].tick0) / g.barQ + 1e-6) + 1 };
+  }
+  if (!drum) { const dt = info.tracks.find((t) => t.notes.length && t.channels.size && [...t.channels].every((c) => c === 9)); if (dt) drum = { name: null, startBar: Math.floor(Q(dt.notes[0].tick0) / g.barQ + 1e-6) + 1 }; }
+  if (sections.length) { // son bölüm: melodinin ve son akor metninin bittiği ölçüye kadar
+    const lastQ = Math.max(notes[notes.length - 1].q1, chordEvents.length ? chordEvents[chordEvents.length - 1].q : 0);
+    const L = sections[sections.length - 1];
+    L.endBar = Math.max(L.startBar, Math.ceil(lastQ / g.barQ - 1e-6));
+  }
+  return { settings: { bpm, meter }, notes, endQ, bars, sections, locks, chordStartBar, pianoStyle, bassOn, drum, warnings, melodyTrack: { index: mt.index, name: mt.name || `İz ${mt.index + 1}` }, trackChoices: pick.cands, ppq: info.ppq, chordCount: chordEvents.length };
+}
+
 const Core = {
   PC_SHARP, PC_FLAT, MODES, MODE_ORDER, METERS, CHORD_Q, TEST_SCORE,
   PITCH_DEFAULTS, SEG_DEFAULTS, AUTOTUNE_DEFAULTS, CHORD_DEFAULTS, IN_TUNE_CENTS,
@@ -3084,7 +3240,7 @@ const Core = {
   nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, renderSynth, SYNTH, synthEnv, synthPianoSample, synthTestVocal,
-  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, arrangePiano, BASS_PATTERNS, bassPool, bassSteps, suggestBass, rankBass, bassRule, swingMap, swingUnmap, estimateSwing, bassEvents, renderBass, BASS, bassEnv, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
+  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, readMidiFile, importMidi, pickMelodyTrack, arrangePiano, BASS_PATTERNS, bassPool, bassSteps, suggestBass, rankBass, bassRule, swingMap, swingUnmap, estimateSwing, bassEvents, renderBass, BASS, bassEnv, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
   bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
 };
@@ -4947,6 +5103,7 @@ const S = {
   view: { pxPerQ: 44 },
   pos: 0,                 // oynatma imleci (zaman çizelgesi saniyesi)
   drag: null,
+  midi: null,             // .mid'den açılan proje: { name, bytes, notes:[{q0,q1,midi,vel}], endQ, tracks, trackIndex, warnings } (ses yok; melodi MIDI notalarından)
   loop: { on: false, from: 0, to: 0 }, // döngüde çalma: [from, to) saniye (zaman çizelgesi)
 };
 window.__daw = S; // hata ayıklama / testler için
@@ -5023,6 +5180,12 @@ function getCtx() {
 const NotePreview = {
   src: null, gain: null, lastAt: 0, count: 0,
   play(n, cents = 0, refMidi = null) {
+    if (S.midi && n) { // MIDI projesinde ses kaydı yok: nota synth ile çalınır (sürüklediğin perdede)
+      const m = refMidi != null ? refMidi : Math.round(n.median + cents / 100);
+      Player.ensure().then(() => Player.hitSynth({ midi: m, vel: 90, lead: true }, Tone.now() + 0.02, 0.45)).catch(() => {});
+      this.lastAt = performance.now(); this.count++;
+      return;
+    }
     if (!S.audio || !S.track || !n) return;
     const ctx = getCtx();
     if (ctx.state === 'suspended') ctx.resume();
@@ -5056,6 +5219,7 @@ function toAudioBuffer(data, sr) {
 // ---------------------------------------------------------------- pipeline
 function setAudio(data, sr, name, source) {
   HIST.reset = true; // yeni ses: geri alma geçmişi sıfırlanır (ses verisi geri alınamaz)
+  S.midi = null;
   S.audio = { data, sr, name };
   S.proj.audio.source = source;
   S.onset = null; S.track = null; S.rawNotes = null;
@@ -5092,7 +5256,8 @@ function refresh() {
   if (S.proj.chordPins && S.proj.chordPins.length && S.proj.chordPinsSig !== pinSig()) S.proj.chordPins = []; // başka bir şey değişti: yeniden hesapla
   // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
   const style = window.StyleUI ? window.StyleUI.scorer() : null;
-  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : 0, style, engineOverride: S.drag ? 'greedy' : null });
+  syncMidi();
+  S.d = C.derive(S.proj, { track: S.track, rawNotes: S.rawNotes, duration: S.audio ? S.audio.data.length / S.audio.sr : S.midi ? S.midi.endQ * C.makeGrid(S.proj.settings).spq : 0, style, engineOverride: S.drag ? 'greedy' : null });
   S.d.styleActive = !!style;
   { const ns = S.d.notes; S.vocalRate = ns.length >= 4 ? ns.length / Math.max(1, ns[ns.length - 1].tl1 - ns[0].tl0) : null; } // vokal yoğunluğu (nota / s): bas puanlamasında
   const nl = S.proj.chordLocks.length;
@@ -5126,6 +5291,54 @@ function refresh() {
   histCommit();
 }
 
+// ---------------------------------------------------------------- MIDI İÇE AKTARMA: .mid → proje (ses yok; melodi MIDI notalarından)
+// Notalar çeyrek cinsinden saklanır: BPM değişince müzikal yerleri korunur; ham zamanlar (düzenlemelerin t0/t1'i) oranla ölçeklenir.
+const midiRaw = (notes, spq) => notes.map((n) => ({ t0: n.q0 * spq, t1: n.q1 * spq, f0i: 0, f1i: 0, median: n.midi, nearest: n.midi, cents: 0, vel: n.vel }));
+function syncMidi() {
+  if (!S.midi) return;
+  const spq = C.makeGrid(S.proj.settings).spq, pm = S.proj.midi || (S.proj.midi = { spq });
+  if (Math.abs(pm.spq - spq) > 1e-9) { const r = spq / pm.spq; for (const e of S.proj.noteEdits) { e.t0 *= r; e.t1 *= r; } pm.spq = spq; }
+  S.rawNotes = midiRaw(S.midi.notes, pm.spq);
+}
+// MIDI melodisi çalma / mix için olaylar (düzenlenmiş notalar)
+const melodyEvents = () => (S.d && S.midi ? S.d.notes.map((n) => ({ t: n.q0 * S.d.g.spq, dur: Math.max(0.05, (n.q1 - n.q0) * S.d.g.spq * 0.97), midi: n.effMidi, vel: n.vel || 90, lead: true, q0: n.q0, q1: n.q1 })) : []);
+function importMidiBytes(bytes, name, trackIdx, keep) {
+  const r = C.importMidi(bytes, trackIdx != null ? { track: trackIdx } : {});
+  if (r.error) { status('MIDI açılamadı: ' + r.error, 'err'); return false; }
+  if (!keep && (S.audio || S.midi) && !confirm('MIDI açılsın mı? Şu anki proje (kaydetmediysen) kaybolur.')) return false;
+  Player.stop(true); HIST.reset = true;
+  S.loop.on = false; $('#btnLoop').classList.remove('on');
+  S.proj = C.newProject(); S.audio = null; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.sel = null; S.pos = 0;
+  const p = S.proj;
+  p.settings.bpm = r.settings.bpm; p.settings.meter = r.settings.meter;
+  p.audio = { offsetSec: 0, alignMode: 'none', leadBars: 0, source: 'midi' };
+  p.pitch.tuning = 'a440'; // MIDI notaları tam yarım sestir
+  p.sections = r.sections.map((x) => ({ id: uid(), name: x.name, startBar: x.startBar, endBar: x.endBar, tonic: x.tonic, mode: x.mode }));
+  p.chordLocks = r.locks; p.chordStartBar = r.chordStartBar;
+  if (r.pianoStyle) p.piano.style = r.pianoStyle;
+  if (r.bassOn) p.bass.on = true;
+  if (r.drum) {
+    p.drums.on = true; p.drums.startBar = r.drum.startBar;
+    const L = r.drum.name && C.DRUM_LOOPS.find((l) => l.name === r.drum.name && l.meter === r.settings.meter);
+    if (L) p.drums.loop = L.id;
+  }
+  S.midi = { name, bytes, notes: r.notes, endQ: r.endQ, tracks: r.trackChoices, trackIndex: r.melodyTrack.index, warnings: r.warnings };
+  p.midi = { spq: C.makeGrid(p.settings).spq };
+  syncInputs(); refresh();
+  const bits = [`melodi izi "${r.melodyTrack.name}" (${r.notes.length} nota)`, `${r.settings.meter} · ${r.settings.bpm} BPM`];
+  if (r.sections.length) bits.push(`${r.sections.length} bölüm${r.sections.some((x) => x.tonic != null) ? ' + ton' : ''}`);
+  if (r.chordCount) bits.push(`${r.locks.length} akor 📄 (MIDI'deki akor adlarından)`);
+  if (r.pianoStyle && r.pianoStyle !== 'piano-chord') bits.push(C.PIANO_STYLES[r.pianoStyle].name);
+  if (r.bassOn) bits.push('bas'); if (r.drum) bits.push(`davul${r.drum.name ? ' (' + r.drum.name + ')' : ''}`);
+  status(`MIDI açıldı: ${name} — ${bits.join(' · ')}.${r.warnings.length ? ' ⚠ ' + r.warnings.join(' ') : ''}${r.chordCount ? '' : ' Akor adı bulunamadı: akorlar melodiden üretildi (6–7. adım).'}`);
+  return true;
+}
+async function loadMidiFile(file) {
+  let bytes;
+  try { bytes = new Uint8Array(await file.arrayBuffer()); } catch (e) { status('MIDI dosyası okunamadı: ' + e.message, 'err'); return; }
+  importMidiBytes(bytes, file.name, null, false);
+}
+
 // ---------------------------------------------------------------- sol panel: bölümler tıklayınca açılır, durum rozeti, açık/kapalı durumu hatırlanır
 const PANEL_LS = 'miniDaw.panels';
 function savePanels() {
@@ -5144,7 +5357,7 @@ function renderChips() {
   const set = (id, txt) => { const el = $(id); if (el && el.textContent !== txt) el.textContent = txt; };
   const p = S.proj, d = S.d;
   set('#chipS1', `${p.settings.meter} · ${p.settings.bpm} BPM${swingMode() === 'triplet' ? ' · üçleme' : swingMode() === 'swing' ? ' · swing %' + Math.round(swingR() * 100) : ''}`);
-  set('#chipS2', S.audio ? `${(S.audio.data.length / S.audio.sr).toFixed(0)} s${p.audio.leadBars ? ` · ${p.audio.leadBars > 0 ? '+' : ''}${p.audio.leadBars} ölçü` : ''}` : 'ses yok');
+  set('#chipS2', S.midi ? `MIDI · ${S.midi.notes.length} nota` : S.audio ? `${(S.audio.data.length / S.audio.sr).toFixed(0)} s${p.audio.leadBars ? ` · ${p.audio.leadBars > 0 ? '+' : ''}${p.audio.leadBars} ölçü` : ''}` : 'ses yok');
   set('#chipS3', S.rawNotes ? `${S.rawNotes.length} nota` : '');
   set('#chipS4', d && p.sections.length ? `${p.sections.length} bölüm` : 'bölüm yok');
   const nEd = p.noteEdits.length + (p.noteSplits || []).length;
@@ -5277,6 +5490,7 @@ function scheduleRender(now) {
   renderTimer = setTimeout(doRender, now ? 0 : 350);
 }
 async function doRender() {
+  if (!S.d || !S.d.correction || !S.audio) return; // proje değişti (ör. MIDI açıldı): bekleyen render geçersiz
   if (S.drag) { renderTimer = setTimeout(doRender, 150); return; }
   const shift = S.d.correction.shift.slice(), map = S.d.timeMap;
   await busy(map && !map.identity ? 'Düzeltilmiş vokal render ediliyor (perde: TD-PSOLA · zamanlama: WSOLA)…' : 'Düzeltilmiş vokal render ediliyor (TD-PSOLA, formant korumalı)…', async () => {
@@ -5463,7 +5677,8 @@ $('#btnTapClear').onclick = () => { S.proj.taps = []; refresh(); };
 $('#tapInfo').addEventListener('click', (e) => { if (e.target.closest('#btnTapApply')) applyTaps(); });
 // ---------------------------------------------------------------- DAVUL: ölçü tahmini + loop seçimi
 function drumNotes() {
-  if (!S.d || !S.track) return [];
+  if (!S.d) return [];
+  if (!S.track) return S.midi ? S.d.notes.map((n) => ({ t0: n.tl0, t1: n.tl1, pitch: n.effMidi, loud: (n.vel || 80) / 127 })) : []; // MIDI: ses şiddeti yerine vuruş hızı
   const rms = S.track.rms;
   return S.d.notes.map((n) => {
     let loud = 0;
@@ -5474,7 +5689,7 @@ function drumNotes() {
 function analyzeDrums() {
   const ns = drumNotes();
   // click'le kaydedildiyse ya da test melodisiyse ızgara zaten doğru: vuruş fazını tahmin etme
-  const fixedPhase = S.proj.audio.source === 'test' || (S.proj.audio.source === 'record' && S.proj.audio.alignMode === 'none');
+  const fixedPhase = S.proj.audio.source === 'test' || S.proj.audio.source === 'midi' || (S.proj.audio.source === 'record' && S.proj.audio.alignMode === 'none');
   S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase }) : null;
   S.drumSug = C.suggestDrumLoop(ns, Object.assign({}, S.proj.settings, { swingRatio: swingR() }), S.meterEst); // senin bildirdiğin swing oranı his tahmininin üstündedir
 }
@@ -5664,7 +5879,7 @@ function applyMeterEstimate(est) { // 8b'deki "Uygula" ile aynı; yenilemeyi ça
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[set.meter].split);
 }
 function makeDemo() {
-  if (!S.d || !S.audio || !S.rawNotes || !S.rawNotes.length) { status('Demo için önce bir ses kaydı/yükleme ve analiz gerekli ("Test melodisi üret" ile de deneyebilirsin).', 'err'); return; }
+  if (!S.d || (!S.audio && !S.midi) || !S.rawNotes || !S.rawNotes.length) { status('Demo için önce bir ses kaydı/yükleme ve analiz gerekli ("Test melodisi üret" ile de deneyebilirsin).', 'err'); return; }
   Player.stop(true);
   const did = [];
   HIST.hold++; // bütün adımlar tek geri alma adımı
@@ -5745,6 +5960,7 @@ const Player = {
     this.vocalCh = new T.Channel(0).toDestination();
     this.pianoCh = new T.Channel(-6).toDestination();
     this.synthBus = new T.Gain(1).connect(this.pianoCh); // synth klavye de "akor" kanalından geçer (ses seviyesi / mute / solo ortak)
+    this.vocalBus = new T.Gain(1).connect(this.vocalCh); // MIDI melodisi (synth) Vokal kanalından geçer
     this.bassCh = new T.Channel(-5).toDestination();
     this.bassBus = new T.Gain(1).connect(this.bassCh);
     this.synthVoices = new Set();
@@ -5816,7 +6032,7 @@ const Player = {
     // her tur: [lo, hi) zaman çizelgesi aralığı, tau0 = lo'nun Transport zamanı
     const rounds = [{ lo: from, hi: region ? region.to : Infinity, tau0: from }];
     if (region && !pv) for (let k = 0; k < Math.min(200, Math.ceil(600 / len)); k++) rounds.push({ lo: region.from, hi: region.to, tau0: from + (region.to - from) + k * len });
-    const pev = pianoEventsAll(), dev = drumEventsAll(), bev = bassEventsAll();
+    const pev = pianoEventsAll(), dev = drumEventsAll(), bev = bassEventsAll(), mev = melodyEvents();
     const poInst = C.pianoOpts(S.proj.piano).inst;
     for (const r of rounds) {
       const at = (t) => r.tau0 + (Math.max(t, r.lo) - r.lo); // Transport zamanı
@@ -5832,6 +6048,11 @@ const Player = {
         if (e.t >= r.hi || e.t + e.dur <= r.lo + 0.01) continue;
         const st = Math.max(e.t, r.lo);
         T.schedule((time) => this.playNote(e.inst || poInst, e, time, st), at(st));
+      }
+      for (const e of mev) {
+        if (e.t >= r.hi || e.t + e.dur <= r.lo + 0.01) continue;
+        const st = Math.max(e.t, r.lo);
+        T.schedule((time) => this.hitSynth(e, time, Math.max(0.05, e.t + e.dur - st)), at(st));
       }
       for (const e of dev) if (e.t >= r.lo - 0.01 && e.t < r.hi) T.schedule((time) => this.hitDrum(e, time), at(e.t));
       for (const e of bev) {
@@ -5895,8 +6116,8 @@ const Player = {
   },
   // synth klavye notası (Web Audio): iki fark edilmiş testere + üçgen → alçak geçiren; zarf çekirdekteki synthEnv ile aynı (mix WAV'la birebir)
   hitSynth(e, time, dur) {
-    const ctx = Tone.getContext().rawContext, P = e.arp ? C.SYNTH.arp : C.SYNTH.chord;
-    const env = C.synthEnv(!!e.arp, dur, !!e.fade), total = dur + env.tail, n = Math.max(16, Math.ceil(total * 200));
+    const ctx = Tone.getContext().rawContext, P = e.lead ? C.SYNTH.lead : e.arp ? C.SYNTH.arp : C.SYNTH.chord;
+    const env = C.synthEnv(!!e.arp, dur, !!e.fade, !!e.lead), total = dur + env.tail, n = Math.max(16, Math.ceil(total * 200));
     const peak = C.SYNTH.level * Math.pow((e.vel || 80) / 127, 1.4);
     const curve = new Float32Array(n);
     for (let i = 0; i < n; i++) curve[i] = peak * env.at((i / (n - 1)) * total);
@@ -5911,7 +6132,7 @@ const Player = {
     });
     lp.connect(out);
     out.gain.setValueAtTime(0, time); out.gain.setValueCurveAtTime(curve, time, total);
-    Tone.connect(out, this.synthBus);
+    Tone.connect(out, e.lead ? this.vocalBus : this.synthBus);
     const v = { out, oscs };
     this.synthVoices.add(v);
     oscs[0].onended = () => { this.synthVoices.delete(v); try { out.disconnect(); } catch (err) { /* zaten bağlı değil */ } };
@@ -6877,7 +7098,7 @@ function renderNotesInspector(box, ns) {
 // ---------------------------------------------------------------- nota bölme (çift tık)
 function resegment() { S.rawNotes = C.applyNoteSplits(C.segmentNotes(S.track, S.proj.pitch), S.track, S.proj.noteSplits); }
 function splitNoteAt(n, x) {
-  if (!S.track || !S.d) return;
+  if (!S.track || !S.d) { if (S.midi) status('MIDI notaları zaten ayrı nota olarak geldi; bölmek için ses analizi gerekir.'); return; }
   const d = S.d, g = d.g, hop = S.track.hopSec;
   // zaman çizelgesi konumu → kayıttaki zaman (ses kaydırma ve zamanlama düzeltmeleri geri alınır)
   let fi = Math.round(d.timeMap.inv((xToQ(x) * g.spq) + d.off) / hop);
@@ -7447,7 +7668,14 @@ function renderChordInspector(box, slot) {
 // ---------------------------------------------------------------- bilgi satırları
 function renderInfo() {
   const a = S.audio;
-  $('#audioInfo').textContent = a ? `${a.name} · ${(a.data.length / a.sr).toFixed(1)} s · ${a.sr} Hz${S.proj.audio.source === 'record' ? ` · gecikme telafisi ${S.proj.settings.latencyMs} ms` : ''}` : 'Ses yok';
+  $('#audioInfo').textContent = S.midi ? `MIDI: ${S.midi.name} · ${S.midi.notes.length} nota · ses kaydı yok` : a ? `${a.name} · ${(a.data.length / a.sr).toFixed(1)} s · ${a.sr} Hz${S.proj.audio.source === 'record' ? ` · gecikme telafisi ${S.proj.settings.latencyMs} ms` : ''}` : 'Ses yok';
+  { // MIDI melodi izi seçimi (birden çok aday iz varsa) + uyarılar
+    const row = $('#midiTrackRow'), sel = $('#inMidiTrack'), m = S.midi;
+    const show = !!m && m.bytes && m.tracks.length > 1;
+    row.hidden = !show;
+    if (show) { const o = m.tracks.map((t) => `<option value="${t.index}">${esc(t.name)} (${t.count} nota)</option>`).join(''); if (sel.innerHTML !== o) sel.innerHTML = o; sel.value = String(m.trackIndex); }
+    $('#midiInfo').textContent = m ? `Melodi, MIDI notalarından; ses yok (vokal yerine synth çalar). Sesli düzeltmeler (autotune, WSOLA) MIDI'de yoktur.${m.warnings.length ? ' ⚠ ' + m.warnings.join(' ') : ''}` : '';
+  }
   const tu = S.d && S.d.tuning;
   $('#pitchInfo').textContent = S.d && S.rawNotes ? `${tu && !tu.off ? `Akort referansı: A4 ≈ ${tu.a4.toFixed(1)} Hz (${tu.global >= 0 ? '+' : ''}${tu.global.toFixed(0)} cent), zamanla kayma ${tu.driftMin.toFixed(0)}…+${tu.driftMax.toFixed(0)} cent · ` : 'Akort referansı: A4 = 440 Hz · '}${S.d.notes.length} nota · ${S.d.notes.filter((n) => !n.inScale).length} scale dışı · ${S.d.notes.filter((n) => n.label != null).length} etiket · ${S.d.notes.filter((n) => n.manualTarget != null).length} manuel` : '';
   const at = S.proj.autotune;
@@ -7747,12 +7975,16 @@ $('#btnRecStop').onclick = () => Rec.stop();
 $('#fileAudio').addEventListener('change', (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) loadAudioFile(f); });
 $('#btnTest').onclick = () => loadTest();
 $('#btnNew').onclick = () => {
-  if (S.audio && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
+  if ((S.audio || S.midi) && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
   Player.stop(true); HIST.reset = true; S.loop.on = false; $('#btnLoop').classList.remove('on');
-  S.proj = C.newProject(); S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  S.proj = C.newProject(); S.audio = null; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   syncInputs(); refresh(); status('Yeni proje.');
 };
 $('#btnSave').onclick = () => saveProject();
+$('#btnOpenMidi').onclick = () => $('#fileMidi').click();
+$('#btnMidiLoad').onclick = () => $('#fileMidi').click();
+$('#fileMidi').addEventListener('change', async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) await loadMidiFile(f); });
+$('#inMidiTrack').addEventListener('change', (e) => { if (S.midi && S.midi.bytes) importMidiBytes(S.midi.bytes, S.midi.name, +e.target.value, true); });
 $('#btnOpen').onclick = () => $('#fileProject').click();
 $('#fileProject').addEventListener('change', async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) await openProject(f); });
 document.addEventListener('keydown', (e) => {
@@ -7813,6 +8045,7 @@ function download(data, name, type) {
 function saveProject() {
   const p = JSON.parse(JSON.stringify(S.proj));
   p.savedAt = new Date().toISOString();
+  if (S.midi) p.midiData = { name: S.midi.name, endQ: S.midi.endQ, notes: S.midi.notes }; // MIDI projesi: melodi notaları (ses yok)
   if ($('#chkEmbed').checked && S.audio) {
     const wav = C.encodeWav([S.audio.data], S.audio.sr);
     p.audioData = { name: S.audio.name, sr: S.audio.sr, wavBase64: C.bytesToBase64(new Uint8Array(wav)) };
@@ -7831,10 +8064,11 @@ async function openProject(file) {
   let p;
   try { p = JSON.parse(await file.text()); } catch (e) { status('Proje dosyası okunamadı: ' + e.message, 'err'); return; }
   Player.stop(true); HIST.reset = true;
-  const audioData = p.audioData;
-  delete p.audioData; delete p.savedAt;
+  const audioData = p.audioData, midiData = p.midiData;
+  delete p.audioData; delete p.midiData; delete p.savedAt;
   S.proj = mergeDefaults(C.newProject(), p);
-  S.audio = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  S.audio = null; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  if (midiData) S.midi = { name: midiData.name, bytes: null, notes: midiData.notes, endQ: midiData.endQ, tracks: [], trackIndex: null, warnings: [] };
   if (audioData) {
     const w = C.decodeWav(C.base64ToBytes(audioData.wavBase64).buffer);
     S.audio = { data: w.data, sr: w.sr, name: audioData.name };
@@ -7842,17 +8076,17 @@ async function openProject(file) {
   }
   syncInputs();
   await analyze();
-  status(`Proje açıldı${audioData ? '' : ' (ses gömülü değildi — kaydı yeniden yükleyin)'}.`);
+  status(`Proje açıldı${audioData || midiData ? '' : ' (ses gömülü değildi — kaydı yeniden yükleyin)'}.`);
 }
 
 // ---------------------------------------------------------------- dışa aktarım
-function needData() { if (!S.d || !S.audio) { status('Önce ses kaydı/yükleme ve analiz gerekli.', 'err'); return false; } return true; }
+function needData() { if (!S.d || (!S.audio && !S.midi)) { status('Önce ses kaydı/yükleme ve analiz gerekli.', 'err'); return false; } return true; }
 function alignedVocal(src, sr, lenSec) {
   const n = Math.round(lenSec * sr), out = new Float32Array(n), o = Math.round(S.d.off * sr);
   for (let i = 0; i < n; i++) { const j = i + o; if (j >= 0 && j < src.length) out[i] = src[j]; }
   return out;
 }
-const exportLenSec = () => Math.max(S.d.bars * S.d.g.barSec, S.audio.data.length / S.audio.sr - S.d.off) + 1.5;
+const exportLenSec = () => (S.audio ? Math.max(S.d.bars * S.d.g.barSec, S.audio.data.length / S.audio.sr - S.d.off) + 1.5 : S.d.bars * S.d.g.barSec + 1.5);
 async function ensureRendered() {
   if (!renderReady()) { clearTimeout(renderTimer); await doRender(); }
 }
@@ -7862,6 +8096,7 @@ $('#btnExpMidi').onclick = () => { if (!needData()) return; { const dev = drumEv
 $('#btnExpChart').onclick = () => { if (!needData()) return; download(C.chordChart(S.proj, S.d), 'akor-semasi.txt', 'text/plain;charset=utf-8'); };
 $('#btnExpVocal').onclick = async () => {
   if (!needData()) return;
+  if (!S.audio) { status('MIDI projesinde vokal kaydı yok: melodi MIDI çıktısında ve "Vokal + akor mix" WAV\'ında (synth melodi) var.', 'err'); return; }
   await ensureRendered();
   const v = alignedVocal(S.corrected || S.audio.data, S.audio.sr, exportLenSec());
   download(new Blob([C.encodeWav([v], S.audio.sr)], { type: 'audio/wav' }), 'duzeltilmis-vokal.wav');
@@ -7869,12 +8104,13 @@ $('#btnExpVocal').onclick = async () => {
 };
 $('#btnExpMix').onclick = async () => {
   if (!needData()) return;
-  await ensureRendered();
+  if (S.audio) await ensureRendered();
   await busy('Mix render ediliyor…', async () => {
     const piano = await loadPianoSamples();
     const sr = 44100, lenSec = exportLenSec(), n = Math.round(lenSec * sr);
-    const src = S.proj.mixer.ab === 'original' ? S.audio.data : S.corrected || S.audio.data;
-    const vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec);
+    let vocal;
+    if (S.audio) { const src = S.proj.mixer.ab === 'original' ? S.audio.data : S.corrected || S.audio.data; vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec); }
+    else vocal = C.renderSynth(melodyEvents(), sr, n, 1); // MIDI projesi: melodi synth ile
     const ev = pianoEventsAll();
     const pno = C.renderPiano(ev.filter((e) => e.inst !== 'synth'), piano.samples, sr, n, 0.35);
     const syn = C.renderSynth(ev.filter((e) => e.inst === 'synth'), sr, n, 1);

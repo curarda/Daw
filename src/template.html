@@ -33,9 +33,11 @@
     <button id="btnUndo" title="Geri al (Ctrl+Z)" disabled>↶</button><button id="btnRedo" title="Yinele (Ctrl+Shift+Z)" disabled>↷</button>
     <button id="btnNew">Yeni</button>
     <button id="btnOpen">Proje aç</button>
+    <button id="btnOpenMidi" title="Daha önce MIDI olarak kaydettiğin çalışmayı (melodi, bölümler, akorlar, bas, davul) projeye çevirip devam et">MIDI aç</button>
     <button id="btnSave">Proje kaydet</button>
     <label class="chk" title="Orijinal kaydı proje dosyasına WAV olarak göm"><input type="checkbox" id="chkEmbed" checked> sesi göm</label>
     <input type="file" id="fileProject" accept=".json,application/json" hidden>
+    <input type="file" id="fileMidi" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
   </div>
   <div id="status" role="status"></div>
 </header>
@@ -72,6 +74,10 @@
         <label class="grow">Click<input type="range" id="inClickVol" min="0" max="1" step="0.05" value="0.6"></label>
       </div>
       <p class="hint">Önce 1 ölçü count-in çalar. Click yalnızca çıkışa (kulaklığa) gider, kayda karışmaz — hoparlör değil kulaklık kullanın.</p>
+      <div class="row"><button id="btnMidiLoad" title="Proje JSON'u yerine MIDI kaydettiysen: MIDI'den devam et">MIDI yükle (.mid)</button>
+        <label class="grow" id="midiTrackRow" hidden>MIDI melodi izi<select id="inMidiTrack"></select></label></div>
+      <div id="midiInfo" class="hint"></div>
+      <p class="hint"><b>MIDI'den devam:</b> proje JSON'u kaydetmediysen, bu uygulamadan aldığın .mid dosyasını aç: melodi (düzeltilmiş notalar), bölümler ve tonlar, akorlar (📄), ölçü / BPM, akor sesi, bas ve davul geri gelir. Başka programlardan MIDI de açılır (melodi izi otomatik seçilir). Ses kaydı olmadığı için melodi synth ile çalar.</p>
       <div class="row">
         <label class="file-btn">WAV/MP3 yükle<input type="file" id="fileAudio" accept="audio/*,.wav,.mp3,.m4a,.ogg,.flac" hidden></label>
         <label class="grow">Hizalama
