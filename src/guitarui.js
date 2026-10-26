@@ -16,12 +16,11 @@ const gSections = () => (S.d ? S.d.sections.filter((s) => !s.implicit) : []);
 const jclone = (x) => JSON.parse(JSON.stringify(x));
 
 // ---- parti → ses (çalma, ön dinleme ve mix WAV aynı yolu kullanır; render önbellekli)
-const guitarPartOf = (sl) => C.guitarPartFor(S.proj.guitar, sl.section);
 function guitarTrack(sr) {
   const g = S.d.g, slots = C.guitarSlotsFrom(S.d);
   const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts);
   if (GT.cache && GT.cache.key === key) return GT.cache;
-  const events = C.guitarEvents(slots, g, guitarPartOf);
+  const events = arrangedEventsAll(['guitar']).guitar;
   const n = Math.ceil((S.d.bars * g.barSec + 2.5) * sr);
   return (GT.cache = { key, events, data: C.renderGuitar(events, sr, n, g.spq, 1) });
 }

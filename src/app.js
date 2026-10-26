@@ -42,7 +42,7 @@ window.__dawAPI = {
     };
   },
   stop: () => Player.stop(),
-  arrangement: () => ({ drums: drumEventsAll(), bass: S.d && S.proj.bass.enabled ? Bs.bassEvents(S.proj.bass, S.d.g, S.d.bars) : [], piano: pianoEventsAll() }), // bölüm düzenlemeli olaylar (testler)
+  arrangement: () => ({ drums: drumEventsAll(), bass: arrangedEventsAll(['bass']).bass, piano: pianoEventsAll() }), // bölüm düzenlemeli olaylar (testler)
   hist: () => HIST,
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir; durs: ölçü cinsinden süreler
@@ -375,23 +375,11 @@ const swingMode = (r = swingR()) => (Math.abs(r - 0.5) < 0.005 ? 'straight' : Ma
 const secArr = (secId) => { const s = S.proj.sections.find((x) => x.id === secId); return (s && s.arr) || {}; };
 const sectionOfBar = (bar) => (S.d ? S.d.sections.find((s) => !s.implicit && bar >= s.startBar && bar <= s.endBar) || null : null);
 const loopById = (id) => C.DRUM_LOOPS.find((l) => l.id === id && l.meter === S.proj.settings.meter) || null;
-function drumLoopForBar(bar) {
-  if (PREVIEW.drums) return loopById(PREVIEW.drums);
-  const sec = sectionOfBar(bar), a = sec ? secArr(sec.id).drums : null;
-  if (a === 'off') return null;
-  const own = a ? loopById(a) : null;
-  return own || (S.proj.drums.on ? currentLoop() : null);
-}
 const anySectionArr = (k) => S.proj.sections.some((s) => s.arr && s.arr[k] && s.arr[k] !== 'off');
 const anyDrums = () => !!PREVIEW.drums || S.proj.drums.on || anySectionArr('drums');
-function fillAt(b) {
-  if (!S.proj.drums.fills || PREVIEW.drums || !S.d || b >= S.d.bars) return false;
-  const a = sectionOfBar(b), n = sectionOfBar(b + 1);
-  return !!a && !!n && a.id !== n.id && !!drumLoopForBar(b) && !!drumLoopForBar(b + 1);
-}
-const drumEventsAll = () => (S.d && anyDrums() ? C.arrangeDrums(S.d.g, S.d.bars, S.proj.drums.startBar || 1, drumLoopForBar, fillAt, swingR()) : []);
-const pianoOptsFor = (secId) => { const a = secArr(secId).piano; return C.pianoOpts(a ? Object.assign({}, S.proj.piano, { style: a }) : S.proj.piano, swingR()); };
-const pianoEventsAll = () => (anySectionArr('piano') ? C.arrangePiano(S.d.chords, S.d.g, pianoOptsFor) : C.pianoEvents(S.d.chords, S.d.g, C.pianoOpts(S.proj.piano, swingR())));
+const arrangedEventsAll = (layers) => C.arrangedEvents(S.d, S.proj, { layers, drumLoop: currentLoop(), previewDrums: PREVIEW.drums });
+const drumEventsAll = () => arrangedEventsAll(['drums']).drums;
+const pianoEventsAll = () => arrangedEventsAll(['piano']).piano;
 
 // ---------------------------------------------------------------- düzeltilmiş vokal render (TD-PSOLA)
 let renderTimer = null;

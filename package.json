@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node build.mjs && node tests/pipeline.test.mjs && node tests/style.test.mjs && node tests/guitar.test.mjs && node tests/bass.test.mjs",
+    "test": "node build.mjs && node tests/pipeline.test.mjs && node tests/style.test.mjs && node tests/guitar.test.mjs && node tests/bass.test.mjs && node tests/arrangement-golden.test.mjs",
     "test:ui": "node build.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/style-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/bass-audio.test.mjs"
   },
   "devDependencies": {

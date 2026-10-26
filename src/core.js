@@ -2270,20 +2270,16 @@ function exportMidi(proj, d, drums = null) {
   const vocal = d.notes.filter((n) => n.effMidi != null).map((n) => ({ q0: n.q0, q1: n.q1, midi: n.effMidi, vel: 96 }));
   const sw = proj.swing && proj.swing.ratio, po = pianoOpts(proj.piano, sw);
   const ins = proj.guitar && proj.guitar.instrument ? proj.guitar.instrument : 'piano'; // piyano / gitar / ikisi
-  const pev = proj.sections && proj.sections.some((s) => s.arr && s.arr.piano)
-    ? arrangePiano(d.chords, g, (id) => { const sc = proj.sections.find((x) => x.id === id); return pianoOpts(Object.assign({}, proj.piano, sc && sc.arr && sc.arr.piano ? { style: sc.arr.piano } : {}), sw); })
-    : pianoEvents(d.chords, g, po);
-  const piano = pev.map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
-  const gtr = ins !== 'piano' && root.Core && root.Core.guitarEvents
-    ? root.Core.guitarEvents(root.Core.guitarSlotsFrom(d), g, (sl) => root.Core.guitarPartFor(proj.guitar, sl.section)).filter((e) => e.midi != null)
-      .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) })) : [];
-  const bt = proj.bass && proj.bass.enabled && root.Core && root.Core.Bass ? proj.bass : null;
-  const bass = bt ? root.Core.Bass.bassEvents(bt, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + Math.max(0.05, (e.dur * (e.gate ?? 1)) / g.spq), midi: e.midi, vel: e.vel })) : [];
+  const events = root.Core.arrangedEvents(d, proj, { midi: true, drums });
+  const piano = events.piano.map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
+  const gtr = events.guitar.filter((e) => e.midi != null)
+    .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) }));
+  const bass = events.bass.map((e) => ({ q0: e.q, q1: e.q + Math.max(0.05, (e.dur * (e.gate ?? 1)) / g.spq), midi: e.midi, vel: e.vel }));
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
   const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
   // GM programı: piyano 0 · synth akor "Pad 3 polysynth" 90 · synth arpej "Lead 2 sawtooth" 81
   const program = po.inst === 'piano' ? 0 : po.pattern === 'arp' ? 81 : 90;
-  const dr = drums && drums.K ? { name: drums.name, events: root.Core.drumEvents(drums, g, d.bars, (proj.drums && proj.drums.startBar) || 1) } : drums;
+  const dr = drums ? { name: drums.name, events: events.drums } : null;
   return writeMidi({
     quarterBpm: g.quarterBpm, meter: proj.settings.meter, markers,
     tracks: [

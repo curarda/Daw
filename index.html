@@ -2981,20 +2981,16 @@ function exportMidi(proj, d, drums = null) {
   const vocal = d.notes.filter((n) => n.effMidi != null).map((n) => ({ q0: n.q0, q1: n.q1, midi: n.effMidi, vel: 96 }));
   const sw = proj.swing && proj.swing.ratio, po = pianoOpts(proj.piano, sw);
   const ins = proj.guitar && proj.guitar.instrument ? proj.guitar.instrument : 'piano'; // piyano / gitar / ikisi
-  const pev = proj.sections && proj.sections.some((s) => s.arr && s.arr.piano)
-    ? arrangePiano(d.chords, g, (id) => { const sc = proj.sections.find((x) => x.id === id); return pianoOpts(Object.assign({}, proj.piano, sc && sc.arr && sc.arr.piano ? { style: sc.arr.piano } : {}), sw); })
-    : pianoEvents(d.chords, g, po);
-  const piano = pev.map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
-  const gtr = ins !== 'piano' && root.Core && root.Core.guitarEvents
-    ? root.Core.guitarEvents(root.Core.guitarSlotsFrom(d), g, (sl) => root.Core.guitarPartFor(proj.guitar, sl.section)).filter((e) => e.midi != null)
-      .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) })) : [];
-  const bt = proj.bass && proj.bass.enabled && root.Core && root.Core.Bass ? proj.bass : null;
-  const bass = bt ? root.Core.Bass.bassEvents(bt, g, d.bars).map((e) => ({ q0: e.q, q1: e.q + Math.max(0.05, (e.dur * (e.gate ?? 1)) / g.spq), midi: e.midi, vel: e.vel })) : [];
+  const events = root.Core.arrangedEvents(d, proj, { midi: true, drums });
+  const piano = events.piano.map((e) => ({ q0: e.q0, q1: e.q1, midi: e.midi, vel: e.vel }));
+  const gtr = events.guitar.filter((e) => e.midi != null)
+    .map((e) => ({ q0: e.t / g.spq, q1: (e.t + e.dur) / g.spq, midi: e.midi, vel: Math.round(30 + 90 * e.vel) }));
+  const bass = events.bass.map((e) => ({ q0: e.q, q1: e.q + Math.max(0.05, (e.dur * (e.gate ?? 1)) / g.spq), midi: e.midi, vel: e.vel }));
   const texts = d.chords.map((c) => ({ q: c.q0, text: chordName(c.chord, c.flats) }));
   const markers = d.sections.map((s) => ({ q: (s.startBar - 1) * g.barQ, text: s.name + (s.tonic != null ? ' — ' + keyName(s.tonic, s.mode) : '') }));
   // GM programı: piyano 0 · synth akor "Pad 3 polysynth" 90 · synth arpej "Lead 2 sawtooth" 81
   const program = po.inst === 'piano' ? 0 : po.pattern === 'arp' ? 81 : 90;
-  const dr = drums && drums.K ? { name: drums.name, events: root.Core.drumEvents(drums, g, d.bars, (proj.drums && proj.drums.startBar) || 1) } : drums;
+  const dr = drums ? { name: drums.name, events: events.drums } : null;
   return writeMidi({
     quarterBpm: g.quarterBpm, meter: proj.settings.meter, markers,
     tracks: [
@@ -6424,6 +6420,49 @@ function estimateFromTaps(taps, notes, opts = {}) {
 
 Object.assign(C, { buildTimeMap, identityMap, wsolaWarp, QUANT_GRIDS, quantizeTargets, estimateFromTaps });
 })(typeof window !== 'undefined' ? window : globalThis);
+
+// Ortak düzenlenmiş olay akışı; ses üretimi ve zamanlama tüketicilerde kalır.
+(function (root) {
+const C = root.Core;
+function effectiveLayers(sectionId) {
+  return { piano: true, guitar: true, bass: true, drums: true };
+}
+function arrangedEvents(d, proj, opts = {}) {
+  const out = { piano: [], guitar: [], bass: [], drums: [] };
+  if (!d) return out;
+  const wants = (k) => !opts.layers || opts.layers.includes(k);
+  const g = d.g, sections = proj.sections || [], ds = proj.drums || {};
+  const sw = opts.midi ? proj.swing && proj.swing.ratio : (proj.swing && proj.swing.ratio) || 0.5;
+  const arr = (id) => sections.find((s) => s.id === id)?.arr || {};
+  if (wants('piano')) {
+    const separate = sections.some((s) => s.arr && s.arr.piano && (opts.midi || s.arr.piano !== 'off'));
+    out.piano = separate
+      ? C.arrangePiano(d.chords, g, (id) => C.pianoOpts(Object.assign({}, proj.piano, arr(id).piano ? { style: arr(id).piano } : {}), sw))
+      : C.pianoEvents(d.chords, g, C.pianoOpts(proj.piano, sw));
+  }
+  if (wants('guitar') && proj.guitar && (!opts.midi || (proj.guitar.instrument || 'piano') !== 'piano')) out.guitar = C.guitarEvents(C.guitarSlotsFrom(d), g, (sl) => C.guitarPartFor(proj.guitar, sl.section));
+  if (wants('bass') && proj.bass && proj.bass.enabled) out.bass = C.Bass.bassEvents(proj.bass, g, d.bars);
+  if (wants('drums')) {
+    if (Object.prototype.hasOwnProperty.call(opts, 'drums')) {
+      const dr = opts.drums;
+      out.drums = dr && dr.K ? C.drumEvents(dr, g, d.bars, ds.startBar || 1) : dr && dr.events || [];
+    } else {
+      const byId = (id) => C.DRUM_LOOPS.find((l) => l.id === id && l.meter === proj.settings.meter) || null;
+      const globalLoop = opts.drumLoop || byId(ds.loop) || C.loopsFor(proj.settings.meter)[0] || null;
+      const section = (b) => d.sections.find((s) => !s.implicit && b >= s.startBar && b <= s.endBar);
+      const plan = (b) => {
+        if (opts.previewDrums) return byId(opts.previewDrums);
+        const a = arr(section(b)?.id).drums;
+        return a === 'off' ? null : (a && byId(a)) || (ds.on ? globalLoop : null);
+      };
+      const fill = (b) => ds.fills && !opts.previewDrums && b < d.bars && section(b) && section(b + 1) && section(b).id !== section(b + 1).id && !!plan(b) && !!plan(b + 1);
+      out.drums = C.arrangeDrums(g, d.bars, ds.startBar || 1, plan, fill, sw);
+    }
+  }
+  return out;
+}
+Object.assign(C, { arrangedEvents, effectiveLayers });
+})(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="stylecore">/* =====================================================================
    STİL VERİSİ VE ÖNERİ — DOM'dan bağımsız (Node testleri de kullanır).
@@ -7810,7 +7849,7 @@ window.__dawAPI = {
     };
   },
   stop: () => Player.stop(),
-  arrangement: () => ({ drums: drumEventsAll(), bass: S.d && S.proj.bass.enabled ? Bs.bassEvents(S.proj.bass, S.d.g, S.d.bars) : [], piano: pianoEventsAll() }), // bölüm düzenlemeli olaylar (testler)
+  arrangement: () => ({ drums: drumEventsAll(), bass: arrangedEventsAll(['bass']).bass, piano: pianoEventsAll() }), // bölüm düzenlemeli olaylar (testler)
   hist: () => HIST,
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir; durs: ölçü cinsinden süreler
@@ -8143,23 +8182,11 @@ const swingMode = (r = swingR()) => (Math.abs(r - 0.5) < 0.005 ? 'straight' : Ma
 const secArr = (secId) => { const s = S.proj.sections.find((x) => x.id === secId); return (s && s.arr) || {}; };
 const sectionOfBar = (bar) => (S.d ? S.d.sections.find((s) => !s.implicit && bar >= s.startBar && bar <= s.endBar) || null : null);
 const loopById = (id) => C.DRUM_LOOPS.find((l) => l.id === id && l.meter === S.proj.settings.meter) || null;
-function drumLoopForBar(bar) {
-  if (PREVIEW.drums) return loopById(PREVIEW.drums);
-  const sec = sectionOfBar(bar), a = sec ? secArr(sec.id).drums : null;
-  if (a === 'off') return null;
-  const own = a ? loopById(a) : null;
-  return own || (S.proj.drums.on ? currentLoop() : null);
-}
 const anySectionArr = (k) => S.proj.sections.some((s) => s.arr && s.arr[k] && s.arr[k] !== 'off');
 const anyDrums = () => !!PREVIEW.drums || S.proj.drums.on || anySectionArr('drums');
-function fillAt(b) {
-  if (!S.proj.drums.fills || PREVIEW.drums || !S.d || b >= S.d.bars) return false;
-  const a = sectionOfBar(b), n = sectionOfBar(b + 1);
-  return !!a && !!n && a.id !== n.id && !!drumLoopForBar(b) && !!drumLoopForBar(b + 1);
-}
-const drumEventsAll = () => (S.d && anyDrums() ? C.arrangeDrums(S.d.g, S.d.bars, S.proj.drums.startBar || 1, drumLoopForBar, fillAt, swingR()) : []);
-const pianoOptsFor = (secId) => { const a = secArr(secId).piano; return C.pianoOpts(a ? Object.assign({}, S.proj.piano, { style: a }) : S.proj.piano, swingR()); };
-const pianoEventsAll = () => (anySectionArr('piano') ? C.arrangePiano(S.d.chords, S.d.g, pianoOptsFor) : C.pianoEvents(S.d.chords, S.d.g, C.pianoOpts(S.proj.piano, swingR())));
+const arrangedEventsAll = (layers) => C.arrangedEvents(S.d, S.proj, { layers, drumLoop: currentLoop(), previewDrums: PREVIEW.drums });
+const drumEventsAll = () => arrangedEventsAll(['drums']).drums;
+const pianoEventsAll = () => arrangedEventsAll(['piano']).piano;
 
 // ---------------------------------------------------------------- düzeltilmiş vokal render (TD-PSOLA)
 let renderTimer = null;
@@ -11242,12 +11269,11 @@ const gSections = () => (S.d ? S.d.sections.filter((s) => !s.implicit) : []);
 const jclone = (x) => JSON.parse(JSON.stringify(x));
 
 // ---- parti → ses (çalma, ön dinleme ve mix WAV aynı yolu kullanır; render önbellekli)
-const guitarPartOf = (sl) => C.guitarPartFor(S.proj.guitar, sl.section);
 function guitarTrack(sr) {
   const g = S.d.g, slots = C.guitarSlotsFrom(S.d);
   const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts);
   if (GT.cache && GT.cache.key === key) return GT.cache;
-  const events = C.guitarEvents(slots, g, guitarPartOf);
+  const events = arrangedEventsAll(['guitar']).guitar;
   const n = Math.ceil((S.d.bars * g.barSec + 2.5) * sr);
   return (GT.cache = { key, events, data: C.renderGuitar(events, sr, n, g.spq, 1) });
 }
@@ -11596,7 +11622,7 @@ function scheduleBassPlay(T, rounds, g, ctx) {
   const rc = Tone.getContext().rawContext;
   const voices = makeBassVoices(tr, rc, (n) => Tone.connect(n, Player.bassCh));
   Player.bassVoices = voices;
-  const ev = Bs.bassEvents(tr, g, S.d.bars), au = bassAutomation(tr, ctx, g);
+  const ev = arrangedEventsAll(['bass']).bass, au = bassAutomation(tr, ctx, g);
   // rounds: Player.play'in turları ({lo, hi} zaman çizelgesi aralığı, tau0 = lo'nun Transport zamanı); döngü yoksa tek tur
   for (const r of rounds) {
     const at = (t) => r.tau0 + (Math.max(t, r.lo) - r.lo), from = r.lo;
@@ -11622,7 +11648,7 @@ async function renderBassOffline(sr, n) {
   const tr = bTrack(), ctx = bCtx(), g = S.d.g;
   const oc = new OfflineAudioContext(1, n, sr);
   const voices = makeBassVoices(tr, oc, (node) => node.connect(oc.destination));
-  for (const e of Bs.bassEvents(tr, g, S.d.bars)) bassHit(voices, e, e.t);
+  for (const e of arrangedEventsAll(['bass']).bass) bassHit(voices, e, e.t);
   for (const p of bassAutomation(tr, ctx, g)) applyAutomationAt(voices, p, p.t, g.barSec);
   if (tr.pump > 0 && tr.instrumentType === 'synth') for (let t = 0; t < S.d.bars * g.barSec; t += g.pulseSec) voices.forEach((x) => x.inst.pumpAt(t, tr.pump, 0.25 * g.pulseSec));
   BS.lastOffline = voices;

@@ -84,7 +84,7 @@ function scheduleBassPlay(T, rounds, g, ctx) {
   const rc = Tone.getContext().rawContext;
   const voices = makeBassVoices(tr, rc, (n) => Tone.connect(n, Player.bassCh));
   Player.bassVoices = voices;
-  const ev = Bs.bassEvents(tr, g, S.d.bars), au = bassAutomation(tr, ctx, g);
+  const ev = arrangedEventsAll(['bass']).bass, au = bassAutomation(tr, ctx, g);
   // rounds: Player.play'in turları ({lo, hi} zaman çizelgesi aralığı, tau0 = lo'nun Transport zamanı); döngü yoksa tek tur
   for (const r of rounds) {
     const at = (t) => r.tau0 + (Math.max(t, r.lo) - r.lo), from = r.lo;
@@ -110,7 +110,7 @@ async function renderBassOffline(sr, n) {
   const tr = bTrack(), ctx = bCtx(), g = S.d.g;
   const oc = new OfflineAudioContext(1, n, sr);
   const voices = makeBassVoices(tr, oc, (node) => node.connect(oc.destination));
-  for (const e of Bs.bassEvents(tr, g, S.d.bars)) bassHit(voices, e, e.t);
+  for (const e of arrangedEventsAll(['bass']).bass) bassHit(voices, e, e.t);
   for (const p of bassAutomation(tr, ctx, g)) applyAutomationAt(voices, p, p.t, g.barSec);
   if (tr.pump > 0 && tr.instrumentType === 'synth') for (let t = 0; t < S.d.bars * g.barSec; t += g.pulseSec) voices.forEach((x) => x.inst.pumpAt(t, tr.pump, 0.25 * g.pulseSec));
   BS.lastOffline = voices;
