@@ -63,3 +63,7 @@ VERDICT: NOT YET (reasons above)
 - **5: Accept.** The gap was real: A4 named the merge but did not define it. PLAN.md amendment A4 now defines `pianoOn` / `guitarOn` derivation, the per-layer merge (locked keeps, unlocked takes the pack's value), the mapping back to `guitar.instrument`, and the neither-on fallback with a Turkish warning.
 - New blockers: none reported.
 - Cap reached (2 rounds). Verdict line is `NOT YET` only because of finding 5, which is now specified. Per Rule 4 the user decides whether to proceed (explicit override recorded below).
+
+## User override (recorded)
+
+After round 2 (cap reached, verdict `NOT YET` only for finding 5, since specified in PLAN.md A4) the user chose: "Geç, Codex yazsın" — proceed to build.
