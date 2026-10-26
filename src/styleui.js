@@ -685,14 +685,37 @@ window.StyleUI = {
     if ((!SS.settings.lambda && !SS.settings.lambdaRhythm) || !confirmedSongs()) return null;
     return St.makeStyleScorer(model(), { lambda: SS.settings.lambda, lambdaRhythm: SS.settings.lambdaRhythm, temperature: SS.settings.chordTemperature, seed: SS.settings.seed });
   },
-  feedbackChord(prev, chord, sec, like) {
-    const to = St.chordToCore(chord, sec.tonic, sec.mode).core;
-    const from = prev ? St.chordToCore(prev, sec.tonic, sec.mode).core : '^';
-    if (from === to) { A.status('Önceki akorla aynı core — geçiş yok.', 'err'); return; }
-    SS.feedback.events.push({ t: Date.now(), kind: 'chord', mode: sec.mode, transitions: [[from, to]], like });
-    A.status(`${like > 0 ? 'Beğenildi' : 'Beğenilmedi'}: ${St.coreLabel(from, sec.mode)} → ${St.coreLabel(to, sec.mode)} (${St.modeName(sec.mode)}) — çarpan ×${St.buildModel(SS.dataset, SS.settings, SS.feedback).feedback.mult(sec.mode, from, to).toFixed(2)}`);
+  // 👍 / 👎: akorun öncesiyle VE sonrasıyla ilişkisi ve üçlü bağlamı birlikte işlenir.
+  // ctx: { prev2, prev, next, next2 } (aynı bölümdeki komşu farklı akorlar; yoksa null)
+  feedbackChord(prev, chord, sec, like, ctx = {}) {
+    const core = (c) => (c ? St.chordToCore(c, sec.tonic, sec.mode).core : null);
+    const to = core(chord), from = prev ? core(prev) : '^', nx = core(ctx.next), p2 = core(ctx.prev2), n2 = core(ctx.next2);
+    const pairs = [], triples = [];
+    if (from !== to) pairs.push([from, to]);
+    if (nx && nx !== to) pairs.push([to, nx]);
+    if (!pairs.length) { A.status('Komşu akorlarla aynı core — geçiş yok.', 'err'); return; }
+    if (p2 && from !== '^' && p2 !== from && from !== to) triples.push([p2, from, to]);
+    if (from !== '^' && nx && from !== to && nx !== to) triples.push([from, to, nx]);
+    if (nx && n2 && nx !== to && n2 !== nx) triples.push([to, nx, n2]);
+    SS.feedback.events.push({ t: Date.now(), kind: 'chord', mode: sec.mode, transitions: pairs, triples, like });
+    const fb = St.buildModel(SS.dataset, SS.settings, SS.feedback).feedback;
+    const lab = (a, b) => `${St.coreLabel(a, sec.mode)} → ${St.coreLabel(b, sec.mode)}`;
+    A.status(`${like > 0 ? 'Beğenildi' : 'Beğenilmedi'}: ${pairs.map(([a, b]) => `${lab(a, b)} (×${fb.mult(sec.mode, a, b).toFixed(2)})`).join(' · ')}${triples.length ? ` · ${triples.length} üçlü bağlam` : ''} — ${St.modeName(sec.mode)}`);
     SS.model = null; persist(); A.refresh(); renderDawBox();
   },
+  // "Progresyonu bitirdim": bütün progresyon ağırlıklı şarkı + seçilen akorların komşu ilişkileri (bkz. styledata.learnProgression)
+  // o.refresh === false: DAW'ı çağıran yeniler (akorları önce sabitleyip sonra yenilemek için)
+  learnProgression(spec, o = {}) {
+    const r = St.learnProgression(SS.dataset, SS.feedback, spec);
+    if (r.ok) { SS.model = null; persist(); if (o.refresh !== false) A.refresh(); renderDawBox(); render(); }
+    return r;
+  },
+  forgetProgression(id) {
+    const r = St.forgetProgression(SS.dataset, SS.feedback, id);
+    SS.model = null; persist(); A.refresh(); renderDawBox(); render();
+    return r;
+  },
+  progressionInfo: (id) => St.progressionInfo(SS.dataset, SS.feedback, id),
   state: SS, setView, render, doImport, model,
 };
 renderDawBox();

@@ -659,22 +659,19 @@ const homeCore = (mode) => { const h = C.homeChord(0, mode); return coreKey(0, h
 // Geri bildirim: her beğeni ×1.1, her beğenmeme ×0.91; toplam çarpan 0.5–2 arasında sınırlı.
 const FB_LIKE = 1.1, FB_DISLIKE = 0.91;
 function feedbackIndex(fb) {
-  const net = new Map(), counts = new Map();
-  if (!fb || !fb.on) return { mult: () => 1, banned: new Set(), net, counts };
-  for (const e of fb.events || []) for (const [a, b] of e.transitions || []) {
-    const k = `${e.mode}|${a}>${b}`;
-    const c = counts.get(k) || { like: 0, dislike: 0 };
-    if (e.like > 0) c.like++; else c.dislike++;
-    counts.set(k, c);
-    net.set(k, c.like - c.dislike);
+  const net = new Map(), counts = new Map(), counts3 = new Map();
+  if (!fb || !fb.on) return { mult: () => 1, mult3: () => 1, banned: new Set(), net, counts, counts3 };
+  const tally = (map, k, like) => { const c = map.get(k) || { like: 0, dislike: 0 }; if (like > 0) c.like++; else c.dislike++; map.set(k, c); return c; };
+  for (const e of fb.events || []) {
+    for (const [a, b] of e.transitions || []) { const c = tally(counts, `${e.mode}|${a}>${b}`, e.like); net.set(`${e.mode}|${a}>${b}`, c.like - c.dislike); }
+    for (const [x, y, z] of e.triples || []) tally(counts3, `${e.mode}|${x}>${y}>${z}`, e.like);
   }
+  const clamp = (c) => (c ? Math.min(2, Math.max(0.5, Math.pow(FB_LIKE, c.like) * Math.pow(FB_DISLIKE, c.dislike))) : 1);
   return {
-    mult: (mode, a, b) => {
-      const c = counts.get(`${mode}|${a}>${b}`);
-      return c ? Math.min(2, Math.max(0.5, Math.pow(FB_LIKE, c.like) * Math.pow(FB_DISLIKE, c.dislike))) : 1;
-    },
+    mult: (mode, a, b) => clamp(counts.get(`${mode}|${a}>${b}`)),
+    mult3: (mode, x, y, z) => clamp(counts3.get(`${mode}|${x}>${y}>${z}`)),
     banned: new Set(fb.banned || []),
-    net, counts,
+    net, counts, counts3,
   };
 }
 function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = null) {
@@ -683,7 +680,11 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
   const fb = feedbackIndex(feedback);
   const B = (m) => stats.byMode.get(m) || emptyBucket();
   const pool = B(ALL);
-  const nMode = (m) => B(m).songs.size;
+  // şarkı ağırlığı: kullanıcının "progresyonu bitirdim" ile eklediği şarkılar song.weight (>1) ile sayılır; 1 = bir şarkı
+  const wOf = (id) => { const sg = stats.songs && stats.songs.get(id); return sg && sg.weight > 0 ? sg.weight : 1; };
+  const wsize = (set) => { let t = 0; for (const id of set) t += wOf(id); return t; };
+  const nS = (e) => (e ? wsize(e.songs) : 0);
+  const nMode = (m) => wsize(B(m).songs);
   const vocabCache = new Map();
   function vocab(mode) {
     if (vocabCache.has(mode)) return vocabCache.get(mode);
@@ -719,11 +720,12 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const bt = BT(mode, type);
     return pooled(distOf(bt), modeDist, nOf(bt), o.kType);
   };
-  function withFeedback(mode, a, dist) {
+  function withFeedback(mode, a, dist, a2 = null) {
     if (!feedback || !feedback.on) return dist;
     let sum = 0;
     const out = new Map();
-    for (const [b, p] of dist) { const q = p * fb.mult(mode, a, b); out.set(b, q); sum += q; }
+    // ikili geçiş çarpanı × (öncesi biliniyorsa) üçlü bağlam çarpanı: "x'ten sonra y, sonra z" beğenisi
+    for (const [b, p] of dist) { const q = p * fb.mult(mode, a, b) * (a2 != null ? fb.mult3(mode, a2, a, b) : 1); out.set(b, q); sum += q; }
     for (const [b, q] of out) out.set(b, q / sum);
     return out;
   }
@@ -734,12 +736,12 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     if (cache.has(ck)) return cache.get(ck);
     const dia = new Set(diatonicCores(mode));
     const support = vocab(mode).filter((b) => b !== a);
-    const order2 = (bk) => o.secondOrder && a2 != null && nSongs(bk.ctx2.get(`${a2}>${a}`)) >= o.minCtxSongs;
+    const order2 = (bk) => o.secondOrder && a2 != null && nS(bk.ctx2.get(`${a2}>${a}`)) >= o.minCtxSongs;
     const distOf = (bk) => (order2(bk)
-      ? smooth((b) => nSongs(bk.trans2.get(`${a2}>${a}>${b}`)), support, dia)
-      : smooth((b) => nSongs(bk.trans.get(`${a}>${b}`)), support, dia));
+      ? smooth((b) => nS(bk.trans2.get(`${a2}>${a}>${b}`)), support, dia)
+      : smooth((b) => nS(bk.trans.get(`${a}>${b}`)), support, dia));
     const dm = pooled(distOf(B(mode)), distOf(pool), nMode(mode));
-    const d = withFeedback(mode, a, typeLevel(dm, mode, type, distOf, (bk) => bk.songs.size));
+    const d = withFeedback(mode, a, typeLevel(dm, mode, type, distOf, (bk) => wsize(bk.songs)), a2);
     d.order = order2(B(mode)) || order2(pool) ? 2 : 1;
     cache.set(ck, d);
     return d;
@@ -749,8 +751,8 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     if (cache.has(ck)) return cache.get(ck);
     const dia = new Set(diatonicCores(mode));
     const support = vocab(mode);
-    const distOf = (bk) => smooth((b) => nSongs(bk[which].get(b)), support, dia);
-    const d0 = typeLevel(pooled(distOf(B(mode)), distOf(pool), nMode(mode)), mode, type, distOf, (bk) => bk.songs.size);
+    const distOf = (bk) => smooth((b) => nS(bk[which].get(b)), support, dia);
+    const d0 = typeLevel(pooled(distOf(B(mode)), distOf(pool), nMode(mode)), mode, type, distOf, (bk) => wsize(bk.songs));
     const d = which === 'open' ? withFeedback(mode, '^', d0) : d0;
     cache.set(ck, d);
     return d;
@@ -762,7 +764,7 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const cm = B(mode).colors.get(core) || new Map(), cp = pool.colors.get(core) || new Map();
     const support = [...new Set([...fit, ...cm.keys(), ...cp.keys(), ''])];
     const dia = new Set(fit.length ? fit : ['']);
-    const d = pooled(smooth((c) => nSongs(cm.get(c)), support, dia), smooth((c) => nSongs(cp.get(c)), support, dia), nMode(mode));
+    const d = pooled(smooth((c) => nS(cm.get(c)), support, dia), smooth((c) => nS(cp.get(c)), support, dia), nMode(mode));
     cache.set(ck, d);
     return d;
   }
@@ -776,14 +778,81 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const ck = `${mode}|${type}|dur`;
     if (cache.has(ck)) return cache.get(ck);
     const all = new Set(DUR_BINS);
-    const distOf = (bk) => smooth((b) => nSongs(bk.dur.get(b)), DUR_BINS, all, o.alphaDur);
-    const d = typeLevel(pooled(distOf(B(mode)), distOf(pool), B(mode).durSongs.size), mode, type, distOf, (bk) => bk.durSongs.size);
+    const distOf = (bk) => smooth((b) => nS(bk.dur.get(b)), DUR_BINS, all, o.alphaDur);
+    const d = typeLevel(pooled(distOf(B(mode)), distOf(pool), wsize(B(mode).durSongs)), mode, type, distOf, (bk) => wsize(bk.durSongs));
     cache.set(ck, d);
     return d;
   }
-  const durSongs = (m) => B(m).durSongs.size;
-  const nType = (m, t) => (t ? BT(m, t).songs.size : 0);
+  const durSongs = (m) => wsize(B(m).durSongs);
+  const nType = (m, t) => (t ? wsize(BT(m, t).songs) : 0);
   return { settings: o, stats, vocab, next, open: (m, t) => edge(m, 'open', t), close: (m, t) => edge(m, 'close', t), color, dur, durSongs, nMode, nType, songsFor, feedback: fb, diatonic: diatonicCores };
+}
+
+
+// ---------------------------------------------------------------- KULLANICI PROGRESYONU ("Progresyonu bitirdim")
+// Bitirilen progresyon iki yoldan öğrenilir:
+//  1) Bütün progresyon ağırlıklı bir şarkı olarak veri setine girer (geçişler, üçlü bağlam, açılış/kapanış, süreler, renkler, döngü, bölümler arası geçiş);
+//  2) senin SEÇTİĞİN (kilitlediğin / elle yazdığın) her akor için öncesiyle ve sonrasıyla ilişkisi beğeni olarak yazılır:
+//     ikili geçişler (önceki→akor, akor→sonraki) ve üçlü bağlamlar (önceki-önceki→önceki→akor, önceki→akor→sonraki, akor→sonraki→sonraki-sonraki).
+// Aynı proje (spec.id) tekrar bitirilince eski kaydı silinir, yenisi yazılır: sayımlar birikip şişmez.
+const USER_SONG_WEIGHT = 5; // minCtxSongs (5): tek bir bitirilen progresyon bile kullandığı üçlü bağlamlarda ikinci dereceyi açar
+const chordSym = (c) => C.chordName({ root: c.root, q: c.q, bass: c.bass != null && c.bass !== c.root ? c.bass : null }, false);
+function forgetProgression(dataset, feedback, id) {
+  const n0 = dataset.songs.length, e0 = feedback.events.length;
+  dataset.songs = dataset.songs.filter((x) => x.userProg !== id);
+  feedback.events = feedback.events.filter((e) => e.learnId !== id);
+  return { songs: n0 - dataset.songs.length, events: e0 - feedback.events.length };
+}
+// spec: { id, title, weight?, sections: [{ name, type?, tonic, mode, chords: [{ chord:{root,q,bass}, bars, chosen }] }] }
+function learnProgression(dataset, feedback, spec) {
+  const replaced = forgetProgression(dataset, feedback, spec.id);
+  const secs = (spec.sections || []).filter((x) => x.tonic != null && x.mode && x.chords && x.chords.length);
+  if (!secs.length) return { ok: false, why: 'ton onaylı akorlu bölüm yok', replaced };
+  const sections = [], events = [], sum = { sections: 0, chords: 0, chosen: 0, pairs: 0, triples: 0 };
+  for (const sc of secs) {
+    // art arda aynı akor tek akor (süreler toplanır)
+    const runs = [];
+    for (const it of sc.chords) {
+      const sym = chordSym(it.chord), last = runs[runs.length - 1];
+      if (last && last.sym === sym) { last.bars += it.bars; last.chosen = last.chosen || !!it.chosen; } else runs.push({ sym, chord: it.chord, bars: it.bars, chosen: !!it.chosen });
+    }
+    sections.push({
+      name: sc.name, type: sc.type ?? null, chords: runs.map((r) => r.sym), bars: runs.map((r) => Math.round(r.bars * 1000) / 1000), proposals: [], degreesPreview: null, warnings: [],
+      selected: { tonic: sc.tonic, mode: sc.mode }, confirmed: true,
+    });
+    sum.sections++; sum.chords += runs.length;
+    // çekirdek (derece+nitelik) koşuları: aynı core art arda tek adımdır (geçiş değildir)
+    const cores = [];
+    runs.forEach((r, i) => { const k = chordToCore(r.chord, sc.tonic).core; if (!cores.length || cores[cores.length - 1].core !== k) cores.push({ core: k, chosen: false }); if (r.chosen) cores[cores.length - 1].chosen = true; void i; });
+    const pairs = new Set(), triples = new Set();
+    cores.forEach((cu, i) => {
+      if (!cu.chosen) return;
+      sum.chosen++;
+      const at = (j) => (j >= 0 && j < cores.length ? cores[j].core : null);
+      if (i === 0) pairs.add(`^>${cu.core}`);
+      if (at(i - 1)) pairs.add(`${at(i - 1)}>${cu.core}`);
+      if (at(i + 1)) pairs.add(`${cu.core}>${at(i + 1)}`);
+      if (at(i - 2) && at(i - 1)) triples.add(`${at(i - 2)}>${at(i - 1)}>${cu.core}`);
+      if (at(i - 1) && at(i + 1)) triples.add(`${at(i - 1)}>${cu.core}>${at(i + 1)}`);
+      if (at(i + 1) && at(i + 2)) triples.add(`${cu.core}>${at(i + 1)}>${at(i + 2)}`);
+    });
+    if (pairs.size || triples.size) {
+      events.push({ t: Date.now(), kind: 'learn', learnId: spec.id, mode: sc.mode, transitions: [...pairs].map((k) => k.split('>')), triples: [...triples].map((k) => k.split('>')), like: 1 });
+      sum.pairs += pairs.size; sum.triples += triples.size;
+    }
+  }
+  const song = {
+    id: newId(), artist: 'Ben', title: spec.title || 'Progresyonum', source: 'daw', userProg: spec.id, importedAt: new Date().toISOString(), weight: spec.weight || USER_SONG_WEIGHT,
+    warnings: [], fixes: {}, sourceNotes: null, sections,
+  };
+  dataset.songs.push(song);
+  feedback.on = true;
+  feedback.events.push(...events);
+  return { ok: true, song, events, replaced, summary: sum, weight: song.weight };
+}
+function progressionInfo(dataset, feedback, id) {
+  const song = dataset.songs.find((x) => x.userProg === id) || null;
+  return { song, events: feedback.events.filter((e) => e.learnId === id).length };
 }
 
 // ---------------------------------------------------------------- k ve α önerisi: şarkı bazlı çapraz doğrulama
@@ -1259,7 +1328,7 @@ root.Style = {
   parseSymbol, parseMode, parseKeyText, keyLabel, modeName, sameKey, romanOf, parseRoman, coreKey, coreParts, coreLabel, degreeLabel, argmaxKey,
   analyzeChord, analyzeSection, detectLoop, comparePreview, previewFor, unknownSymbols, QUALITY_NAMES,
   validateSongJson, parseImportJson, parseImportText, songKey, findDuplicate,
-  buildStats, modeSongCounts, nSongs, ALL, confirmedKey,
+  buildStats, modeSongCounts, nSongs, ALL, confirmedKey, learnProgression, forgetProgression, progressionInfo, USER_SONG_WEIGHT,
   MODEL_DEFAULTS, PROG_DEFAULTS, buildModel, diatonicCores, modeColors, homeCore, suggestKAlpha, songTransitions,
   chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,
   fitDurations, progDisplay, durBin, durLabel, fmtDur, DUR_BINS, sectionHasBars,

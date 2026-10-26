@@ -994,6 +994,21 @@ await step('Nota bölme (çift tık): tek sanılan nota ikiye ayrılır, perdele
   return `nota ${k + 1}: ${(n.t1 - n.t0).toFixed(2)} s → ${(a.t1 - a.t0).toFixed(2)} + ${(b.t1 - b.t0).toFixed(2)} s · medyanlar ${a.median.toFixed(2)} / ${b.median.toFixed(2)}`;
 });
 
+await step('👍 / 👎 tercih: davul puanına eklenir (loop ±0,08, aile ±0,03, en çok ±0,3); 👎 en iyiyi geriye atar, 👍 yukarı çıkarır; neden satırında görünür', () => {
+  const set = { meter: '4/4', bpm: 100 };
+  const base = Core.suggestDrumLoop([], set, null);
+  const top = base.ranked[0].loop, second = base.ranked[1].loop, last = base.ranked[base.ranked.length - 1].loop;
+  const down = Core.suggestDrumLoop([], Object.assign({ prefDelta: (L) => (L.id === top.id ? -0.3 : 0) }, set), null);
+  assert.notEqual(down.ranked[0].loop.id, top.id, '👎 alan en iyi loop geriye düştü');
+  assert.ok(down.ranked.find((x) => x.loop.id === top.id).why.some((w) => /👎/.test(w)));
+  const gap = base.ranked.findIndex((x) => x.loop.id === last.id);
+  const up = Core.suggestDrumLoop([], Object.assign({ prefDelta: (L) => (L.id === second.id ? 0.3 : 0) }, set), null);
+  assert.equal(up.ranked[0].loop.id, second.id, '👍 alan ikinci loop birinciye çıktı');
+  assert.ok(up.ranked[0].why.some((w) => /👍/.test(w)));
+  assert.equal(base.ranked.length, up.ranked.length);
+  return `en iyi ${top.id} → 👎 sonrası ${down.ranked[0].loop.id}; ikinci ${second.id} → 👍 sonrası birinci (${gap + 1}. sıradaki ${last.id} dokunulmadı)`;
+});
+
 await step('Düzenleme: bölüm başına davul loop\'u, geçişlerde fill, bölüm başına akor sesi (piyano + synth), davul girişi', () => {
   const g4 = Core.makeGrid({ bpm: 120, meter: '4/4' });
   const L = (id) => Core.DRUM_LOOPS.find((l) => l.id === id);
@@ -1122,6 +1137,76 @@ await step('Genel alt bölme gitar ve basa da uygulanır: d.g.swing, bas olaylar
   const g68 = Core.makeGrid(p68.settings); g68.swing = 0.7;
   assert.equal(Core.swingMap(0.5, g68, 0.7), 0.5);
   return `bas ${moved}/${be0.length} nota kaydı · gitar ${shifted.length} vuruş kaydı · MIDI Gitar ${gt.notes.length} / Bas ${bt.notes.length} nota`;
+});
+
+await step('Vokal temizliği: yüksek geçiren, gürültü azaltma (sessizde ≥10 dB, sesli kısımda ≤1,5 dB), sıkıştırıcı, seviye eşitleme −18 dBFS, reverb kuyruğu, −1 dB tepe sınırı; gecikmesiz, deterministik', () => {
+  const sr = 22050, n = 6 * sr;
+  let seed = 12345; const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff * 2 - 1; };
+  const voiced = (t0, t1, amp, f = 220) => ({ t0, t1, amp, f });
+  const segs = [voiced(1, 2, 0.2), voiced(3, 4, 0.02), voiced(5, 6, 0.2)];
+  const x = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr; let v = 0.003 * rnd() + 0.02 * Math.sin(2 * Math.PI * 40 * t); // beyaz gürültü (−50 dB) + 40 Hz uğultu
+    for (const g of segs) if (t >= g.t0 && t < g.t1) { const e = Math.min(1, (t - g.t0) / 0.02, (g.t1 - t) / 0.02); for (let h = 1; h <= 5; h++) v += (g.amp / h) * e * Math.sin(2 * Math.PI * g.f * h * t); }
+    x[i] = v;
+  }
+  const seg = (arr, a, b) => arr.subarray(Math.round(a * sr), Math.round(b * sr));
+  const rms = (a) => { let q = 0; for (const v of a) q += v * v; return 20 * Math.log10(Math.sqrt(q / a.length) + 1e-12); };
+  // yüksek geçiren: 40 Hz uğultu çöker
+  const rum = new Float32Array(n); for (let i = 0; i < n; i++) rum[i] = 0.1 * Math.sin(2 * Math.PI * 40 * i / sr);
+  assert.ok(rms(seg(rum, 1, 5)) - rms(seg(Core.vocalHighpass(rum, sr, 80), 1, 5)) > 10, 'uğultu ≥10 dB bastırıldı');
+  const hp = Core.vocalHighpass(x, sr, 80);
+  // gürültü azaltma
+  const dn = Core.vocalDenoise(hp, sr, 0.8);
+  const quietBefore = rms(seg(hp, 2.2, 2.9)), quietAfter = rms(seg(dn.data, 2.2, 2.9));
+  const voicedBefore = rms(seg(hp, 1.2, 1.9)), voicedAfter = rms(seg(dn.data, 1.2, 1.9));
+  assert.ok(quietBefore - quietAfter >= 10, `sessiz kısımda azalma ${(quietBefore - quietAfter).toFixed(1)} dB`);
+  assert.ok(Math.abs(voicedBefore - voicedAfter) <= 1.5, `sesli kısım korunur: ${(voicedAfter - voicedBefore).toFixed(2)} dB`);
+  assert.equal(dn.data.length, n);
+  // sıkıştırıcı: 20 dB'lik seviye farkı daralır
+  const loud = (a) => rms(seg(a, 1.1, 1.9)) - rms(seg(a, 3.1, 3.9));
+  const cmp = Core.vocalCompress(dn.data, sr, 1);
+  assert.ok(loud(dn.data) > 17 && loud(cmp) < loud(dn.data) - 4, `seviye farkı ${loud(dn.data).toFixed(1)} → ${loud(cmp).toFixed(1)} dB`);
+  assert.equal(Core.vocalCompress(dn.data, sr, 0), dn.data, 'miktar 0: dokunmaz');
+  // tam zincir
+  const r0 = Core.processVocal(x, sr, { denoise: 70, comp: 50, normalize: true, reverb: 0 });
+  assert.equal(r0.data.length, n, 'reverb yokken uzunluk aynı');
+  assert.ok(Math.abs(r0.info.rmsAfterDb - (-18)) < 1.5, `ses seviyesi ${r0.info.rmsAfterDb.toFixed(1)} dBFS`);
+  assert.ok(r0.info.peakAfterDb <= -1 + 0.05, `tepe ${r0.info.peakAfterDb.toFixed(2)} dBFS`);
+  assert.ok(r0.info.noiseReductionDb >= 6, `gürültü tabanı −${r0.info.noiseReductionDb} dB`);
+  const r1 = Core.processVocal(x, sr, { denoise: 70, comp: 50, normalize: true, reverb: 50 });
+  assert.ok(r1.data.length > n + 2 * sr, 'reverb kuyruğu sona eklenir');
+  const tailRms = rms(r1.data.subarray(n, n + sr)), dryRms = rms(r0.data.subarray(Math.round(5.2 * sr), Math.round(5.9 * sr)));
+  assert.ok(tailRms > -75 && tailRms < dryRms, `kuyruk duyulur ve kuruyken zayıf: ${tailRms.toFixed(1)} dB`);
+  // gecikmesiz: sesli kısmın başlangıcı aynı örnek konumunda (±10 ms)
+  const onset = (a, t0) => { for (let i = Math.round((t0 - 0.2) * sr); i < a.length; i++) if (Math.abs(a[i]) > 0.05 * Math.max(...seg(a, t0, t0 + 0.5).map(Math.abs))) return i; return -1; };
+  assert.ok(Math.abs(onset(r0.data, 1) - onset(hp, 1)) <= 0.01 * sr, 'gecikme yok');
+  // deterministik
+  const r2 = Core.processVocal(x, sr, { denoise: 70, comp: 50, normalize: true, reverb: 0 });
+  assert.ok(r2.data.every((v, i) => v === r0.data[i]), 'aynı giriş + ayar = aynı çıkış');
+  // tüm ayarlar kapalıyken yalnızca yüksek geçiren (tepe sınırı altında): kimlik
+  const off = Core.processVocal(x, sr, { denoise: 0, comp: 0, normalize: false, reverb: 0 });
+  assert.ok(off.data.every((v, i) => Math.abs(v - hp[i]) < 1e-6), 'ayarlar kapalı: yalnızca 80 Hz yüksek geçiren');
+  // sınırlayıcı: aşımı keser, düşük seviyeye dokunmaz
+  const hot = Float32Array.from({ length: sr }, (_, i) => 2 * Math.sin(2 * Math.PI * 300 * i / sr)), cold = Float32Array.from({ length: sr }, (_, i) => 0.3 * Math.sin(2 * Math.PI * 300 * i / sr));
+  const lim = Core.vocalLimit(hot, sr, -1);
+  assert.ok(Math.max(...lim.map(Math.abs)) <= Math.pow(10, -1 / 20) + 1e-6, 'tepe −1 dBFS');
+  assert.equal(Core.vocalLimit(cold, sr, -1), cold, 'sınırın altı aynen');
+  return `gürültü ${(quietBefore - quietAfter).toFixed(0)} dB azaldı, sesli ${(voicedAfter - voicedBefore).toFixed(1)} dB · seviye farkı ${loud(dn.data).toFixed(0)}→${loud(cmp).toFixed(0)} dB · çıkış ${r0.info.rmsAfterDb.toFixed(1)} dBFS, tepe ${r0.info.peakAfterDb.toFixed(1)}`;
+});
+
+await step('Otomatik miks: sesler vokale göre (akor −7, gitar −6, bas −5, davul −6 dB) ±1 dB; çalmayan iz atlanır; sınırlar −40…+6', () => {
+  const sr = 22050, mk = (amp, f) => Float32Array.from({ length: 4 * sr }, (_, i) => amp * Math.sin(2 * Math.PI * f * i / sr));
+  const stems = { vocal: mk(0.12, 300), piano: mk(0.4, 500), guitar: mk(0.05, 700), bass: mk(0.6, 80), drums: null };
+  const { levels, measured } = Core.autoMixLevels(stems, sr);
+  assert.equal(levels.vocal, 0); assert.ok(!('drums' in levels), 'çalmayan iz yok');
+  for (const k of ['piano', 'guitar', 'bass']) {
+    const after = measured[k] + levels[k] - measured.vocal;
+    assert.ok(Math.abs(after - Core.MIX_OFFSETS[k]) <= 1, `${k}: vokala göre ${after.toFixed(1)} dB (hedef ${Core.MIX_OFFSETS[k]})`);
+  }
+  const quiet = Core.autoMixLevels({ vocal: mk(0.5, 300), piano: mk(1e-3, 500) }, sr).levels.piano;
+  assert.equal(quiet, 6, 'çok sessiz iz +6 dB ile sınırlı');
+  return Object.entries(levels).map(([k, v]) => `${k} ${v} dB`).join(' · ');
 });
 
 await step('Senin ✂ işaretin motordan önce gelir: işaret konan ölçüde akor hemen yeniden belirlenir (diğerleri yerinde); ölçü ölçü motor da ölçü başı işaretlerini uygular', () => {

@@ -481,6 +481,9 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
       <p class="hint"><b>Öncelik:</b> 1) ✂ ile seçtiğin değişim noktaları · 2) elle yazdığın akorlar · 3) motor. Akor değişimini işaretlediğin an o noktadaki akor motorca yeniden belirlenir (diğerleri yerinde kalır). Sonra istediğin akorları elle yaz; en son bu düğmeyle şarkının kalanını bir bütün olarak tamamlat — son yaptığın ölçüye kadar hiçbir şey değişmez.</p>
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>
         <button id="btnApplySug" title="Kilitlerin dışındaki akorları motorun şimdiki önerisine göre yeniden hesaplar">Motorun önerilerini uygula <span id="sugCount"></span></button></div>
+      <div class="row"><button id="btnFinishProg" class="accent" title="Bu progresyonu bitirdiğini söyler: seçtiğin akorlar, her birinin öncesi ve sonrasıyla ilişkisi ve bütün progresyon sonraki öneriler için öğrenilir">✅ Progresyonu bitirdim — bundan öğren</button>
+        <button id="btnForgetProg" class="small" hidden title="Bu projeden öğrenilenleri sil">↶ Öğrendiklerimi sil</button></div>
+      <div id="finishInfo" class="hint"></div>
       <p class="hint">Akora tıkla → duyulur ve sağda adayları açılır (▶ ile dinle, kilitlemeden). Bir akoru kilitlediğinde <b>diğer akorlar değişmez</b>; motor başka bir şey önerirse akorun altında turuncu <b>→</b> ile gösterilir, nedeni sağdaki panelde yazar. Kilitli akorun sağ üstündeki <b>✕</b> kilidi kaldırır; seçiliyken Delete tuşu da kaldırır.</p>
       <details class="sub marks" data-key="marks">
         <summary><b>✂ Akor değişim noktaları ve tap</b> <span class="hint">(işaretler, ölçü başında değiş, dinlerken işaretle)</span></summary>
@@ -547,7 +550,7 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
     <details class="step" data-key="s8">
       <summary><b>8</b> Akor sesi (piyano / synth) <span class="chip" id="chipS8"></span></summary>
       <div class="grid2">
-        <label title="Akorların hangi çalgıyla ve hangi desenle çalınacağı">Akor sesi <button id="btnStyleNext" class="small" title="Sıradaki akor sesini dene ve hemen dinle">⟳</button><select id="inPianoStyle"><option value="piano-chord">Piyano — akor</option><option value="piano-arp">Piyano — arpej</option><option value="synth-chord">Synth klavye — akor</option><option value="synth-arp">Synth klavye — arpej</option><option value="piano-shuffle">Piyano — shuffle (X . t)</option><option value="synth-shuffle">Synth klavye — shuffle (X . t)</option></select></label>
+        <label title="Akorların hangi çalgıyla ve hangi desenle çalınacağı">Akor sesi <button id="btnStyleNext" class="small" title="Sıradaki akor sesini dene ve hemen dinle">⟳</button><button id="btnStyleLike" class="small" title="Bu akor sesini beğendim: ⟳ sırasında öne çıkar">👍</button><button id="btnStyleDislike" class="small" title="Beğenmedim: geriye düşer, sıradaki denenir">👎</button><select id="inPianoStyle"><option value="piano-chord">Piyano — akor</option><option value="piano-arp">Piyano — arpej</option><option value="synth-chord">Synth klavye — akor</option><option value="synth-arp">Synth klavye — arpej</option><option value="piano-shuffle">Piyano — shuffle (X . t)</option><option value="synth-shuffle">Synth klavye — shuffle (X . t)</option></select></label>
         <label id="arpWrap" title="Arpejde her notanın süresi" hidden>Arpej hızı<select id="inArpRate"><option value="1/4">1/4 (vuruş)</option><option value="1/8">1/8</option><option value="1/16">1/16</option></select></label>
       </div>
       <div class="grid2">
@@ -568,7 +571,8 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
       <div class="row"><label class="grow" title="Loop'un 1. ölçüsü bu ölçüdür; öncesinde davul çalmaz. Cetveldeki 🥁 bayrağını sürükleyerek de ayarlanır"><b>🥁 Davul şu ölçüden girsin</b><input type="number" id="inDrumStart" min="1" value="1"></label><button id="btnDrumHere" title="Oynatma imlecinin (kırmızı çizgi) olduğu ölçü">İmleçten</button></div>
       <div id="drumStartInfo" class="hint"></div>
       <div class="row"><label class="grow">Loop<select id="inDrumLoop"></select></label>
-        <button id="btnDrumPreview" title="Seçili loop'u 2 ölçü dinle">▶ Loop</button><button id="btnDrumStop">■</button><button id="btnDrumNext" title="Sıradaki loop'u (puan sırasıyla) dene ve hemen dinle">⟳ Başka</button></div>
+        <button id="btnDrumPreview" title="Seçili loop'u 2 ölçü dinle">▶ Loop</button><button id="btnDrumStop">■</button><button id="btnDrumNext" title="Sıradaki loop'u (puan sırasıyla) dene ve hemen dinle">⟳ Başka</button><button id="btnDrumLike" title="Bu loop'u beğendim: bu ve benzer kalıplar otomatik öneride ve ⟳ sırasında öne çıkar">👍</button><button id="btnDrumDislike" title="Beğenmedim: geriye düşer, en iyi sıradaki denenir">👎</button></div>
+      <div class="hint"><button id="btnPrefReset" class="small" title="Bütün 👍 / 👎 tercihlerini sil">tercihleri sıfırla</button> 👍 / 👎 yalnızca otomatik sıralamayı etkiler; elle seçtiğin hiçbir zaman değişmez.</div>
       <label class="chk" title="Bir bölümün son vuruşunda trampet fill'i; sonraki bölüm hemen başlıyorsa"><input type="checkbox" id="inDrumFills" checked> Bölüm geçişlerinde davul fill'i</label>
       <div id="drumInfo"></div>
       <div id="drumRank" class="rank"></div>
@@ -628,6 +632,20 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
         </div>
       </div>
       <label class="chk"><input type="checkbox" id="inPlayClick"> Oynatırken metronom</label>
+      <div class="row"><button id="btnAutoMix" class="accent" title="Akor, gitar, bas ve davulu vokalin seviyesine göre dengeler (vokal 0 dB); sonra fader'larla değiştirebilirsin">🎚 Seviyeleri otomatik ayarla</button></div>
+      <div id="mixInfo" class="hint"></div>
+      <details class="sub" id="vfxBox" data-key="vfx">
+        <summary><b>🎙 Vokal temizliği</b> <span class="hint">(gürültü azaltma, sıkıştırıcı, seviye eşitleme, reverb)</span></summary>
+        <p class="hint">Kaydı temizler ve seviyesini eşitler; oynatma ve dışa aktarım aynı işlenmiş sesi kullanır, orijinal kayıt değişmez. Önce kapalıyken dinleyip karşılaştır (A/B).</p>
+        <label class="chk"><input type="checkbox" id="inVfxOn"> Vokal temizliği açık</label>
+        <div class="grid2">
+          <label title="Sessiz yerlerdeki fon gürültüsünü (fan, oda sesi) bastırır; şarkı söylenirken sesi bozmaz. Yüksek değer ses boğuklaştırabilir">Gürültü azaltma <output id="outVfxDenoise"></output><input type="range" id="inVfxDenoise" min="0" max="100" step="5"></label>
+          <label title="Yüksek ve alçak sesler arasındaki farkı daraltır: vokal karışımda daha dengeli durur">Sıkıştırma <output id="outVfxComp"></output><input type="range" id="inVfxComp" min="0" max="100" step="5"></label>
+          <label title="Vokale oda yankısı ekler">Reverb <output id="outVfxReverb"></output><input type="range" id="inVfxReverb" min="0" max="100" step="5"></label>
+          <label class="chk" title="Konuşulan / söylenen kısımların ortalama seviyesini −18 dBFS'e getirir; tepeler −1 dBFS'in altında kalır"><input type="checkbox" id="inVfxNorm"> Seviyeyi eşitle (−18 dBFS)</label>
+        </div>
+        <div id="vfxInfo" class="hint"></div>
+      </details>
     </details>
 
     <details class="step" data-key="s9">
@@ -2555,6 +2573,7 @@ function newProject() {
     drums: { on: false, loop: 'auto', startBar: 1, fills: true }, // startBar: davulun girdiği ilk ölçü (loop'un 1. ölçüsü burası) · fills: bölüm geçişlerinde davul fill'i
     guitar: root.Core && root.Core.defaultGuitarState ? root.Core.defaultGuitarState('4/4') : null, // gitar katmanı (guitar.js): enstrüman seçimi, bölüm bazlı partiler, presetler
     bass: root.Core && root.Core.Bass ? root.Core.Bass.defaultBassTrack() : null, // bas katmanı (bass.js): üretilen notalar, bölüm ayarları, döngüler, profiller
+    vocalFx: root.Core && root.Core.VFX_DEFAULTS ? Object.assign({}, root.Core.VFX_DEFAULTS) : { on: false }, // vokal temizliği (vocalfx.js)
     quant: { grid: '1/8', strength: 100 }, taps: [],
   };
 }
@@ -3175,7 +3194,7 @@ const Core = {
   nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, renderSynth, SYNTH, synthEnv, synthPianoSample, synthTestVocal,
-  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, readMidiFile, importMidi, pickMelodyTrack, arrangePiano, swingMap, swingUnmap, estimateSwing, swingToPart, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
+  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, readMidiFile, importMidi, pickMelodyTrack, arrangePiano, swingMap, swingUnmap, estimateSwing, swingToPart, getFFT, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
   bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
 };
@@ -3592,6 +3611,7 @@ function suggestDrumLoop(notes, settings, est = null) {
     const ff = L.feel === feel ? 1 : 0;
     let total = 0.4 * acc + 0.4 * tf + 0.2 * ff + L.base;
     const why = [];
+    if (settings.prefDelta) { const pd = settings.prefDelta(L); if (pd) { total += pd; why.push(pd > 0 ? `senin 👍 tercihin (+${pd.toFixed(2)})` : `senin 👎 tercihin (${pd.toFixed(2)})`); } }
     if (settings.clickFeel === 'halftime' && L.id === 'half') { total += 0.12; why.push('click deseni yarım zaman seçili'); }
     why.push(tf === 1 ? `tempo ${bpm} BPM aralıkta (${L.bpm[0]}–${L.bpm[1]})` : `tempo ${bpm} BPM aralık dışı (${L.bpm[0]}–${L.bpm[1]})`);
     if (mp) why.push(acc > 0.25 ? 'vurguları melodinin güçlü vuruşlarıyla örtüşüyor' : acc > 0 ? 'vurgularla zayıf örtüşme' : 'vurguları melodinin güçlü vuruşlarına ters düşüyor');
@@ -4429,6 +4449,222 @@ function renderGuitar(events, sr, length, spq, gain = 1) {
 Object.assign(C, { TUNINGS, GUITAR_FALLBACK, guitarBaseQuality, guitarDrone, guitarVoicings, guitarMoveCost: moveCost, guitarToneSpec: toneSpec,
   GUITAR_PATTERNS, GUITAR_MODES, ARTICULATIONS, guitarPatternsFor, defaultGuitarPart, defaultGuitarState, normalizeGuitarPart, normalizeGuitarState, guitarPartFor, stepArticulation, setStepArticulation,
   guitarSlotsFrom, guitarEvents, patternById, clonePattern, GRID_Q, RATE_Q, ksPluck, renderGuitar, guitarFx });
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// ---------------------------------------------------------------- VOKAL TEMİZLİĞİ + OTOMATİK MİKS (DOM'suz, çevrimdışı; oynatma ve dışa aktarım aynı yolu kullanır)
+// Zincir: yüksek geçiren (80 Hz) → gürültü azaltma (STFT güç çıkarma, sessiz karelerden gürültü profili) → sıkıştırıcı → seviye eşitleme
+//         (sesli karelerin RMS'i −18 dBFS) → reverb → tepe sınırlayıcı (−1 dBFS, ileri bakışlı). Hepsi çevrimdışı ve gecikmesizdir:
+// çıkış, girişle aynı örnek konumundadır (reverb kuyruğu sona eklenir). Aynı giriş + aynı ayar = aynı çıkış.
+(function (root) {
+const C = root.Core;
+const db = (x) => 20 * Math.log10(Math.max(1e-9, x));
+const lin = (d) => Math.pow(10, d / 20);
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+
+const VFX_DEFAULTS = { on: false, denoise: 60, comp: 40, normalize: true, reverb: 12, touched: false };
+const TARGET_RMS_DB = -18, PEAK_CEIL_DB = -1;
+
+// 2. derece yüksek geçiren (RBJ), ileri yönde
+function highpass(x, sr, fc = 80) {
+  const w0 = (2 * Math.PI * fc) / sr, cs = Math.cos(w0), al = Math.sin(w0) / (2 * Math.SQRT1_2);
+  const b0 = (1 + cs) / 2, b1 = -(1 + cs), b2 = (1 + cs) / 2, a0 = 1 + al, a1 = -2 * cs, a2 = 1 - al;
+  const out = new Float32Array(x.length);
+  let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+  for (let i = 0; i < x.length; i++) {
+    const xi = x[i], yi = (b0 * xi + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0;
+    out[i] = yi; x2 = x1; x1 = xi; y2 = y1; y1 = yi;
+  }
+  return out;
+}
+// 50 ms'lik karelerin RMS (dBFS) dizisi
+function frameDb(x, sr, win = 0.05) {
+  const n = Math.max(1, Math.round(win * sr)), F = Math.max(1, Math.floor(x.length / n)), out = new Float32Array(F);
+  for (let f = 0; f < F; f++) { let s = 0; for (let i = f * n, e = i + n; i < e; i++) s += x[i] * x[i]; out[f] = db(Math.sqrt(s / n)); }
+  return out;
+}
+const percentile = (arr, p) => { const a = Array.from(arr).sort((u, v) => u - v); return a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : -120; };
+// kapılı RMS: en yüksek %10'luk dilimin 25 dB altındaki sessizlik / gürültü kareleri sayılmaz → "konuşulan / çalınan" seviye
+function gatedRmsDb(x, sr) {
+  const fd = frameDb(x, sr), ref = percentile(fd, 0.9), gate = ref - 25;
+  let sum = 0, n = 0;
+  for (const d of fd) if (d > gate && d > -70) { sum += Math.pow(10, d / 10); n++; }
+  return n ? 10 * Math.log10(sum / n) : -120;
+}
+const peakDb = (x) => { let p = 0; for (let i = 0; i < x.length; i++) { const a = Math.abs(x[i]); if (a > p) p = a; } return db(p); };
+
+// ---- gürültü azaltma: STFT güç çıkarma (sqrt-Hann, %50 örtüşme); gürültü profili en sessiz karelerin ortalama genliği
+function denoise(x, sr, amount) {
+  const N = 1024, H = 512, nb = N / 2 + 1, a = clamp(amount, 0, 1);
+  const n = x.length;
+  if (a <= 0 || n < N * 2) return { data: x, noiseDb: null };
+  const fft = C.getFFT(N);
+  const win = new Float64Array(N);
+  for (let i = 0; i < N; i++) win[i] = Math.sqrt(0.5 - 0.5 * Math.cos((2 * Math.PI * i) / N));
+  const F = Math.ceil(n / H) + 1; // kare f: [f·H − H, f·H − H + N)
+  const re = new Float64Array(N), im = new Float64Array(N);
+  const load = (f) => { const s0 = f * H - H; for (let i = 0; i < N; i++) { const j = s0 + i; re[i] = j >= 0 && j < n ? x[j] * win[i] : 0; im[i] = 0; } fft(re, im, false); };
+  // 1) kare enerjileri → en sessiz %12 (en az 6 kare) gürültü profili
+  const en = new Float64Array(F);
+  for (let f = 0; f < F; f++) { const s0 = f * H - H; let s = 0; for (let i = 0; i < N; i++) { const j = s0 + i; if (j >= 0 && j < n) s += x[j] * x[j]; } en[f] = s; }
+  const order = Array.from({ length: F }, (_, i) => i).filter((f) => en[f] > 0).sort((p, q) => en[p] - en[q]);
+  const pick = order.slice(0, Math.max(6, Math.floor(order.length * 0.12)));
+  if (!pick.length) return { data: x, noiseDb: null };
+  const noise = new Float64Array(nb);
+  for (const f of pick) { load(f); for (let k = 0; k < nb; k++) noise[k] += Math.hypot(re[k], im[k]); }
+  for (let k = 0; k < nb; k++) noise[k] /= pick.length;
+  for (let k = 1; k < nb - 1; k++) noise[k] = 0.25 * noise[k - 1] + 0.5 * noise[k] + 0.25 * noise[k + 1]; // profil düzgünleştirme
+  // 2) kare kare: Wiener benzeri güç çıkarma kazancı, frekansta ve zamanda yumuşatılmış
+  const over = 1.2 + 1.8 * a, floor = lin(-(8 + 22 * a));
+  const out = new Float64Array(n + N);
+  const gPrev = new Float64Array(nb).fill(1), g = new Float64Array(nb);
+  for (let f = 0; f < F; f++) {
+    load(f);
+    for (let k = 0; k < nb; k++) {
+      const m2 = re[k] * re[k] + im[k] * im[k], n2 = over * noise[k] * noise[k];
+      g[k] = m2 > 1e-18 ? Math.max(floor, Math.sqrt(Math.max(0, 1 - n2 / m2))) : floor;
+    }
+    for (let k = 1; k < nb - 1; k++) { const s = 0.25 * g[k - 1] + 0.5 * g[k] + 0.25 * g[k + 1]; g[k] = Math.min(g[k], s) * 0.5 + s * 0.5; }
+    for (let k = 0; k < nb; k++) { const v = g[k] > gPrev[k] ? 0.75 * g[k] + 0.25 * gPrev[k] : 0.35 * g[k] + 0.65 * gPrev[k]; gPrev[k] = v; g[k] = v; } // hızlı açılış, yavaş kapanış: "müzikal gürültü" azalır
+    for (let k = 0; k < nb; k++) { re[k] *= g[k]; im[k] *= g[k]; if (k > 0 && k < nb - 1) { re[N - k] = re[k]; im[N - k] = -im[k]; } }
+    fft(re, im, true);
+    const s0 = f * H - H;
+    for (let i = 0; i < N; i++) { const j = s0 + i; if (j >= 0 && j < n) out[j] += re[i] * win[i]; }
+  }
+  const res = new Float32Array(n);
+  for (let i = 0; i < n; i++) res[i] = out[i];
+  // gürültü tabanı (dBFS): profildeki ortalama güçten
+  let pw = 0; for (let k = 0; k < nb; k++) pw += noise[k] * noise[k];
+  return { data: res, noiseDb: db(Math.sqrt(pw / nb / N) * 1.4) };
+}
+
+// ---- sıkıştırıcı: zarf (5 ms / 100 ms) + yumuşak diz; kazanç 16 örnekte bir hesaplanıp aralanır
+function compress(x, sr, amount) {
+  const a = clamp(amount, 0, 1);
+  if (a <= 0) return x;
+  const fd = frameDb(x, sr), thr = percentile(fd, 0.85) - 4, ratio = 1 + 3 * a, knee = 6;
+  const att = Math.exp(-1 / (0.005 * sr)), rel = Math.exp(-1 / (0.1 * sr));
+  const gainDb = (envDb) => {
+    const o = envDb - thr;
+    if (o <= -knee / 2) return 0;
+    if (o < knee / 2) return (1 / ratio - 1) * ((o + knee / 2) * (o + knee / 2)) / (2 * knee);
+    return (1 / ratio - 1) * o;
+  };
+  const out = new Float32Array(x.length), B = 16;
+  let env = 0, gPrev = 1, gNext = 1;
+  for (let i = 0; i < x.length; i++) {
+    const ab = Math.abs(x[i]);
+    env = ab > env ? att * env + (1 - att) * ab : rel * env + (1 - rel) * ab;
+    if (i % B === 0) { gPrev = gNext; gNext = lin(gainDb(db(env))); }
+    const t = (i % B) / B;
+    out[i] = x[i] * (gPrev + (gNext - gPrev) * t);
+  }
+  return out;
+}
+
+// ---- Freeverb (mono): 8 sönümlü comb + 4 allpass; ıslak seviye, kuru kapılı RMS'e göre ayarlanır (deterministik)
+function reverb(x, sr, amount) {
+  const a = clamp(amount, 0, 1);
+  if (a <= 0) return { data: x, tail: 0 };
+  const sc = sr / 44100, combs = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617].map((d) => Math.round(d * sc)), aps = [556, 441, 341, 225].map((d) => Math.round(d * sc));
+  const fb = 0.8, damp = 0.4, pre = Math.round(0.018 * sr), tail = Math.round(2.6 * sr), n = x.length, L = n + tail;
+  const cb = combs.map((d) => new Float32Array(d)), ci = combs.map(() => 0), cs = combs.map(() => 0);
+  const ab = aps.map((d) => new Float32Array(d)), ai = aps.map(() => 0);
+  const wet = new Float32Array(L);
+  for (let i = 0; i < L; i++) {
+    const inp = (i - pre >= 0 && i - pre < n ? x[i - pre] : 0) * 0.015;
+    let sum = 0;
+    for (let c = 0; c < combs.length; c++) {
+      const buf = cb[c], idx = ci[c], o = buf[idx];
+      cs[c] = o * (1 - damp) + cs[c] * damp;
+      buf[idx] = inp + cs[c] * fb;
+      ci[c] = idx + 1 === buf.length ? 0 : idx + 1;
+      sum += o;
+    }
+    for (let p = 0; p < aps.length; p++) {
+      const buf = ab[p], idx = ai[p], bo = buf[idx], o = -sum + bo;
+      buf[idx] = sum + bo * 0.5; sum = o;
+      ai[p] = idx + 1 === buf.length ? 0 : idx + 1;
+    }
+    wet[i] = sum;
+  }
+  // ıslak seviye: kapılı RMS(ıslak) / kapılı RMS(kuru) = 0,35·miktar  (≈ −9 dB'e kadar)
+  const wr = gatedRmsDb(wet.subarray(0, n), sr), dr = gatedRmsDb(x, sr);
+  const k = wr > -100 ? lin(dr - wr) * 0.35 * a : 0;
+  const out = new Float32Array(L);
+  for (let i = 0; i < L; i++) out[i] = (i < n ? x[i] : 0) + wet[i] * k;
+  return { data: out, tail };
+}
+
+// ---- ileri bakışlı tepe sınırlayıcı: kazanç eğrisi min-süzgeç + hareketli ortalama (kuru tepe asla aşılmaz) + yavaş bırakma
+function limit(x, sr, ceilDb = PEAK_CEIL_DB, lookMs = 5, relMs = 90) {
+  const ceil = lin(ceilDb), n = x.length, Lk = Math.max(2, Math.round((lookMs / 1000) * sr));
+  let peak = 0; for (let i = 0; i < n; i++) { const v = Math.abs(x[i]); if (v > peak) peak = v; }
+  if (peak <= ceil) return x;
+  const g = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const v = Math.abs(x[i]); g[i] = v > ceil ? ceil / v : 1; }
+  // [i−w, i+w] penceresinde en küçük kazanç (monoton kuyruk)
+  const w = Lk - 1, mn = new Float32Array(n), dq = new Int32Array(n);
+  let h = 0, t = 0, nxt = 0;
+  for (let i = 0; i < n; i++) {
+    const hi = Math.min(n - 1, i + w);
+    while (nxt <= hi) { while (t > h && g[dq[t - 1]] >= g[nxt]) t--; dq[t++] = nxt++; }
+    while (dq[h] < i - w) h++;
+    mn[i] = g[dq[h]];
+  }
+  // ±Lk/2 hareketli ortalama (pencere ⊂ min penceresi → kazanç gereken değerin altında kalır)
+  const ps = new Float64Array(n + 1), W2 = Math.floor(Lk / 2), sm = new Float32Array(n);
+  for (let i = 0; i < n; i++) ps[i + 1] = ps[i] + mn[i];
+  for (let i = 0; i < n; i++) { const lo = Math.max(0, i - W2), hi = Math.min(n, i + W2 + 1); sm[i] = Math.min(mn[i], (ps[hi] - ps[lo]) / (hi - lo)); }
+  const rel = Math.exp(-1 / ((relMs / 1000) * sr));
+  const out = new Float32Array(n);
+  let gs = 1;
+  for (let i = 0; i < n; i++) { const target = sm[i]; gs = target < gs ? target : target + (gs - target) * rel; out[i] = x[i] * Math.min(gs, 1); }
+  // son güvence: kalan aşımlar (yuvarlama) sert kırpılır
+  for (let i = 0; i < n; i++) { if (out[i] > ceil) out[i] = ceil; else if (out[i] < -ceil) out[i] = -ceil; }
+  return out;
+}
+
+// data: Float32Array (mono), fx: { denoise 0–100, comp 0–100, normalize, reverb 0–100 } → { data, info }
+function processVocal(data, sr, fxIn) {
+  const fx = Object.assign({}, VFX_DEFAULTS, fxIn || {});
+  const info = { rmsBeforeDb: gatedRmsDb(data, sr), peakBeforeDb: peakDb(data), noiseDb: null, noiseReductionDb: null };
+  let x = highpass(data, sr, 80);
+  const dn = denoise(x, sr, fx.denoise / 100);
+  x = dn.data; info.noiseDb = dn.noiseDb;
+  if (dn.noiseDb != null) {
+    // gürültü tabanındaki azalma: en sessiz karelerin gücü, öncesi / sonrası
+    const q = (arr) => percentile(frameDb(arr, sr), 0.1);
+    info.noiseReductionDb = Math.round((q(highpass(data, sr, 80)) - q(x)) * 10) / 10;
+  }
+  x = compress(x, sr, fx.comp / 100);
+  if (fx.normalize) {
+    const cur = gatedRmsDb(x, sr);
+    if (cur > -100) { const gdb = clamp(TARGET_RMS_DB - cur, -12, 30), gn = lin(gdb); const y = new Float32Array(x.length); for (let i = 0; i < y.length; i++) y[i] = x[i] * gn; x = y; info.gainDb = Math.round(gdb * 10) / 10; }
+  }
+  const rv = reverb(x, sr, fx.reverb / 100);
+  x = limit(rv.data, sr, PEAK_CEIL_DB);
+  info.rmsAfterDb = gatedRmsDb(x, sr); info.peakAfterDb = peakDb(x); info.tailSec = rv.tail / sr;
+  return { data: x, info };
+}
+
+// ---- otomatik miks: kapılı RMS'e göre sesler vokale oranlanır. Vokal 0 dB'de kalır (zaten −18 dBFS'e eşitlenmiştir).
+// Hedefler (vokale göre dB): akor −7 · gitar −6 · bas −5 · davul −6. stems: { vocal, piano, guitar, bass, drums } (çalmayan = null)
+const MIX_OFFSETS = { piano: -7, guitar: -6, bass: -5, drums: -6 };
+function autoMixLevels(stems, sr) {
+  const measured = {}, levels = { vocal: 0 };
+  const vocalDb = stems.vocal ? gatedRmsDb(stems.vocal, sr) : TARGET_RMS_DB;
+  measured.vocal = vocalDb;
+  for (const k of Object.keys(MIX_OFFSETS)) {
+    if (!stems[k]) continue;
+    const m = gatedRmsDb(stems[k], sr);
+    if (m < -100) continue;
+    measured[k] = m;
+    levels[k] = clamp(Math.round(vocalDb + MIX_OFFSETS[k] - m), -40, 6);
+  }
+  return { levels, measured };
+}
+
+Object.assign(C, { VFX_DEFAULTS, processVocal, autoMixLevels, gatedRmsDb, vocalLimit: limit, vocalHighpass: highpass, vocalDenoise: denoise, vocalCompress: compress, vocalReverb: reverb, MIX_OFFSETS });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // ---------------------------------------------------------------- BAS: veri modeli, ritim şablonları, perde kuralları, üretici
@@ -6763,22 +6999,19 @@ const homeCore = (mode) => { const h = C.homeChord(0, mode); return coreKey(0, h
 // Geri bildirim: her beğeni ×1.1, her beğenmeme ×0.91; toplam çarpan 0.5–2 arasında sınırlı.
 const FB_LIKE = 1.1, FB_DISLIKE = 0.91;
 function feedbackIndex(fb) {
-  const net = new Map(), counts = new Map();
-  if (!fb || !fb.on) return { mult: () => 1, banned: new Set(), net, counts };
-  for (const e of fb.events || []) for (const [a, b] of e.transitions || []) {
-    const k = `${e.mode}|${a}>${b}`;
-    const c = counts.get(k) || { like: 0, dislike: 0 };
-    if (e.like > 0) c.like++; else c.dislike++;
-    counts.set(k, c);
-    net.set(k, c.like - c.dislike);
+  const net = new Map(), counts = new Map(), counts3 = new Map();
+  if (!fb || !fb.on) return { mult: () => 1, mult3: () => 1, banned: new Set(), net, counts, counts3 };
+  const tally = (map, k, like) => { const c = map.get(k) || { like: 0, dislike: 0 }; if (like > 0) c.like++; else c.dislike++; map.set(k, c); return c; };
+  for (const e of fb.events || []) {
+    for (const [a, b] of e.transitions || []) { const c = tally(counts, `${e.mode}|${a}>${b}`, e.like); net.set(`${e.mode}|${a}>${b}`, c.like - c.dislike); }
+    for (const [x, y, z] of e.triples || []) tally(counts3, `${e.mode}|${x}>${y}>${z}`, e.like);
   }
+  const clamp = (c) => (c ? Math.min(2, Math.max(0.5, Math.pow(FB_LIKE, c.like) * Math.pow(FB_DISLIKE, c.dislike))) : 1);
   return {
-    mult: (mode, a, b) => {
-      const c = counts.get(`${mode}|${a}>${b}`);
-      return c ? Math.min(2, Math.max(0.5, Math.pow(FB_LIKE, c.like) * Math.pow(FB_DISLIKE, c.dislike))) : 1;
-    },
+    mult: (mode, a, b) => clamp(counts.get(`${mode}|${a}>${b}`)),
+    mult3: (mode, x, y, z) => clamp(counts3.get(`${mode}|${x}>${y}>${z}`)),
     banned: new Set(fb.banned || []),
-    net, counts,
+    net, counts, counts3,
   };
 }
 function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = null) {
@@ -6787,7 +7020,11 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
   const fb = feedbackIndex(feedback);
   const B = (m) => stats.byMode.get(m) || emptyBucket();
   const pool = B(ALL);
-  const nMode = (m) => B(m).songs.size;
+  // şarkı ağırlığı: kullanıcının "progresyonu bitirdim" ile eklediği şarkılar song.weight (>1) ile sayılır; 1 = bir şarkı
+  const wOf = (id) => { const sg = stats.songs && stats.songs.get(id); return sg && sg.weight > 0 ? sg.weight : 1; };
+  const wsize = (set) => { let t = 0; for (const id of set) t += wOf(id); return t; };
+  const nS = (e) => (e ? wsize(e.songs) : 0);
+  const nMode = (m) => wsize(B(m).songs);
   const vocabCache = new Map();
   function vocab(mode) {
     if (vocabCache.has(mode)) return vocabCache.get(mode);
@@ -6823,11 +7060,12 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const bt = BT(mode, type);
     return pooled(distOf(bt), modeDist, nOf(bt), o.kType);
   };
-  function withFeedback(mode, a, dist) {
+  function withFeedback(mode, a, dist, a2 = null) {
     if (!feedback || !feedback.on) return dist;
     let sum = 0;
     const out = new Map();
-    for (const [b, p] of dist) { const q = p * fb.mult(mode, a, b); out.set(b, q); sum += q; }
+    // ikili geçiş çarpanı × (öncesi biliniyorsa) üçlü bağlam çarpanı: "x'ten sonra y, sonra z" beğenisi
+    for (const [b, p] of dist) { const q = p * fb.mult(mode, a, b) * (a2 != null ? fb.mult3(mode, a2, a, b) : 1); out.set(b, q); sum += q; }
     for (const [b, q] of out) out.set(b, q / sum);
     return out;
   }
@@ -6838,12 +7076,12 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     if (cache.has(ck)) return cache.get(ck);
     const dia = new Set(diatonicCores(mode));
     const support = vocab(mode).filter((b) => b !== a);
-    const order2 = (bk) => o.secondOrder && a2 != null && nSongs(bk.ctx2.get(`${a2}>${a}`)) >= o.minCtxSongs;
+    const order2 = (bk) => o.secondOrder && a2 != null && nS(bk.ctx2.get(`${a2}>${a}`)) >= o.minCtxSongs;
     const distOf = (bk) => (order2(bk)
-      ? smooth((b) => nSongs(bk.trans2.get(`${a2}>${a}>${b}`)), support, dia)
-      : smooth((b) => nSongs(bk.trans.get(`${a}>${b}`)), support, dia));
+      ? smooth((b) => nS(bk.trans2.get(`${a2}>${a}>${b}`)), support, dia)
+      : smooth((b) => nS(bk.trans.get(`${a}>${b}`)), support, dia));
     const dm = pooled(distOf(B(mode)), distOf(pool), nMode(mode));
-    const d = withFeedback(mode, a, typeLevel(dm, mode, type, distOf, (bk) => bk.songs.size));
+    const d = withFeedback(mode, a, typeLevel(dm, mode, type, distOf, (bk) => wsize(bk.songs)), a2);
     d.order = order2(B(mode)) || order2(pool) ? 2 : 1;
     cache.set(ck, d);
     return d;
@@ -6853,8 +7091,8 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     if (cache.has(ck)) return cache.get(ck);
     const dia = new Set(diatonicCores(mode));
     const support = vocab(mode);
-    const distOf = (bk) => smooth((b) => nSongs(bk[which].get(b)), support, dia);
-    const d0 = typeLevel(pooled(distOf(B(mode)), distOf(pool), nMode(mode)), mode, type, distOf, (bk) => bk.songs.size);
+    const distOf = (bk) => smooth((b) => nS(bk[which].get(b)), support, dia);
+    const d0 = typeLevel(pooled(distOf(B(mode)), distOf(pool), nMode(mode)), mode, type, distOf, (bk) => wsize(bk.songs));
     const d = which === 'open' ? withFeedback(mode, '^', d0) : d0;
     cache.set(ck, d);
     return d;
@@ -6866,7 +7104,7 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const cm = B(mode).colors.get(core) || new Map(), cp = pool.colors.get(core) || new Map();
     const support = [...new Set([...fit, ...cm.keys(), ...cp.keys(), ''])];
     const dia = new Set(fit.length ? fit : ['']);
-    const d = pooled(smooth((c) => nSongs(cm.get(c)), support, dia), smooth((c) => nSongs(cp.get(c)), support, dia), nMode(mode));
+    const d = pooled(smooth((c) => nS(cm.get(c)), support, dia), smooth((c) => nS(cp.get(c)), support, dia), nMode(mode));
     cache.set(ck, d);
     return d;
   }
@@ -6880,14 +7118,81 @@ function buildModel(dataset, settings = {}, feedback = null, prebuiltStats = nul
     const ck = `${mode}|${type}|dur`;
     if (cache.has(ck)) return cache.get(ck);
     const all = new Set(DUR_BINS);
-    const distOf = (bk) => smooth((b) => nSongs(bk.dur.get(b)), DUR_BINS, all, o.alphaDur);
-    const d = typeLevel(pooled(distOf(B(mode)), distOf(pool), B(mode).durSongs.size), mode, type, distOf, (bk) => bk.durSongs.size);
+    const distOf = (bk) => smooth((b) => nS(bk.dur.get(b)), DUR_BINS, all, o.alphaDur);
+    const d = typeLevel(pooled(distOf(B(mode)), distOf(pool), wsize(B(mode).durSongs)), mode, type, distOf, (bk) => wsize(bk.durSongs));
     cache.set(ck, d);
     return d;
   }
-  const durSongs = (m) => B(m).durSongs.size;
-  const nType = (m, t) => (t ? BT(m, t).songs.size : 0);
+  const durSongs = (m) => wsize(B(m).durSongs);
+  const nType = (m, t) => (t ? wsize(BT(m, t).songs) : 0);
   return { settings: o, stats, vocab, next, open: (m, t) => edge(m, 'open', t), close: (m, t) => edge(m, 'close', t), color, dur, durSongs, nMode, nType, songsFor, feedback: fb, diatonic: diatonicCores };
+}
+
+
+// ---------------------------------------------------------------- KULLANICI PROGRESYONU ("Progresyonu bitirdim")
+// Bitirilen progresyon iki yoldan öğrenilir:
+//  1) Bütün progresyon ağırlıklı bir şarkı olarak veri setine girer (geçişler, üçlü bağlam, açılış/kapanış, süreler, renkler, döngü, bölümler arası geçiş);
+//  2) senin SEÇTİĞİN (kilitlediğin / elle yazdığın) her akor için öncesiyle ve sonrasıyla ilişkisi beğeni olarak yazılır:
+//     ikili geçişler (önceki→akor, akor→sonraki) ve üçlü bağlamlar (önceki-önceki→önceki→akor, önceki→akor→sonraki, akor→sonraki→sonraki-sonraki).
+// Aynı proje (spec.id) tekrar bitirilince eski kaydı silinir, yenisi yazılır: sayımlar birikip şişmez.
+const USER_SONG_WEIGHT = 5; // minCtxSongs (5): tek bir bitirilen progresyon bile kullandığı üçlü bağlamlarda ikinci dereceyi açar
+const chordSym = (c) => C.chordName({ root: c.root, q: c.q, bass: c.bass != null && c.bass !== c.root ? c.bass : null }, false);
+function forgetProgression(dataset, feedback, id) {
+  const n0 = dataset.songs.length, e0 = feedback.events.length;
+  dataset.songs = dataset.songs.filter((x) => x.userProg !== id);
+  feedback.events = feedback.events.filter((e) => e.learnId !== id);
+  return { songs: n0 - dataset.songs.length, events: e0 - feedback.events.length };
+}
+// spec: { id, title, weight?, sections: [{ name, type?, tonic, mode, chords: [{ chord:{root,q,bass}, bars, chosen }] }] }
+function learnProgression(dataset, feedback, spec) {
+  const replaced = forgetProgression(dataset, feedback, spec.id);
+  const secs = (spec.sections || []).filter((x) => x.tonic != null && x.mode && x.chords && x.chords.length);
+  if (!secs.length) return { ok: false, why: 'ton onaylı akorlu bölüm yok', replaced };
+  const sections = [], events = [], sum = { sections: 0, chords: 0, chosen: 0, pairs: 0, triples: 0 };
+  for (const sc of secs) {
+    // art arda aynı akor tek akor (süreler toplanır)
+    const runs = [];
+    for (const it of sc.chords) {
+      const sym = chordSym(it.chord), last = runs[runs.length - 1];
+      if (last && last.sym === sym) { last.bars += it.bars; last.chosen = last.chosen || !!it.chosen; } else runs.push({ sym, chord: it.chord, bars: it.bars, chosen: !!it.chosen });
+    }
+    sections.push({
+      name: sc.name, type: sc.type ?? null, chords: runs.map((r) => r.sym), bars: runs.map((r) => Math.round(r.bars * 1000) / 1000), proposals: [], degreesPreview: null, warnings: [],
+      selected: { tonic: sc.tonic, mode: sc.mode }, confirmed: true,
+    });
+    sum.sections++; sum.chords += runs.length;
+    // çekirdek (derece+nitelik) koşuları: aynı core art arda tek adımdır (geçiş değildir)
+    const cores = [];
+    runs.forEach((r, i) => { const k = chordToCore(r.chord, sc.tonic).core; if (!cores.length || cores[cores.length - 1].core !== k) cores.push({ core: k, chosen: false }); if (r.chosen) cores[cores.length - 1].chosen = true; void i; });
+    const pairs = new Set(), triples = new Set();
+    cores.forEach((cu, i) => {
+      if (!cu.chosen) return;
+      sum.chosen++;
+      const at = (j) => (j >= 0 && j < cores.length ? cores[j].core : null);
+      if (i === 0) pairs.add(`^>${cu.core}`);
+      if (at(i - 1)) pairs.add(`${at(i - 1)}>${cu.core}`);
+      if (at(i + 1)) pairs.add(`${cu.core}>${at(i + 1)}`);
+      if (at(i - 2) && at(i - 1)) triples.add(`${at(i - 2)}>${at(i - 1)}>${cu.core}`);
+      if (at(i - 1) && at(i + 1)) triples.add(`${at(i - 1)}>${cu.core}>${at(i + 1)}`);
+      if (at(i + 1) && at(i + 2)) triples.add(`${cu.core}>${at(i + 1)}>${at(i + 2)}`);
+    });
+    if (pairs.size || triples.size) {
+      events.push({ t: Date.now(), kind: 'learn', learnId: spec.id, mode: sc.mode, transitions: [...pairs].map((k) => k.split('>')), triples: [...triples].map((k) => k.split('>')), like: 1 });
+      sum.pairs += pairs.size; sum.triples += triples.size;
+    }
+  }
+  const song = {
+    id: newId(), artist: 'Ben', title: spec.title || 'Progresyonum', source: 'daw', userProg: spec.id, importedAt: new Date().toISOString(), weight: spec.weight || USER_SONG_WEIGHT,
+    warnings: [], fixes: {}, sourceNotes: null, sections,
+  };
+  dataset.songs.push(song);
+  feedback.on = true;
+  feedback.events.push(...events);
+  return { ok: true, song, events, replaced, summary: sum, weight: song.weight };
+}
+function progressionInfo(dataset, feedback, id) {
+  const song = dataset.songs.find((x) => x.userProg === id) || null;
+  return { song, events: feedback.events.filter((e) => e.learnId === id).length };
 }
 
 // ---------------------------------------------------------------- k ve α önerisi: şarkı bazlı çapraz doğrulama
@@ -7363,7 +7668,7 @@ root.Style = {
   parseSymbol, parseMode, parseKeyText, keyLabel, modeName, sameKey, romanOf, parseRoman, coreKey, coreParts, coreLabel, degreeLabel, argmaxKey,
   analyzeChord, analyzeSection, detectLoop, comparePreview, previewFor, unknownSymbols, QUALITY_NAMES,
   validateSongJson, parseImportJson, parseImportText, songKey, findDuplicate,
-  buildStats, modeSongCounts, nSongs, ALL, confirmedKey,
+  buildStats, modeSongCounts, nSongs, ALL, confirmedKey, learnProgression, forgetProgression, progressionInfo, USER_SONG_WEIGHT,
   MODEL_DEFAULTS, PROG_DEFAULTS, buildModel, diatonicCores, modeColors, homeCore, suggestKAlpha, songTransitions,
   chordToCore, coreToChord, makeStyleScorer, mulberry32, suggestProgressions, suggestSectionTransition, progKey,
   fitDurations, progDisplay, durBin, durLabel, fmtDur, DUR_BINS, sectionHasBars,
@@ -7545,6 +7850,7 @@ function refresh() {
   S.proj.piano = Object.assign({}, C.PIANO_DEFAULTS, S.proj.piano || {});
   if (S.proj.bass && S.proj.bass.pattern !== undefined && !S.proj.bass.bars) { const old = S.proj.bass; S.proj.bass = null; bassNormalize(); S.proj.bass.enabled = !!old.on; } // eski basit bas ayarı → bas katmanı (8d); notalar Üret ile oluşur
   S.proj.swing = Object.assign({ ratio: 0.5 }, S.proj.swing || {});
+  S.proj.vocalFx = Object.assign({}, C.VFX_DEFAULTS, S.proj.vocalFx || {});
   S.proj.drums.fills = S.proj.drums.fills !== false;
   S.proj.mixer.drums = S.proj.mixer.drums || { vol: -8, mute: false, solo: false };
   S.proj.mixer.guitar = S.proj.mixer.guitar || { vol: -4, mute: false, solo: false };
@@ -7566,6 +7872,7 @@ function refresh() {
     + (conf.length ? `<div class="st-warn">⚠ ${esc(conf.join(', '))}: işaretler kilitli akorlarla çelişiyor (ör. ✂ noktasının iki yanında aynı akor kilitli); bu bölüm işaretler olmadan dolduruldu.</div>` : '');
   const nch = S.proj.chordLocks.filter((l) => l.src === 'chart').length;
   $('#chartCount').textContent = nch ? `(${nch})` : ''; $('#btnChartRemove').disabled = !nch;
+  renderFinishInfo(); renderVfxInfo();
   { const lb = lastManualBar(); $('#afterInfo').textContent = lb ? `(ölçü ${lb}'den sonrası)` : ''; $('#btnApplyAfter').disabled = !lb; }
   const ns = S.d.chords.filter((c) => c.pinSuggest).length;
   $('#sugCount').textContent = ns ? `(${ns})` : ''; $('#btnApplySug').disabled = !ns;
@@ -7798,6 +8105,100 @@ async function doRender() {
 }
 const renderReady = () => !!S.d && !!S.d.correction && shiftsEqual(S.d.correction.shift, S.correctedShift) && (S.d.timeMap ? S.d.timeMap.sig : '') === (S.correctedWarp || '');
 
+// ---------------------------------------------------------------- VOKAL TEMİZLİĞİ (gürültü azaltma · sıkıştırıcı · seviye eşitleme · reverb) — oynatma ve dışa aktarım aynı işlenmiş sesi kullanır
+// Kaynak değişince (yeni kayıt / yeniden render) ya da ayar değişince bir sonraki çalmada / dışa aktarmada yeniden işlenir; sonuç ref + ayar anahtarıyla önbelleklenir.
+const VFX = { A: null, B: null, info: null };
+const vfxOn = () => !!(S.proj.vocalFx && S.proj.vocalFx.on) && !!S.audio;
+const vfxKey = () => { const f = S.proj.vocalFx; return JSON.stringify([f.denoise, f.comp, f.normalize, f.reverb]); };
+function vfxSources() { return { A: S.audio ? S.audio.data : null, B: S.audio ? S.corrected || S.audio.data : null }; }
+// işlenmiş (açıksa) ya da ham vokal; senkron: önce vfxEnsure çağrılmış olmalı
+function vfxData(which) {
+  const src = vfxSources()[which];
+  if (!src) return null;
+  const c = VFX[which];
+  return vfxOn() && c && c.src === src && c.key === vfxKey() ? c.data : src;
+}
+async function vfxEnsure() {
+  if (!vfxOn()) return false;
+  const srcs = vfxSources(), key = vfxKey();
+  const need = ['B', 'A'].filter((w) => srcs[w] && !(VFX[w] && VFX[w].src === srcs[w] && VFX[w].key === key));
+  if (!need.length) return false;
+  await busy('Vokal temizleniyor (gürültü azaltma · sıkıştırma · seviye · reverb)…', async () => {
+    await tick();
+    const fx = S.proj.vocalFx;
+    for (const w of need) {
+      if (w === 'A' && srcs.A === srcs.B && VFX.B && VFX.B.src === srcs.B && VFX.B.key === key) { VFX.A = VFX.B; continue; } // düzeltme yoksa A = B
+      const r = C.processVocal(srcs[w], S.audio.sr, fx);
+      VFX[w] = { src: srcs[w], key, data: r.data };
+      if (w === 'B') VFX.info = r.info;
+      await tick();
+    }
+  });
+  Player.buffersDirty = true;
+  renderVfxInfo();
+  return true;
+}
+function renderVfxInfo() {
+  const el = $('#vfxInfo');
+  if (!el) return;
+  const i = VFX.info, f = S.proj.vocalFx;
+  let t = '';
+  if (!S.audio) t = 'Vokal kaydı yok (MIDI / demo): temizlik yalnızca kayıtlı vokal için.';
+  else if (!f.on) t = 'Kapalı: vokal olduğu gibi çalar.';
+  else if (i && VFX.B && VFX.B.key === vfxKey()) t = `Gürültü tabanı ${i.noiseDb != null ? i.noiseDb.toFixed(0) + ' dBFS' : '—'}${i.noiseReductionDb != null ? ` (−${Math.max(0, i.noiseReductionDb).toFixed(0)} dB)` : ''} · ses seviyesi ${i.rmsBeforeDb.toFixed(0)} → ${i.rmsAfterDb.toFixed(0)} dBFS · tepe ${i.peakAfterDb.toFixed(1)} dBFS`;
+  else t = 'Açık: bir sonraki çalmada işlenir.';
+  if (el.textContent !== t) el.textContent = t;
+}
+let vfxTimer = null;
+function vfxChanged() {
+  S.proj.vocalFx.touched = true;
+  Player.buffersDirty = true;
+  renderVfxInfo();
+  clearTimeout(vfxTimer);
+  if (Player.playing) vfxTimer = setTimeout(() => Player.play(), 400); // çalarken ayar değişince işlenmiş sesle baştan çal
+}
+
+// ---------------------------------------------------------------- KANAL RENDER (dışa aktarım + otomatik miks): her iz fader'sız, aynı yolla
+async function renderStems(sr, lenSec) {
+  const n = Math.round(lenSec * sr), ins = S.proj.guitar.instrument;
+  let vocal = null;
+  if (S.audio) {
+    await vfxEnsure();
+    const src = vfxData(S.proj.mixer.ab === 'original' ? 'A' : 'B');
+    vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec);
+  } else if (S.midi) vocal = C.renderSynth(melodyEvents(), sr, n, 1); // MIDI projesi: melodi synth ile
+  let piano = null;
+  if (ins !== 'guitar') {
+    const samples = await loadPianoSamples(), ev = pianoEventsAll();
+    piano = C.renderPiano(ev.filter((e) => e.inst !== 'synth'), samples.samples, sr, n, 0.35);
+    const syn = C.renderSynth(ev.filter((e) => e.inst === 'synth'), sr, n, 1);
+    for (let i = 0; i < n; i++) piano[i] += syn[i];
+  }
+  return {
+    vocal, piano,
+    guitar: ins === 'piano' ? null : guitarTrack(sr).data,
+    bass: S.proj.bass.enabled ? await renderBassOffline(sr, n) : null,
+    drums: anyDrums() ? C.renderDrums(drumEventsAll(), sr, n, 1) : null,
+  };
+}
+// 🎚 otomatik miks: izler fader'sız render edilip vokalin kapılı RMS'ine göre dengelenir (akor −7, gitar −6, bas −5, davul −6 dB); vokal 0 dB
+async function autoMix(quiet) {
+  if (!S.d) { status('Önce bir akor izi gerekli.', 'err'); return false; }
+  let res;
+  await busy('Ses dengesi ölçülüyor…', async () => {
+    await tick();
+    const sr = 22050, st = await renderStems(sr, Math.min(S.d.bars * S.d.g.barSec + 1.5, 150));
+    res = C.autoMixLevels(st, sr);
+  });
+  const m = S.proj.mixer, names = { piano: 'akor', guitar: 'gitar', bass: 'bas', drums: 'davul' };
+  for (const k of Object.keys(res.levels)) if (m[k]) m[k].vol = res.levels[k];
+  syncInputs(); Player.applyMixer();
+  const txt = Object.entries(res.levels).filter(([k]) => k !== 'vocal').map(([k, v]) => `${names[k]} ${v > 0 ? '+' : ''}${v} dB`).join(' · ');
+  $('#mixInfo').textContent = `Vokal referans (0 dB, ${res.measured.vocal.toFixed(0)} dBFS) → ${txt || 'çalan iz yok'}`;
+  if (!quiet) status(`🎚 Seviyeler ayarlandı: ${txt || 'çalan iz yok'} (vokala göre). Fader'larla istediğin gibi değiştirebilirsin.`);
+  return true;
+}
+
 // ---------------------------------------------------------------- piyano örnekleri (Salamander → yedek sentez)
 // Aynı Salamander örnekleri için sırayla denenen kaynaklar (biri engelliyse diğeri): GitHub Pages, jsDelivr'in GitHub aynası
 const SAL_SOURCES = ['https://tonejs.github.io/audio/salamander/', 'https://cdn.jsdelivr.net/gh/Tonejs/audio@master/salamander/'];
@@ -7979,12 +8380,22 @@ function drumNotes() {
     return { t0: n.tl0, t1: n.tl1, pitch: n.effMidi, loud };
   });
 }
+// ---------------------------------------------------------------- 👍 / 👎 TERCİH ÖĞRENME (davul loop'ları, akor sesi)
+// ⟳ ile dinlediğini beğenir / beğenmezsin; tercihler tarayıcıda saklanır (bütün projelerde geçerli) ve yalnızca OTOMATİK sıralamayı etkiler:
+// davul puanı (loop başına ±0,08, aynı aile ±0,03 — en çok ±0,3) ve ⟳ sırası. Elle seçtiğin hiçbir zaman değiştirilmez.
+const PREF_LS = 'miniDaw.prefs';
+const PREF = (() => { try { const v = JSON.parse(localStorage.getItem(PREF_LS)); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; } })();
+const prefSave = () => { try { localStorage.setItem(PREF_LS, JSON.stringify(PREF)); } catch (e) { /* depolama kapalı olabilir */ } };
+const prefNet = (kind, id) => { const e = PREF[kind] && PREF[kind][id]; return e ? e.l - e.d : 0; };
+function prefBump(kind, id, v) { const m = PREF[kind] || (PREF[kind] = {}), e = m[id] || (m[id] = { l: 0, d: 0 }); if (v > 0) e.l++; else e.d++; }
+const prefTag = (kind, id) => { const e = PREF[kind] && PREF[kind][id]; return e && (e.l || e.d) ? ` ${e.l ? '👍' + e.l : ''}${e.d ? '👎' + e.d : ''}` : ''; };
+const drumPrefDelta = (L) => Math.max(-0.3, Math.min(0.3, 0.08 * prefNet('drums', L.id) + 0.03 * prefNet('drumsCat', L.cat || '')));
 function analyzeDrums() {
   const ns = drumNotes();
   // click'le kaydedildiyse ya da test melodisiyse ızgara zaten doğru: vuruş fazını tahmin etme
   const fixedPhase = S.proj.audio.source === 'test' || S.proj.audio.source === 'midi' || (S.proj.audio.source === 'record' && S.proj.audio.alignMode === 'none');
   S.meterEst = ns.length ? C.estimateMeter(ns, S.proj.settings.bpm, { fixedPhase }) : null;
-  S.drumSug = C.suggestDrumLoop(ns, Object.assign({}, S.proj.settings, { swingRatio: swingR() }), S.meterEst); // senin bildirdiğin swing oranı his tahmininin üstündedir
+  S.drumSug = C.suggestDrumLoop(ns, Object.assign({}, S.proj.settings, { swingRatio: swingR(), prefDelta: drumPrefDelta }), S.meterEst); // senin bildirdiğin swing oranı his tahmininin üstündedir
 }
 function currentLoop() {
   const id = S.proj.drums.loop;
@@ -8037,7 +8448,7 @@ function renderDrums() {
   }
   if ($('#drumInfo').dataset.h !== ih) { $('#drumInfo').innerHTML = ih; $('#drumInfo').dataset.h = ih; }
   $('#drumGrid').textContent = L ? C.loopGridText(L) : '';
-  renderRank('#drumRank', 'drums', sug ? sug.ranked.map((x) => ({ id: x.loop.id, name: x.loop.name, score: x.score, sub: `vurgu ${x.accent.toFixed(2)} · tempo ${x.tempo.toFixed(2)}${x.feelOk ? '' : ' · his uymuyor'}`, why: x.why.join(' · ') })) : [], want !== 'auto' ? want : null, L ? L.id : null);
+  renderRank('#drumRank', 'drums', sug ? sug.ranked.map((x) => ({ id: x.loop.id, name: x.loop.name + prefTag('drums', x.loop.id), score: x.score, sub: `vurgu ${x.accent.toFixed(2)} · tempo ${x.tempo.toFixed(2)}${x.feelOk ? '' : ' · his uymuyor'}`, why: x.why.join(' · ') })) : [], want !== 'auto' ? want : null, L ? L.id : null);
 }
 // puanlı öneri listesi (davul loop'ları): ▶ seçmeden 2 ölçü dinle · Seç = elle seç (elle seçilen puana bakılmadan geçerli)
 function renderRank(sel, kind, rows, manualId, currentId) {
@@ -8114,7 +8525,7 @@ function toggleLoop(on) {
 function arrOptions(kind) {
   const meter = S.proj.settings.meter;
   if (kind === 'drums') { const pool = C.loopsFor(meter), rank = S.drumSug ? S.drumSug.ranked.map((x) => x.loop.id) : []; return pool.slice().sort((a, b) => (rank.indexOf(a.id) + 1 || 99) - (rank.indexOf(b.id) + 1 || 99)).map((l) => ({ id: l.id, name: l.name })); }
-  return Object.keys(C.PIANO_STYLES).map((id) => ({ id, name: C.PIANO_STYLES[id].name }));
+  return Object.keys(C.PIANO_STYLES).map((id, i) => ({ id, name: C.PIANO_STYLES[id].name, i })).sort((a, b) => prefNet('piano', b.id) - prefNet('piano', a.id) || a.i - b.i); // beğendiklerin önde, beğenmediklerin sonda
 }
 function arrCurrent(kind, secId) {
   const a = secId ? secArr(secId)[kind] : null;
@@ -8122,19 +8533,33 @@ function arrCurrent(kind, secId) {
   if (kind === 'drums') return (currentLoop() || {}).id;
   return S.proj.piano.style;
 }
-function arrNext(kind, secId) {
+function arrNext(kind, secId, targetId) {
   if (!S.d) { status('Önce ses kaydı/yükleme ve analiz gerekli.', 'err'); return; }
   const opts = arrOptions(kind);
   if (!opts.length) return;
-  const i = opts.findIndex((o) => o.id === arrCurrent(kind, secId)), nx = opts[(i + 1) % opts.length];
+  const i = opts.findIndex((o) => o.id === arrCurrent(kind, secId)), nx = targetId ? opts.find((o) => o.id === targetId) || opts[(i + 1) % opts.length] : opts[(i + 1) % opts.length];
   if (secId) { const s = S.proj.sections.find((x) => x.id === secId); if (!s) return; s.arr = Object.assign({}, s.arr, { [kind]: nx.id }); delete s.arr.auto; }
   else if (kind === 'drums') { S.proj.drums.loop = nx.id; S.proj.drums.on = true; }
   else S.proj.piano.style = nx.id;
   syncInputs(); refresh();
   const label = { drums: 'Davul', piano: 'Akor sesi' }[kind];
-  status(`${label}${secId ? ' (bu bölüm)' : ''}: ${nx.name} — ${(i + 1) % opts.length + 1}/${opts.length}. Beğenmediysen ⟳ ile sıradakini dene.`);
+  status(`${label}${secId ? ' (bu bölüm)' : ''}: ${nx.name}${prefTag(kind === 'piano' ? 'piano' : 'drums', nx.id)} — ${opts.findIndex((o) => o.id === nx.id) + 1}/${opts.length}. Beğenmediysen ⟳ ile sıradakini dene, 👍 / 👎 ile öğret.`);
   auditionNow();
 }
+// 👍 / 👎: çalan seçeneği oyla; 👎 ise en iyi sıradaki (çalandan farklı) hemen denenir
+function voteOption(kind, v, secId = null) {
+  if (!S.d) { status('Önce ses kaydı/yükleme ve analiz gerekli.', 'err'); return; }
+  const id = arrCurrent(kind, secId);
+  if (!id) { status('Önce bir davul loop\'u / akor sesi seç.', 'err'); return; }
+  const L = kind === 'drums' ? loopById(id) : null, name = kind === 'drums' ? (L ? C.loopLabel(L) : id) : C.PIANO_STYLES[id].name;
+  prefBump(kind, id, v);
+  if (L && L.cat) prefBump('drumsCat', L.cat, v);
+  prefSave();
+  if (kind === 'drums') { analyzeDrums(); renderDrums(); }
+  status(`${v > 0 ? '👍' : '👎'} ${kind === 'drums' ? 'Davul' : 'Akor sesi'}: ${name}${kind === 'drums' && L && L.cat ? ' ve benzer kalıplar (aynı aile)' : ''} — ${v > 0 ? 'otomatik öneride ve ⟳ sırasında öne çıkar' : 'otomatik öneride ve ⟳ sırasında geriye düşer'}; elle seçtiklerin etkilenmez.`);
+  if (v < 0) { const nx = arrOptions(kind).find((o) => o.id !== id); if (nx) arrNext(kind, secId, nx.id); }
+}
+function prefReset() { for (const k of Object.keys(PREF)) delete PREF[k]; prefSave(); analyzeDrums(); renderDrums(); status('👍 / 👎 tercihleri sıfırlandı.'); }
 // seçeneği hemen dinlet: çalıyorsa baştan (döngüdeyse bölgenin başından), çalmıyorsa seçili bölümün başından
 function auditionNow() {
   if (!S.d) return;
@@ -8181,6 +8606,7 @@ function makeDemo() {
     // 3) davul + bas aç. Elle seçtiklerine (loop, bas kalıbı, fill, bölüm düzenlemesi) dokunmaz; yalnızca "otomatik" olanı doldurur
     S.proj.drums.on = true; bassNormalize(); S.proj.bass.enabled = true; // bas: 8d'deki üretici (elle düzenlenmiş / kilitli ölçüler zaten üretilmişse korunur)
     const manual = [];
+    if (S.audio && !S.proj.vocalFx.touched) { S.proj.vocalFx.on = true; did.push('vokal temizliği açık'); } // senin ayarladığına (touched) dokunmaz
     if (S.proj.drums.loop && S.proj.drums.loop !== 'auto') manual.push('davul loop\'u');
     if (S.proj.bass.generated && S.proj.bass.bars.some((b) => b.locked || b.source === 'manual')) manual.push('bas ölçüleri');
     // 4) bölüm başına çeşitlilik: nakarat varsa verse / giriş daha sade davul (bas enerji eğrisini kendi üreticisi izler). Elle verilen bölüm düzenlemesi korunur; önceki demo'nun otomatik düzenlemesi yenilenir
@@ -8206,8 +8632,13 @@ function makeDemo() {
   const L = currentLoop(), bt = S.proj.bass;
   did.push(`davul: ${L ? C.loopLabel(L) : '—'}`, `bas: ${bt.generated ? (Bs.profileById(bt, bt.styleProfileId) || {}).name : '—'}`, `akor sesi: ${C.PIANO_STYLES[S.proj.piano.style].name}`);
   S.pos = 0; $('#tlScroll').scrollLeft = 0;
-  status('✨ Demo hazır → ' + did.join(' · ') + '. Çalıyor; beğenmediğini ⟳ ile değiştir, Ctrl+Z ile geri al.');
-  Player.play();
+  const msg = () => '✨ Demo hazır → ' + did.join(' · ') + '. Çalıyor; beğenmediğini ⟳ ile değiştir, Ctrl+Z ile geri al.';
+  status(msg());
+  (async () => { // ses dengesi: fader'a hiç dokunmadıysan izler vokale göre otomatik dengelenir (mikser geri almaya dahil değil)
+    if (!S.proj.mixer.touched) { try { if (await autoMix(true)) did.push('ses dengesi otomatik'); } catch (e) { /* ölçüm başarısızsa mevcut seviyeler kalır */ } }
+    status(msg());
+    Player.play();
+  })();
 }
 
 // ---------------------------------------------------------------- Tone.js oynatma
@@ -8236,22 +8667,20 @@ const Player = {
     await loadTone();
     await Tone.start();
     const T = Tone;
-    this.vocalCh = new T.Channel(0).toDestination();
-    this.pianoCh = new T.Channel(-6).toDestination();
+    this.master = new T.Limiter(-1).toDestination(); // ana çıkış: sert tepe sınırı (−1 dB); kanallar toplanırken kırpılmaz
+    this.vocalCh = new T.Channel(0).connect(this.master);
+    this.pianoCh = new T.Channel(-6).connect(this.master);
     this.synthBus = new T.Gain(1).connect(this.pianoCh); // synth klavye de "akor" kanalından geçer (ses seviyesi / mute / solo ortak)
     this.vocalBus = new T.Gain(1).connect(this.vocalCh); // MIDI melodisi (synth) Vokal kanalından geçer
-    this.bassCh = new T.Channel(-5).toDestination();
-    this.bassBus = new T.Gain(1).connect(this.bassCh);
     this.synthVoices = new Set();
     this.gA = new T.Gain(0).connect(this.vocalCh);
     this.gB = new T.Gain(1).connect(this.vocalCh);
     this.pA = new T.Player().connect(this.gA);
     this.pB = new T.Player().connect(this.gB);
-    this.click = new T.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 }, volume: -16 }).toDestination();
-    this.snare = new T.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.02 }, volume: -12 }).toDestination();
-    this.drumCh = new T.Channel(-8).toDestination();
-    this.guitarCh = new T.Channel(-4).toDestination();
-    this.bassCh = new T.Channel(-4).toDestination();
+    this.makeClicks();
+    this.drumCh = new T.Channel(-8).connect(this.master);
+    this.guitarCh = new T.Channel(-4).connect(this.master);
+    this.bassCh = new T.Channel(-4).connect(this.master);
     const rsr = T.getContext().sampleRate;
     this.drumBufs = {};
     for (const k of C.DRUM_KINDS) this.drumBufs[k] = toAudioBuffer(C.synthDrum(k, rsr), rsr);
@@ -8266,12 +8695,19 @@ const Player = {
   transport() { return Tone.getTransport ? Tone.getTransport() : Tone.Transport; },
   updateBuffers() {
     if (!this.ready || !this.buffersDirty || !S.audio) return;
-    this.bufA = new Tone.ToneAudioBuffer(toAudioBuffer(S.audio.data, S.audio.sr));
-    this.bufB = new Tone.ToneAudioBuffer(toAudioBuffer(S.corrected || S.audio.data, S.audio.sr));
+    this.bufA = new Tone.ToneAudioBuffer(toAudioBuffer(vfxData('A'), S.audio.sr));
+    this.bufB = new Tone.ToneAudioBuffer(toAudioBuffer(vfxData('B'), S.audio.sr));
     this.buffersDirty = false;
   },
   // Tone, bir kaynağın önceden zamanlanmış gelecek başlangıçlarını durdurunca silmez; döngü turları bu yüzden her çalmada taze oynatıcılarla zamanlanır
+  // metronom sentezleri de taze kurulur: önceden gelecek zamana verilmiş tıklar (iptal edilen sayım) yeni zamanlamayı bozmaz
+  makeClicks() {
+    for (const k of ['click', 'snare']) if (this[k]) { try { this[k].dispose(); } catch (err) { /* zaten bırakıldı */ } }
+    this.click = new Tone.Synth({ oscillator: { type: 'square' }, envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 }, volume: -16 }).connect(this.master);
+    this.snare = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.02 }, volume: -12 }).connect(this.master);
+  },
   freshPlayers() {
+    this.makeClicks();
     for (const k of ['A', 'B']) {
       const old = this['p' + k], np = new Tone.Player().connect(this['g' + k]);
       if (this['buf' + k]) np.buffer = this['buf' + k];
@@ -8306,6 +8742,7 @@ const Player = {
     this.stop(true);
     const pv = opts.preview || null; // tek seferlik önizleme: bölge bir kez çalar, seçili ayarlar değişmez
     PREVIEW.drums = pv ? pv.drums : null;
+    await vfxEnsure();
     this.updateBuffers();
     this.freshPlayers();
     this.applyMixer();
@@ -9783,7 +10220,11 @@ $('#inspector').addEventListener('click', (e) => {
       const sec = S.d.sections.find((x) => x.id === slot.section);
       const same = S.d.chords.filter((x) => x.section === slot.section && x.q0 < slot.q0 && !C.sameChord(x.chord, slot.chord));
       const prev = same.length ? same[same.length - 1].chord : null;
-      window.StyleUI.feedbackChord(prev, slot.chord, sec, +b.dataset.v);
+      // komşu FARKLI akorlar (aynı bölümde): öncesinin öncesi, sonrası, sonrasının sonrası → önce + sonra ve üçlü bağlam
+      const seq = []; for (const x of S.d.chords) if (x.section === slot.section && (!seq.length || !C.sameChord(seq[seq.length - 1].chord, x.chord))) seq.push(x);
+      const at = seq.findIndex((x) => x.q0 <= slot.q0 && x.q1 > slot.q0);
+      const ch = (j) => (at >= 0 && seq[j] ? seq[j].chord : null);
+      window.StyleUI.feedbackChord(prev, slot.chord, sec, +b.dataset.v, { prev2: ch(at - 2), next: ch(at + 1), next2: ch(at + 2) });
     }
   }
 });
@@ -10059,6 +10500,9 @@ function syncInputs() {
   p.mixer.guitar = p.mixer.guitar || { vol: -4, mute: false, solo: false };
   p.mixer.bass = p.mixer.bass || { vol: -4, mute: false, solo: false };
   $('#inDrumFills').checked = p.drums.fills !== false;
+  { const f = p.vocalFx || C.VFX_DEFAULTS;
+    $('#inVfxOn').checked = !!f.on; $('#inVfxNorm').checked = f.normalize !== false;
+    for (const [id, k] of [['Denoise', 'denoise'], ['Comp', 'comp'], ['Reverb', 'reverb']]) { $('#inVfx' + id).value = f[k]; $('#outVfx' + id).textContent = '%' + f[k]; } }
   for (const tr of ['vocal', 'piano', 'drums', 'guitar', 'bass']) {
     const strip = document.querySelector(`.strip[data-track=${tr}]`), m = p.mixer[tr];
     strip.querySelector('.vol').value = m.vol; strip.querySelector('output').textContent = m.vol + ' dB';
@@ -10094,6 +10538,9 @@ onNum('#inHoldBars', (v) => pianoSet('holdBars', C.clamp(Math.round(v), 1, 16)))
 $('#inDrumFills').addEventListener('change', (e) => { S.proj.drums.fills = e.target.checked; refresh(); if (Player.playing) Player.play(); });
 $('#btnDrumNext').onclick = () => arrNext('drums', null);
 $('#btnStyleNext').onclick = () => arrNext('piano', null);
+$('#btnDrumLike').onclick = () => voteOption('drums', 1); $('#btnDrumDislike').onclick = () => voteOption('drums', -1);
+$('#btnStyleLike').onclick = () => voteOption('piano', 1); $('#btnStyleDislike').onclick = () => voteOption('piano', -1);
+$('#btnPrefReset').onclick = () => prefReset();
 $('#btnLoop').onclick = () => toggleLoop();
 $('#btnDemo').onclick = () => makeDemo();
 $('#btnUndo').onclick = () => histUndo();
@@ -10188,6 +10635,59 @@ function applyAfterLast() {
   status(`Ölçü ${last}'ye kadar (✂ noktaların, elle yazdığın akorlar ve aradaki akorlar) aynen kaldı; ölçü ${last + 1}'den sonrası (${n} akor) motorca bütün olarak, işaretlerine ve kilitlerine uyarak yeniden belirlendi${had ? '' : ' (zaten serbestti)'}.`);
 }
 $('#btnApplyAfter').onclick = () => applyAfterLast();
+// ---------------------------------------------------------------- "PROGRESYONU BİTİRDİM": bitirilen progresyondan öğren
+// Bütün progresyon (ton onaylı bölümler) ağırlıklı bir şarkı olarak, seçtiğin (kilitlediğin / elle yazdığın) akorlar ise öncesi ve sonrasıyla
+// birlikte (ikili geçiş + üçlü bağlam) beğeni olarak stil modeline işlenir. Motorun bulduğu akorlar bu işlemle değişmez (📌 sabitlenir).
+function progressionSpec() {
+  const d = S.d, g = d.g;
+  return {
+    id: S.proj.learnId, title: 'Progresyonum' + (S.audio && S.audio.name ? ' — ' + S.audio.name : S.midi && S.midi.name ? ' — ' + S.midi.name : ''),
+    sections: d.sections.filter((x) => x.tonic != null).map((sec) => ({
+      name: sec.name, type: sec.type || null, tonic: sec.tonic, mode: sec.mode,
+      chords: d.chords.filter((c) => c.section === sec.id).map((c) => ({ chord: { root: c.chord.root, q: c.chord.q, bass: c.chord.bass ?? null }, bars: (c.q1 - c.q0) / g.barQ, chosen: !!c.locked })),
+    })),
+  };
+}
+function finishProgression() {
+  if (!window.StyleUI) { status('Stil modülü yüklenmedi.', 'err'); return; }
+  if (!S.d || !S.d.chords.length) { status('Önce bir progresyon gerekli (akorlar).', 'err'); return; }
+  if (!S.proj.learnId) S.proj.learnId = 'learn-' + uid() + Date.now().toString(36);
+  const spec = progressionSpec();
+  if (!spec.sections.some((x) => x.chords.length)) { status('Ton onaylı akorlu bölüm yok: önce 4. adımda bölüm ve ton seç (ya da ✨ Demo).', 'err'); return; }
+  const was = StyleUI.progressionInfo(S.proj.learnId).song;
+  pinOthers(() => false); // motorun akorları olduğu gibi kalsın
+  const r = StyleUI.learnProgression(spec, { refresh: false });
+  if (!r.ok) { status('Öğrenilemedi: ' + r.why, 'err'); return; }
+  S.proj.chordPinsSig = pinSig();
+  refresh();
+  const m = r.summary;
+  status(`✅ ${was ? 'Güncellendi' : 'Öğrenildi'}: ${m.sections} bölüm, ${m.chords} akor${m.chosen ? `, bunlardan ${m.chosen}'i senin seçtiğin → ${m.pairs} geçiş ve ${m.triples} üçlü bağlam (öncesi + sonrası) beğeni olarak işlendi` : ' (kilitli akor yok: yalnızca bütün progresyon öğrenildi)'}. Progresyon ${r.weight}× ağırlıklı şarkı sayılır; sonraki akor önerileri bunu kullanır.`);
+}
+function forgetProgression() {
+  if (!window.StyleUI || !S.proj.learnId) return;
+  const r = StyleUI.forgetProgression(S.proj.learnId);
+  refresh();
+  status(`Bu projeden öğrenilenler silindi (${r.songs} şarkı, ${r.events} beğeni).`);
+}
+function renderFinishInfo() {
+  const el = $('#finishInfo');
+  if (!el) return;
+  const info = window.StyleUI && S.proj.learnId ? StyleUI.progressionInfo(S.proj.learnId) : { song: null, events: 0 };
+  $('#btnFinishProg').textContent = info.song ? '✅ Progresyonu güncelle — bundan yeniden öğren' : '✅ Progresyonu bitirdim — bundan öğren';
+  $('#btnForgetProg').hidden = !info.song;
+  const txt = info.song ? `Öğrenildi: ${info.song.sections.reduce((a, x) => a + x.chords.length, 0)} akor (${info.song.weight}× ağırlık) · ${info.events} bölümde seçtiğin akorların komşu ilişkileri.` : '';
+  if (el.textContent !== txt) el.textContent = txt;
+}
+$('#btnFinishProg').onclick = () => finishProgression();
+$('#btnForgetProg').onclick = () => forgetProgression();
+// vokal temizliği + otomatik miks
+$('#inVfxOn').addEventListener('change', (e) => { S.proj.vocalFx.on = e.target.checked; vfxChanged(); });
+$('#inVfxNorm').addEventListener('change', (e) => { S.proj.vocalFx.normalize = e.target.checked; vfxChanged(); });
+for (const [id, k] of [['Denoise', 'denoise'], ['Comp', 'comp'], ['Reverb', 'reverb']]) {
+  $('#inVfx' + id).addEventListener('input', (e) => { S.proj.vocalFx[k] = +e.target.value; $('#outVfx' + id).textContent = '%' + e.target.value; vfxChanged(); });
+}
+$('#btnAutoMix').onclick = () => autoMix(false);
+
 $('#btnApplySug').onclick = () => {
   const n = S.d.chords.filter((c) => c.pinSuggest).length;
   S.proj.chordPins = []; refresh();
@@ -10259,7 +10759,7 @@ function setEditMode(m) {
 }
 $$('.strip').forEach((strip) => {
   const tr = strip.dataset.track, m = () => S.proj.mixer[tr];
-  strip.querySelector('.vol').addEventListener('input', (e) => { m().vol = +e.target.value; strip.querySelector('output').textContent = e.target.value + ' dB'; Player.applyMixer(); });
+  strip.querySelector('.vol').addEventListener('input', (e) => { m().vol = +e.target.value; S.proj.mixer.touched = true; strip.querySelector('output').textContent = e.target.value + ' dB'; Player.applyMixer(); });
   strip.querySelector('.mute').onclick = (e) => { m().mute = !m().mute; e.target.classList.toggle('on', m().mute); Player.applyMixer(); };
   strip.querySelector('.solo').onclick = (e) => { m().solo = !m().solo; e.target.classList.toggle('on', m().solo); Player.applyMixer(); };
 });
@@ -10402,7 +10902,8 @@ $('#btnExpVocal').onclick = async () => {
   if (!needData()) return;
   if (!S.audio) { status('MIDI projesinde vokal kaydı yok: melodi MIDI çıktısında ve "Vokal + akor mix" WAV\'ında (synth melodi) var.', 'err'); return; }
   await ensureRendered();
-  const v = alignedVocal(S.corrected || S.audio.data, S.audio.sr, exportLenSec());
+  await vfxEnsure();
+  const v = alignedVocal(vfxData('B'), S.audio.sr, exportLenSec());
   download(new Blob([C.encodeWav([v], S.audio.sr)], { type: 'audio/wav' }), 'duzeltilmis-vokal.wav');
   status('Düzeltilmiş vokal WAV (1. ölçü başından hizalı) dışa aktarıldı.');
 };
@@ -10410,30 +10911,17 @@ $('#btnExpMix').onclick = async () => {
   if (!needData(true)) return;
   if (S.audio) await ensureRendered();
   await busy('Mix render ediliyor…', async () => {
-    const piano = await loadPianoSamples();
     const sr = 44100, lenSec = exportLenSec(), n = Math.round(lenSec * sr);
-    let vocal;
-    if (S.audio) { const src = S.proj.mixer.ab === 'original' ? S.audio.data : S.corrected || S.audio.data; vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec); }
-    else if (S.midi) vocal = C.renderSynth(melodyEvents(), sr, n, 1); // MIDI projesi: melodi synth ile
-    else vocal = new Float32Array(n); // demo şarkıda ses kaydı yok
-    const ins = S.proj.guitar.instrument;
-    const ev = ins === 'guitar' ? [] : pianoEventsAll();
-    const pno = C.renderPiano(ev.filter((e) => e.inst !== 'synth'), piano.samples, sr, n, 0.35);
-    const syn = C.renderSynth(ev.filter((e) => e.inst === 'synth'), sr, n, 1);
-    for (let i = 0; i < n; i++) pno[i] += syn[i];
+    const st = await renderStems(sr, lenSec);
     const m = S.proj.mixer, anySolo = m.vocal.solo || m.piano.solo || m.drums.solo || m.guitar.solo || m.bass.solo;
     const gain = (k) => (m[k].mute || (anySolo && !m[k].solo) ? 0 : dbToGain(m[k].vol));
-    const gv = gain('vocal'), gp = gain('piano');
-    const gd = !anyDrums() ? 0 : gain('drums');
-    const drm = gd ? C.renderDrums(drumEventsAll(), sr, n, 1) : null;
-    const gg = ins === 'piano' ? 0 : gain('guitar');
-    const gtrd = gg ? guitarTrack(sr).data : null;
-    const gb = !S.proj.bass.enabled ? 0 : gain('bass');
-    const bsd = gb ? await renderBassOffline(sr, n) : null;
     const mix = new Float32Array(n);
-    let peak = 0;
-    for (let i = 0; i < n; i++) { mix[i] = vocal[i] * gv + pno[i] * gp + (drm ? drm[i] * gd : 0) + (gtrd && i < gtrd.length ? gtrd[i] * gg : 0) + (bsd && i < bsd.length ? bsd[i] * gb : 0); peak = Math.max(peak, Math.abs(mix[i])); }
-    if (peak > 0.98) for (let i = 0; i < n; i++) mix[i] *= 0.98 / peak;
+    for (const k of ['vocal', 'piano', 'guitar', 'bass', 'drums']) {
+      const arr = st[k], g = arr ? gain(k) : 0;
+      if (!g) continue;
+      for (let i = 0, e = Math.min(n, arr.length); i < e; i++) mix[i] += arr[i] * g;
+    }
+    mix.set(C.vocalLimit(mix, sr, -1)); // ana çıkış sınırlayıcı (−1 dBFS): oynatmadaki Limiter ile aynı hedef
     download(new Blob([C.encodeWav([mix, mix], sr)], { type: 'audio/wav' }), 'vokal-piyano-mix.wav');
   });
   status(`Vokal + ${{ piano: C.pianoOpts(S.proj.piano).inst === 'synth' ? 'synth' : 'piyano', guitar: 'gitar', both: 'piyano + gitar' }[S.proj.guitar.instrument]}${S.proj.bass.enabled ? ' + bas' : ''}${anyDrums() ? ' + davul' : ''} mix WAV dışa aktarıldı.`);
@@ -12317,14 +12805,37 @@ window.StyleUI = {
     if ((!SS.settings.lambda && !SS.settings.lambdaRhythm) || !confirmedSongs()) return null;
     return St.makeStyleScorer(model(), { lambda: SS.settings.lambda, lambdaRhythm: SS.settings.lambdaRhythm, temperature: SS.settings.chordTemperature, seed: SS.settings.seed });
   },
-  feedbackChord(prev, chord, sec, like) {
-    const to = St.chordToCore(chord, sec.tonic, sec.mode).core;
-    const from = prev ? St.chordToCore(prev, sec.tonic, sec.mode).core : '^';
-    if (from === to) { A.status('Önceki akorla aynı core — geçiş yok.', 'err'); return; }
-    SS.feedback.events.push({ t: Date.now(), kind: 'chord', mode: sec.mode, transitions: [[from, to]], like });
-    A.status(`${like > 0 ? 'Beğenildi' : 'Beğenilmedi'}: ${St.coreLabel(from, sec.mode)} → ${St.coreLabel(to, sec.mode)} (${St.modeName(sec.mode)}) — çarpan ×${St.buildModel(SS.dataset, SS.settings, SS.feedback).feedback.mult(sec.mode, from, to).toFixed(2)}`);
+  // 👍 / 👎: akorun öncesiyle VE sonrasıyla ilişkisi ve üçlü bağlamı birlikte işlenir.
+  // ctx: { prev2, prev, next, next2 } (aynı bölümdeki komşu farklı akorlar; yoksa null)
+  feedbackChord(prev, chord, sec, like, ctx = {}) {
+    const core = (c) => (c ? St.chordToCore(c, sec.tonic, sec.mode).core : null);
+    const to = core(chord), from = prev ? core(prev) : '^', nx = core(ctx.next), p2 = core(ctx.prev2), n2 = core(ctx.next2);
+    const pairs = [], triples = [];
+    if (from !== to) pairs.push([from, to]);
+    if (nx && nx !== to) pairs.push([to, nx]);
+    if (!pairs.length) { A.status('Komşu akorlarla aynı core — geçiş yok.', 'err'); return; }
+    if (p2 && from !== '^' && p2 !== from && from !== to) triples.push([p2, from, to]);
+    if (from !== '^' && nx && from !== to && nx !== to) triples.push([from, to, nx]);
+    if (nx && n2 && nx !== to && n2 !== nx) triples.push([to, nx, n2]);
+    SS.feedback.events.push({ t: Date.now(), kind: 'chord', mode: sec.mode, transitions: pairs, triples, like });
+    const fb = St.buildModel(SS.dataset, SS.settings, SS.feedback).feedback;
+    const lab = (a, b) => `${St.coreLabel(a, sec.mode)} → ${St.coreLabel(b, sec.mode)}`;
+    A.status(`${like > 0 ? 'Beğenildi' : 'Beğenilmedi'}: ${pairs.map(([a, b]) => `${lab(a, b)} (×${fb.mult(sec.mode, a, b).toFixed(2)})`).join(' · ')}${triples.length ? ` · ${triples.length} üçlü bağlam` : ''} — ${St.modeName(sec.mode)}`);
     SS.model = null; persist(); A.refresh(); renderDawBox();
   },
+  // "Progresyonu bitirdim": bütün progresyon ağırlıklı şarkı + seçilen akorların komşu ilişkileri (bkz. styledata.learnProgression)
+  // o.refresh === false: DAW'ı çağıran yeniler (akorları önce sabitleyip sonra yenilemek için)
+  learnProgression(spec, o = {}) {
+    const r = St.learnProgression(SS.dataset, SS.feedback, spec);
+    if (r.ok) { SS.model = null; persist(); if (o.refresh !== false) A.refresh(); renderDawBox(); render(); }
+    return r;
+  },
+  forgetProgression(id) {
+    const r = St.forgetProgression(SS.dataset, SS.feedback, id);
+    SS.model = null; persist(); A.refresh(); renderDawBox(); render();
+    return r;
+  },
+  progressionInfo: (id) => St.progressionInfo(SS.dataset, SS.feedback, id),
   state: SS, setView, render, doImport, model,
 };
 renderDawBox();
