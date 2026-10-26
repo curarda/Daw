@@ -294,3 +294,13 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
 #takeList .take-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
 #takeList .take-row b { min-width: 74px; }
 #takeList button.on { background: var(--accent, #3d7be0); color: #fff; }
+
+.matrix { width: 100%; font-size: 11px; }
+.matrix th { text-align: left; }
+.matrix-cell { width: 100%; white-space: nowrap; }
+.matrix-cell.automatic { border-style: dashed; }
+.matrix-cell.off { opacity: .55; }
+.matrix-cell.manual { border-style: solid; font-weight: bold; }
+.matrix-cell.manual.on { background: var(--accent); color: #111; }
+.matrix-dim { opacity: .55; }
+#matrixTable { overflow-x: auto; }

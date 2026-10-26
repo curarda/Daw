@@ -44,6 +44,7 @@ try {
     await page.setInputFiles('#fileProject', { name: 'matrix.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(project)) });
     await page.waitForFunction(() => /Proje açıldı/.test(document.querySelector('#status').textContent));
     assert.equal(await page.evaluate(() => window.__dawAPI.S.proj.matrix.enabled), matrix?.enabled === true);
+    assert.equal(await page.isChecked('#inMatrixEnabled'), matrix?.enabled === true);
     const download = page.waitForEvent('download');
     await page.evaluate(() => document.querySelector('#btnSave').click());
     const saved = JSON.parse(readFileSync(await (await download).path(), 'utf8'));
@@ -52,5 +53,73 @@ try {
     await page.waitForFunction(() => /Proje açıldı/.test(document.querySelector('#status').textContent));
     assert.deepEqual(await page.evaluate(() => window.__dawAPI.S.proj.matrix), saved.matrix);
   }
+  const uiProject = await page.evaluate(() => {
+    const p = window.__dawAPI.C.newProject();
+    p.sections = ['Intro', 'Verse', 'Nakarat'].map((name, i) => ({ id: `ui-${i}`, name, type: name, startBar: i * 4 + 1, endBar: i * 4 + 4, tonic: 9, mode: 'minor' }));
+    p.bass.enabled = true; p.drums.on = true;
+    return p;
+  });
+  await page.setInputFiles('#fileProject', { name: 'ui.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(uiProject)) });
+  await page.waitForFunction(() => /Proje açıldı/.test(document.querySelector('#status').textContent));
+  await page.locator('details[data-key="s4b"]').evaluate((el) => { el.open = true; });
+  await page.check('#inMatrixEnabled');
+  assert.equal(await page.locator('.matrix tbody tr').count(), 3);
+  assert.equal(await page.locator('.matrix-cell').count(), 12);
+  for (const [i, bass, drums] of [[0, false, false], [1, true, false], [2, true, true]]) {
+    for (const [layer, on] of [['piano', true], ['bass', bass], ['drums', drums]]) {
+      const cell = page.locator(`[data-section="ui-${i}"][data-layer="${layer}"]`);
+      assert.equal(await cell.getAttribute('aria-pressed'), String(on));
+      assert.match(await cell.getAttribute('aria-label'), /otomatik/);
+    }
+  }
+  assert.equal(await page.locator('[data-section="ui-0"][data-layer="guitar"]').isDisabled(), true);
+  const cell = page.locator('[data-section="ui-1"][data-layer="piano"]');
+  const matrix = () => page.evaluate(() => structuredClone(window.__dawAPI.S.proj.matrix));
+  const baseline = await matrix();
+  const eventsBefore = await page.evaluate(() => window.__dawAPI.arrangement().piano);
+  await cell.click();
+  const manual = await matrix();
+  assert.equal(manual.rows['ui-1'].piano, false);
+  assert.ok((await page.evaluate(() => window.__dawAPI.arrangement().piano.length)) < eventsBefore.length);
+  const proof = await page.evaluate(async () => {
+    const api = window.__dawAPI; let scheduled;
+    api.onScheduledEvents = (events) => { scheduled = events.piano; };
+    await api.player().play({ from: 0 }); api.stop(); delete api.onScheduledEvents;
+    const stems = await api.renderStems(22050, 25);
+    const g = api.S.d.g; let sum = 0;
+    for (let i = Math.ceil((4 * g.barSec + 1) * 22050); i < Math.floor((8 * g.barSec - 1) * 22050); i++) sum += stems.piano[i] ** 2;
+    return { scheduled, events: api.arrangement().piano, sum };
+  });
+  assert.deepEqual(proof.scheduled, proof.events);
+  assert.ok(proof.sum < 1e-4);
+  await cell.click();
+  assert.equal((await matrix()).rows['ui-1'].piano, null);
+  await cell.click();
+  assert.deepEqual(await matrix(), manual);
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction(() => window.__dawAPI.S.proj.matrix.rows['ui-1'].piano === null);
+  assert.match(await cell.getAttribute('aria-label'), /otomatik/);
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction(() => window.__dawAPI.S.proj.matrix.rows['ui-1'].piano === false);
+  assert.deepEqual(await matrix(), manual);
+  await page.keyboard.press('Control+Shift+z');
+  await page.waitForFunction(() => window.__dawAPI.S.proj.matrix.rows['ui-1'].piano === null);
+  await page.keyboard.press('Control+Shift+z');
+  await page.waitForFunction(() => window.__dawAPI.S.proj.matrix.rows['ui-1'].piano === false);
+  assert.deepEqual(await matrix(), manual);
+  const download = page.waitForEvent('download');
+  await page.locator('#btnSave').click();
+  const savedUI = readFileSync(await (await download).path());
+  await page.evaluate(() => document.querySelector('#btnNew').click());
+  await page.setInputFiles('#fileProject', { name: 'roundtrip.json', mimeType: 'application/json', buffer: savedUI });
+  await page.waitForFunction(() => /Proje açıldı/.test(document.querySelector('#status').textContent));
+  assert.deepEqual(await matrix(), manual);
+  assert.equal(await page.isChecked('#inMatrixEnabled'), true);
+  await page.locator('[data-reset="ui-1"]').click();
+  assert.deepEqual(await matrix(), baseline);
+  await page.keyboard.press('Control+z');
+  await page.waitForFunction(() => window.__dawAPI.S.proj.matrix.rows['ui-1']?.piano === false);
+  await page.locator('#btnMatrixReset').click();
+  assert.deepEqual(await matrix(), baseline);
   console.log('Arrangement playback streams equal facade; all four mix stems audible/silent in enabled/disabled sections.');
 } finally { await browser.close(); }

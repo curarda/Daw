@@ -55,3 +55,19 @@ The piano samples load from a CDN, so the first playback needs a connection. The
 JavaScript, Web Audio API, Tone.js, custom pitch detection (YIN-based), Playwright for UI tests.
 
 The original Turkish documentation is in [README.tr.md](README.tr.md).
+
+## Section × layer matrix
+
+**4b → Otomatik aranje** is off by default. Enabling it keeps manual choices. Rows are sections (or **Tümü** without sections); columns are Akor (piano), Gitar, Bas and Davul. Dashed cells are automatic, solid cells manual. Click once for the opposite of the template, again to return to automatic. **Otomatiğe dön** resets a row; **Hepsini otomatiğe döndür** resets all rows. Every action is a separate Ctrl+Z / Ctrl+Shift+Z step and survives project save/load. Globally disabled layers cannot be enabled here.
+
+| Section type | Piano | Guitar | Bass | Drums |
+|---|---|---|---|---|
+| Intro | On | On | Off | Off |
+| Verse | On | On | On | Off |
+| Prechorus | On | On | On | On |
+| Chorus | On | On | On | On |
+| Bridge | On | On | Off | Off |
+| Outro | On | On | Off | Off |
+| Other / All | On | On | On | On |
+
+Playback, mix WAV and MIDI follow the same matrix. Held notes stop at disabled section boundaries; normal release and effect tails may remain audible. Gaps between sections follow the global arrangement. With the matrix off, the existing arrangement is unchanged.

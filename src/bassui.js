@@ -488,7 +488,7 @@ function bsSelectChange(el) {
   else if (k === 'profB') bsDo((t, ctx) => { t.styleMix = v ? { profileB: v, amount: (t.styleMix && t.styleMix.amount) || 0.5 } : null; Bs.bassGenerateAll(t, ctx); });
   else if (k === 'seed') bsDo((t, ctx) => { t.seed = (parseInt(el.value, 10) || 1) | 0; Bs.bassGenerateAll(t, ctx); }, 'Tohum değişti; kilitsiz ölçüler yeniden üretildi.');
   else if (k === 'rlo' || k === 'rhi') bsDo((t, ctx) => { const lo = k === 'rlo' ? +v : t.range.low, hi = k === 'rhi' ? +v : t.range.high; t.range = { low: Math.min(lo, hi - 12), high: Math.max(hi, lo + 12) }; Bs.bassGenerateAll(t, ctx); });
-  else if (k === 'on') { bTrack().enabled = el.checked; drawBass(); renderBass(); if (Player.playing) Player.play(); }
+  else if (k === 'on') { bTrack().enabled = el.checked; renderMatrix(); drawBass(); renderBass(); if (Player.playing) Player.play(); }
   else if (bassTapChange(el)) { /* tap alanı */ }
   else if (typeof bassLearnChange === 'function') bassLearnChange(el);
 }
