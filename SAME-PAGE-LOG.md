@@ -40,3 +40,26 @@ VERDICT: NOT YET (reasons above)
 11. **Accept.** Tests are registered once in `package.json` (`test` and `test:ui`); the proof is `npm test && npm run test:ui`. Browser assertions cover scheduled events AND rendered stems, including held notes and drum fills at disabled boundaries.
 
 No finding rejected.
+
+## Round 2 — Codex verification (verbatim)
+
+1. ADDRESSED
+2. ADDRESSED
+3. ADDRESSED
+4. ADDRESSED
+5. NOT ADDRESSED: A4 requires an availability merge but does not define how locked piano/guitar availability and unlocked pack availability determine `guitar.instrument`.
+6. ADDRESSED
+7. ADDRESSED
+8. ADDRESSED
+9. ADDRESSED
+10. ADDRESSED
+11. ADDRESSED
+
+New blockers: none.
+
+VERDICT: NOT YET (reasons above)
+## Round 2 — Visionary response
+
+- **5: Accept.** The gap was real: A4 named the merge but did not define it. PLAN.md amendment A4 now defines `pianoOn` / `guitarOn` derivation, the per-layer merge (locked keeps, unlocked takes the pack's value), the mapping back to `guitar.instrument`, and the neither-on fallback with a Turkish warning.
+- New blockers: none reported.
+- Cap reached (2 rounds). Verdict line is `NOT YET` only because of finding 5, which is now specified. Per Rule 4 the user decides whether to proceed (explicit override recorded below).
