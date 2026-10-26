@@ -35,14 +35,15 @@ const browser = await chromium.launch({
 const context = await browser.newContext({ viewport: { width: 1500, height: 950 }, acceptDownloads: true, permissions: ['microphone'] });
 const page = await context.newPage();
 const errors = [];
-page.on('pageerror', (e) => errors.push(e.message));
-page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|salamander|net::ERR/i.test(m.text())) errors.push(m.text()); });
+let curStep = '';
+page.on('pageerror', (e) => errors.push(e.message + ' [adım: ' + curStep.slice(0, 50) + ']' + (process.env.SHOW_STACK ? '\n' + e.stack : '')));
+page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|salamander|net::ERR/i.test(m.text())) errors.push(m.text() + ' [adım: ' + curStep.slice(0, 50) + ']'); });
 if (toneLocal) await page.route(/tone@15\.1\.22\/build\/Tone\.js|libs\/tone\/15\.1\.22\/Tone\.js/, (r) => r.fulfill({ body: readFileSync(toneLocal), contentType: 'application/javascript' }));
 await page.route(/\/salamander\//, (r) => r.abort()); // iki kaynak da (github.io, jsDelivr)
 
 const log = [];
 async function step(name, fn, tries = 1) { // tries > 1: gerçek ses saatine bağlı (zamanlama) adımlar yük altında bir kez daha denenir
-  const t = Date.now();
+  const t = Date.now(); curStep = name;
   if (typeof box !== 'undefined') Object.assign(box, await page.locator('#tl').boundingBox());
   let info;
   for (let k = 1; ; k++) { try { info = await fn(); break; } catch (e) { if (k >= tries) throw e; console.log(`(zamanlama adımı yeniden deneniyor: ${name.slice(0, 40)}…)`); } }
@@ -1714,6 +1715,181 @@ try {
     const z = await S(() => { const p = window.__daw.proj; return { drums: p.drums.on, bass: p.bass.enabled, secs: p.sections.map((s) => [s.tonic, !!s.arr]) }; });
     assert.deepEqual(z, { drums: false, bass: false, secs: [[null, false], [null, false]] });
     return `davul ${r.loop}, ${r.ev.drums.length} vuruş (fill var), bas ${r.ev.bass.length} nota; Ctrl+Z ile hepsi geri`;
+  });
+
+  await step('Progresyonu bitirdim: bütün progresyon ağırlıklı şarkı + seçtiğin akorların komşu ilişkileri öğrenilir, motorun akorları değişmez, güncellenir, silinir', async () => {
+    await resetTest();
+    await page.click('#btnDemo');
+    await page.waitForFunction(() => /Demo hazır/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+    await S(() => window.__dawAPI.stop());
+    // elle bir akor seç (kilitle)
+    await S(() => { const p = window.__daw.proj, d = window.__daw.d, c = d.chords[3]; p.chordLocks.push({ bar: c.bar, half: c.half ?? null, chord: { root: (c.chord.root + 7) % 12, q: '', bass: null } }); window.__dawAPI.refresh(); });
+    const names = () => S(() => window.__daw.d.chords.map((c) => `${c.bar}:${window.__dawAPI.C.chordName(c.chord)}`).join(' '));
+    const before = await names();
+    assert.equal(await S(() => window.StyleUI.state.dataset.songs.length), 0);
+    assert.equal(await page.isHidden('#btnForgetProg'), true);
+    await page.click('#btnFinishProg');
+    assert.match(await page.textContent('#status'), /Öğrenildi: .*senin seçtiğin → \d+ geçiş ve \d+ üçlü bağlam/);
+    assert.equal(await names(), before, 'bitirince motorun akorları değişmez');
+    const st = await S(() => { const s = window.StyleUI.state; return { songs: s.dataset.songs.length, w: s.dataset.songs[0].weight, secs: s.dataset.songs[0].sections.length, ev: s.feedback.events.filter((e) => e.kind === 'learn').length, tri: s.feedback.events.reduce((a, e) => a + (e.triples ? e.triples.length : 0), 0), sc: !!window.StyleUI.scorer() }; });
+    assert.equal(st.songs, 1); assert.equal(st.w, 5); assert.equal(st.secs, 2); assert.ok(st.ev >= 1 && st.tri >= 1); assert.equal(st.sc, true, 'öğrenilen veriyle stil puanlayıcı açıldı');
+    assert.match(await page.textContent('#finishInfo'), /Öğrenildi: \d+ akor \(5× ağırlık\)/);
+    assert.match(await page.textContent('#btnFinishProg'), /güncelle/); assert.equal(await page.isVisible('#btnForgetProg'), true);
+    // yeniden bitir: çoğalmaz
+    await page.click('#btnFinishProg');
+    assert.equal(await S(() => window.StyleUI.state.dataset.songs.length), 1); assert.match(await page.textContent('#status'), /Güncellendi/);
+    // proje dosyasında öğrenme kimliği saklanır
+    assert.match(await S(() => window.__daw.proj.learnId), /^learn-/);
+    // sil
+    await page.click('#btnForgetProg');
+    assert.equal(await S(() => window.StyleUI.state.dataset.songs.length), 0);
+    assert.equal(await S(() => window.StyleUI.state.feedback.events.filter((e) => e.kind === 'learn').length), 0);
+    assert.equal(await page.isHidden('#btnForgetProg'), true);
+    return `1 şarkı (5×), ${st.ev} öğrenme olayı, ${st.tri} üçlü bağlam; akorlar aynı kaldı; güncelle / sil`;
+  });
+
+  await step('👍 / 👎: davul loop\'u ve akor sesi tercihi öğrenilir (listede işaret, 👎 → en iyi sıradaki denenir, otomatik sıralama değişir); elle seçilen etkilenmez; sıfırlanır', async () => {
+    await resetTest();
+    await S(() => { localStorage.removeItem('miniDaw.prefs'); });
+    await page.reload(); await waitStatus(/Hazır/);
+    await page.evaluate(() => document.querySelectorAll('details.step, details.sub:not(#chartBox)').forEach((d) => { d.open = true; }));
+    await resetTest();
+    await page.check('#inDrumsOn');
+    const rankIds = () => page.$$eval('#drumRank button[data-pick]', (b) => b.map((x) => x.dataset.id));
+    const r0 = await rankIds(), cur0 = await S(() => window.__dawAPI.C.loopsFor('4/4').length && document.querySelector('#drumRank .rank-row.cur button[data-pick]').dataset.id);
+    assert.equal(cur0, r0[0], 'otomatik: en iyi puanlı çalıyor');
+    await page.click('#btnDrumLike');
+    assert.match(await page.textContent('#status'), /👍 Davul: .*aynı aile/);
+    assert.equal(await S(() => JSON.parse(localStorage.getItem('miniDaw.prefs')).drums['%ID%'.replace('%ID%', document.querySelector('#drumRank .rank-row.cur button[data-pick]').dataset.id)].l), 1);
+    assert.match(await page.textContent('#drumRank .rank-row.cur .rk-name'), /👍1/);
+    // 👎: en iyi sıradaki denenir, beğenilmeyen listede geriye düşer
+    await page.click('#btnDrumDislike');
+    assert.match(await page.textContent('#status'), /^Davul: /);
+    const r1 = await rankIds(), cur1 = await S(() => window.__daw.proj.drums.loop);
+    assert.notEqual(cur1, cur0); assert.equal(await S(() => window.__daw.proj.drums.on), true);
+    assert.ok(r1.indexOf(cur0) >= 0);
+    // 👎 aynı loop'a iki kez (+1 −1 −1): net −1 → otomatik sırada eskisinden aşağıda
+    await page.selectOption('#inDrumLoop', cur0);
+    await page.click('#btnDrumDislike'); await S(() => window.__dawAPI.stop());
+    await page.selectOption('#inDrumLoop', 'auto');
+    const r2 = await rankIds();
+    assert.ok(r2.indexOf(cur0) > r0.indexOf(cur0), `net 👎'lı loop geriye düştü: ${r0.indexOf(cur0)} → ${r2.indexOf(cur0)}`);
+    // akor sesi
+    const ps0 = await S(() => window.__daw.proj.piano.style);
+    await page.click('#btnStyleLike');
+    await S(() => window.__dawAPI.stop());
+    await page.click('#btnStyleDislike'); await S(() => window.__dawAPI.stop());
+    const ps1 = await S(() => window.__daw.proj.piano.style);
+    assert.notEqual(ps1, ps0, '👎 → sıradaki akor sesi');
+    const pp = await S(() => JSON.parse(localStorage.getItem('miniDaw.prefs')).piano);
+    assert.equal(pp[ps0].l, 1); assert.equal(pp[ps0].d, 1);
+    // elle seçim her zaman geçerli
+    await page.selectOption('#inDrumLoop', cur0);
+    assert.equal(await S(() => window.__daw.proj.drums.loop), cur0, '👎\'lı olsa da elle seçilen çalar');
+    await page.click('#btnPrefReset');
+    assert.equal(await S(() => localStorage.getItem('miniDaw.prefs')), '{}');
+    assert.deepEqual(await rankIds(), r0, 'sıfırlanınca ilk sıra döndü');
+    await page.selectOption('#inDrumLoop', 'auto'); await S(() => window.__dawAPI.stop());
+    return `en iyi ${cur0} → 👍 sonra 👎'lerle ${r0.indexOf(cur0) + 1}. → ${r2.indexOf(cur0) + 1}. sıra; akor sesi ${ps0} 👍👎 → ${ps1}; elle seçim korunur; sıfırlama`;
+  });
+
+  await step('Vokal temizliği + otomatik miks: açılınca işlenmiş vokal (−18 dBFS, tepe ≤ −1) çalar ve dışa aktarılır; 🎚 otomatik miks vokala göre dengeler; Demo ikisini de yapar, elle ayara dokunmaz', async () => {
+    await resetTest();
+    assert.equal(await S(() => window.__daw.proj.vocalFx.on), false);
+    assert.match(await page.textContent('#vfxInfo'), /Kapalı/);
+    const wavStats = async () => { const d = await download('#btnExpVocal'); const w = Core.decodeWav(d.data.buffer.slice(d.data.byteOffset, d.data.byteOffset + d.data.byteLength)); let pk = 1e-9; for (let i = 0; i < w.data.length; i++) pk = Math.max(pk, Math.abs(w.data[i])); return { rms: Core.gatedRmsDb(w.data, w.sr), peak: 20 * Math.log10(pk) }; };
+    const off = await wavStats();
+    // aç: çalınca işlenir
+    await page.check('#inVfxOn');
+    await page.fill('#inVfxReverb', '0'); await page.dispatchEvent('#inVfxReverb', 'input');
+    assert.equal(await S(() => window.__daw.proj.vocalFx.touched), true);
+    await page.click('#btnPlay');
+    await page.waitForFunction(() => window.__dawAPI.player().playing && /ses seviyesi/.test(document.querySelector('#vfxInfo').textContent), null, { timeout: 60000 });
+    assert.match(await page.textContent('#vfxInfo'), /ses seviyesi -?\d+ → -18 dBFS · tepe -?[\d.]+ dBFS/);
+    await page.click('#btnPlay');
+    const on = await wavStats();
+    assert.ok(Math.abs(on.rms - (-18)) < 1.5, `dışa aktarılan vokal ${on.rms.toFixed(1)} dBFS`); assert.ok(on.peak <= -0.9, `tepe ${on.peak.toFixed(1)}`);
+    assert.ok(Math.abs(off.rms - on.rms) > 0.3 || Math.abs(off.peak - on.peak) > 0.3, `kapalı ${off.rms.toFixed(1)} / açık ${on.rms.toFixed(1)}`);
+    // otomatik miks
+    await S(() => { const p = window.__daw.proj; p.drums.on = true; p.guitar.instrument = 'both'; window.__dawAPI.refresh(); });
+    await page.check('#bassPanel [data-bs=on]'); await page.click('#bassPanel [data-bk=generate]');
+    await page.click('#btnAutoMix');
+    await page.waitForFunction(() => /Vokal referans/.test(document.querySelector('#mixInfo').textContent), null, { timeout: 120000 });
+    const mx = await S(() => { const m = window.__daw.proj.mixer; return { v: m.vocal.vol, p: m.piano.vol, g: m.guitar.vol, b: m.bass.vol, d: m.drums.vol, touched: !!m.touched }; });
+    assert.equal(mx.v, 0); assert.equal(mx.touched, false, 'otomatik miks "elle dokundum" sayılmaz');
+    for (const k of ['p', 'g', 'b', 'd']) assert.ok(mx[k] >= -40 && mx[k] <= 6, `${k} ${mx[k]}`);
+    assert.match(await page.textContent('#status'), /Seviyeler ayarlandı/);
+    assert.equal(await page.inputValue('.strip[data-track=bass] .vol'), String(mx.b), 'fader\'lar güncellendi');
+    // fader'a dokununca Demo mikseri bozmaz
+    await page.fill('.strip[data-track=drums] .vol', '-3'); await page.dispatchEvent('.strip[data-track=drums] .vol', 'input');
+    assert.equal(await S(() => window.__daw.proj.mixer.touched), true);
+    await resetTest();
+    await page.click('#btnDemo');
+    await page.waitForFunction(() => window.__dawAPI.player().playing, null, { timeout: 90000 });
+    assert.equal(await S(() => window.__daw.proj.vocalFx.on), true, 'Demo vokal temizliğini açtı');
+    assert.match(await page.textContent('#status'), /vokal temizliği açık/);
+    await S(() => window.__dawAPI.stop());
+    // Demo, elle ayarlanmış vokal temizliğine dokunmaz
+    await resetTest();
+    await page.check('#inVfxOn'); await page.uncheck('#inVfxOn');
+    await page.click('#btnDemo');
+    await page.waitForFunction(() => /Demo hazır/.test(document.querySelector('#status').textContent), null, { timeout: 90000 });
+    assert.equal(await S(() => window.__daw.proj.vocalFx.on), false, 'elle kapatılan temizlik Demo ile açılmaz');
+    await S(() => window.__dawAPI.stop());
+    return `vokal ${off.rms.toFixed(1)} → ${on.rms.toFixed(1)} dBFS, tepe ${on.peak.toFixed(1)} · miks: akor ${mx.p}, gitar ${mx.g}, bas ${mx.b}, davul ${mx.d} dB · Demo açar, elle ayara dokunmaz`;
+  });
+
+  await step('Punch-in: seçilen ölçüler yeniden çekilir (canlı perde göstergesi, ön çalma), yalnızca bölge değişir, take\'ler arası geçiş, erken bitirme, geçersiz aralık', async () => {
+    await resetTest();
+    await page.fill('#inBpm', '120'); await page.dispatchEvent('#inBpm', 'change');
+    await page.click('#btnRec');
+    await page.waitForFunction(() => /Kayıt — ölçü 3/.test(document.querySelector('#status').textContent), null, { timeout: 20000 });
+    assert.equal(await page.isHidden('#livePitch'), false, 'kayıtta canlı perde göstergesi açık');
+    await page.click('#btnRecStop');
+    await waitStatus(/Analiz tamam/);
+    assert.equal(await page.isHidden('#livePitch'), true, 'kayıt bitince gösterge kapanır');
+    const bars = await S(() => window.__daw.d.bars);
+    assert.ok(bars >= 2);
+    await S(() => { window.__before = Float32Array.from(window.__daw.audio.data); });
+    // geçersiz aralık
+    await page.fill('#inPunchA', '99'); await page.dispatchEvent('#inPunchA', 'input');
+    assert.equal(await page.isDisabled('#btnPunch'), true);
+    await page.fill('#inPunchA', '1'); await page.dispatchEvent('#inPunchA', 'input');
+    await page.fill('#inPunchB', '2'); await page.dispatchEvent('#inPunchB', 'input');
+    assert.equal(await page.isDisabled('#btnPunch'), false);
+    assert.match(await page.textContent('#punchInfo'), /Ölçü 1–2 yeniden çekilecek/);
+    await page.selectOption('#inPunchPre', '0');
+    await page.click('#btnPunch');
+    await page.waitForFunction(() => /Punch-in — ölçü/.test(document.querySelector('#status').textContent), null, { timeout: 60000 });
+    assert.equal(await page.isHidden('#livePitch'), false, 'punch-in sırasında canlı perde göstergesi');
+    assert.equal(await page.isDisabled('#btnPunchStop'), false);
+    await page.waitForFunction(() => /Punch-in tamam/.test(document.querySelector('#status').textContent), null, { timeout: 60000 });
+    assert.equal(await page.isHidden('#livePitch'), true);
+    const g = await S(() => { const c = window.__daw.comps[0], a = window.__daw.audio.data, b = window.__before; let out = 0, inn = 0, rms = 0; for (let i = 0; i < Math.max(a.length, b.length); i++) { const d = Math.abs((a[i] || 0) - (b[i] || 0)); if (i >= c.fa && i < c.fb) { inn += d; rms += (a[i] || 0) ** 2; } else out = Math.max(out, d); } return { n: window.__daw.comps.length, takes: c.takes.map((t) => t.name), cur: c.cur, fa: c.fa, fb: c.fb, out, inn, rms: Math.sqrt(rms / (c.fb - c.fa)), len: a.length, len0: b.length }; });
+    assert.equal(g.n, 1); assert.deepEqual(g.takes, ['Orijinal', 'Take 2']); assert.equal(g.cur, 1);
+    assert.equal(g.out, 0, 'bölge dışı örnekler birebir aynı');
+    assert.ok(g.inn > 0 && g.rms > 1e-3, `bölge yeni take ile değişti (RMS ${g.rms.toFixed(4)})`);
+    assert.equal(g.len, g.len0);
+    assert.equal(await page.locator('#takeList button[data-take]').count(), 2);
+    const after = await S(() => { window.__after = Float32Array.from(window.__daw.audio.data); return 1; });
+    // orijinale dön → birebir eski kayıt; tekrar Take 2
+    await page.click('#takeList button[data-take="0"]');
+    await waitStatus(/Orijinal\./);
+    assert.equal(await S(() => { const a = window.__daw.audio.data, b = window.__before; let m = 0; for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; }), 0, 'Orijinal: eski kayıt birebir');
+    await page.click('#takeList button[data-take="1"]');
+    await waitStatus(/Take 2\./);
+    assert.equal(await S(() => { const a = window.__daw.audio.data, b = window.__after; let m = 0; for (let i = 0; i < b.length; i++) m = Math.max(m, Math.abs(a[i] - b[i])); return m; }), 0, 'Take 2 birebir geri geldi');
+    // erken bitirme: aynı aralık → aynı bölgeye üçüncü take
+    await page.click('#btnPunch');
+    await page.waitForFunction(() => /Punch-in — ölçü/.test(document.querySelector('#status').textContent), null, { timeout: 60000 });
+    await page.waitForTimeout(1400);
+    await page.click('#btnPunchStop');
+    await page.waitForFunction(() => /Punch-in tamam/.test(document.querySelector('#status').textContent), null, { timeout: 60000 });
+    assert.deepEqual(await S(() => window.__daw.comps.map((c) => c.takes.map((t) => t.name))), [['Orijinal', 'Take 2', 'Take 3']]);
+    // yeni ses → take\'ler temizlenir
+    await resetTest();
+    assert.equal(await S(() => window.__daw.comps.length), 0);
+    return `bölge dışı birebir, bölge RMS ${g.rms.toFixed(3)}, 3 take (orijinal / yeni / erken bitirilen), take geçişleri birebir`;
   });
 
   await step('Alt bölme / swing: düz · üçleme (12/8) · özel oran; kayıttan ölç; davul, bas ve akor shuffle (X . t) aynı ızgarada; quantize ve cetvel orana uyar; geri alınır', async () => {

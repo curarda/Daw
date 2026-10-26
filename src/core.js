@@ -1893,6 +1893,7 @@ function newProject() {
     drums: { on: false, loop: 'auto', startBar: 1, fills: true }, // startBar: davulun girdiği ilk ölçü (loop'un 1. ölçüsü burası) · fills: bölüm geçişlerinde davul fill'i
     guitar: root.Core && root.Core.defaultGuitarState ? root.Core.defaultGuitarState('4/4') : null, // gitar katmanı (guitar.js): enstrüman seçimi, bölüm bazlı partiler, presetler
     bass: root.Core && root.Core.Bass ? root.Core.Bass.defaultBassTrack() : null, // bas katmanı (bass.js): üretilen notalar, bölüm ayarları, döngüler, profiller
+    vocalFx: root.Core && root.Core.VFX_DEFAULTS ? Object.assign({}, root.Core.VFX_DEFAULTS) : { on: false }, // vokal temizliği (vocalfx.js)
     quant: { grid: '1/8', strength: 100 }, taps: [],
   };
 }
@@ -2513,7 +2514,7 @@ const Core = {
   nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, renderSynth, SYNTH, synthEnv, synthPianoSample, synthTestVocal,
-  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, readMidiFile, importMidi, pickMelodyTrack, arrangePiano, swingMap, swingUnmap, estimateSwing, swingToPart, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
+  PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, readMidiFile, importMidi, pickMelodyTrack, arrangePiano, swingMap, swingUnmap, estimateSwing, swingToPart, getFFT, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,
   newProject, derive, totalBars, effectiveOffset, findEdit, pianoEvents, chordChart, exportMidi,
   bytesToBase64, base64ToBytes, firstOnset, measureLatency, keyMidi,
 };

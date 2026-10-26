@@ -283,3 +283,14 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
 .bs-qgrid { display: grid; gap: 2px; margin: 2px 0 6px; }
 .bs-qgrid input { width: 100%; min-width: 0; padding: 2px 3px; font-size: 11px; text-align: center; }
 .bs-qgrid input.beat { border-color: var(--accent2); }
+
+/* canlı perde göstergesi (kayıt / punch-in) */
+.livepitch { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.livepitch .lp-bar { position: relative; flex: 1; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #5a2a2a 0%, #4a4a2a 30%, #2a5a3a 45%, #2a5a3a 55%, #4a4a2a 70%, #5a2a2a 100%); overflow: hidden; }
+.livepitch .lp-mid { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: #cfd6e6; opacity: .8; }
+.livepitch #lpNeedle { position: absolute; top: 1px; bottom: 1px; width: 6px; margin-left: -3px; border-radius: 3px; background: #8892a6; left: 50%; transition: left .06s linear, background .1s; }
+.livepitch #lpNeedle.ok { background: #5fd08a; } .livepitch #lpNeedle.warn { background: #ffd166; } .livepitch #lpNeedle.bad { background: #ef6b6b; }
+.livepitch #lpText { min-width: 92px; font-variant-numeric: tabular-nums; font-weight: 600; }
+#takeList .take-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0; }
+#takeList .take-row b { min-width: 74px; }
+#takeList button.on { background: var(--accent, #3d7be0); color: #fff; }

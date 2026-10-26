@@ -407,6 +407,7 @@ function suggestDrumLoop(notes, settings, est = null) {
     const ff = L.feel === feel ? 1 : 0;
     let total = 0.4 * acc + 0.4 * tf + 0.2 * ff + L.base;
     const why = [];
+    if (settings.prefDelta) { const pd = settings.prefDelta(L); if (pd) { total += pd; why.push(pd > 0 ? `senin 👍 tercihin (+${pd.toFixed(2)})` : `senin 👎 tercihin (${pd.toFixed(2)})`); } }
     if (settings.clickFeel === 'halftime' && L.id === 'half') { total += 0.12; why.push('click deseni yarım zaman seçili'); }
     why.push(tf === 1 ? `tempo ${bpm} BPM aralıkta (${L.bpm[0]}–${L.bpm[1]})` : `tempo ${bpm} BPM aralık dışı (${L.bpm[0]}–${L.bpm[1]})`);
     if (mp) why.push(acc > 0.25 ? 'vurguları melodinin güçlü vuruşlarıyla örtüşüyor' : acc > 0 ? 'vurgularla zayıf örtüşme' : 'vurguları melodinin güçlü vuruşlarına ters düşüyor');

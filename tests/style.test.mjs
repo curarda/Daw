@@ -510,6 +510,60 @@ await step('Bölüm tipi normalizasyonu + mod × tip × havuz hiyerarşik havuzl
   return `P(IV | I): verse ${pv.get('5M').toFixed(3)}, nakarat ${pc.get('5M').toFixed(3)}, mod ${pm.get('5M').toFixed(3)} · P(V | I): verse ${pv.get('7M').toFixed(3)}, nakarat ${pc.get('7M').toFixed(3)} · DAW "Nakarat" bölümünde I→V payı ${sn.toFixed(2)} > "Verse" ${sv.toFixed(2)} · önerici: verse ${rv.items[0].symbols.join(' ')}, nakarat ${rc.items[0].symbols.join(' ')}`;
 });
 
+
+await step('Progresyonu bitirdim: bütün progresyon ağırlıklı şarkı + seçilen akorların önceki/sonraki ilişkileri (ikili + üçlü bağlam); yeniden bitirince çoğalmaz; silinir', () => {
+  const dsU = Style.newDataset(), fb = Style.newFeedback();
+  const ch = (root, q) => ({ root, q, bass: null });
+  const cyc = [[0, ''], [9, 'm'], [5, ''], [7, '']]; // I vi IV V (Do majör)
+  const chords = [...cyc, ...cyc].map(([r, q], i) => ({ chord: ch(r, q), bars: 1, chosen: i === 1 || i === 5 })); // Am elle seçildi (iki kez)
+  const spec = { id: 'learn-t1', title: 'Test', sections: [{ name: 'Verse', type: 'verse', tonic: 0, mode: 'major', chords }] };
+  const r = Style.learnProgression(dsU, fb, spec);
+  assert.ok(r.ok); assert.equal(dsU.songs.length, 1); assert.equal(dsU.songs[0].weight, Style.USER_SONG_WEIGHT);
+  assert.deepEqual(dsU.songs[0].sections[0].chords, ['C', 'Am', 'F', 'G', 'C', 'Am', 'F', 'G']);
+  assert.equal(r.summary.chosen, 2);
+  const ev = fb.events[0];
+  const has = (arr, ...k) => arr.some((x) => x.join('>') === k.join('>'));
+  // seçilen Am: öncesi (C→Am), sonrası (Am→F) ve üçlü bağlamlar
+  assert.ok(has(ev.transitions, '0M', '9m') && has(ev.transitions, '9m', '5M'), 'önce + sonra geçişleri');
+  assert.ok(has(ev.triples, '7M', '0M', '9m') && has(ev.triples, '0M', '9m', '5M') && has(ev.triples, '9m', '5M', '7M'), 'üçlü bağlamlar');
+  assert.ok(!has(ev.transitions, '5M', '7M'), 'seçilmeyen komşu çifti beğenilmez');
+  const m = Style.buildModel(dsU, {}, fb);
+  assert.equal(m.nMode('major'), Style.USER_SONG_WEIGHT, 'şarkı ağırlığı sayıma girer');
+  assert.ok(m.feedback.mult('major', '0M', '9m') > 1 && m.feedback.mult3('major', '0M', '9m', '5M') > 1);
+  // model: I'den sonra vi (senin geçişin) başka diatonik akorlardan olası; ikinci derece (I→vi→?) IV'ü öne çıkarır
+  const d1 = m.next('major', '0M'), d2 = m.next('major', '9m', '0M');
+  assert.ok(d1.get('9m') > d1.get('2m') && d1.get('9m') > d1.get('4m'), 'P(vi | I) yükseldi');
+  assert.equal(d2.order, 2, 'tek bitirilen progresyon kullandığı bağlamda ikinci dereceyi açar');
+  assert.ok(d2.get('5M') > d2.get('7M') && d2.get('5M') > 0.4, `P(IV | I→vi) = ${d2.get('5M').toFixed(2)}`);
+  // sonrası-önceki: vi'dan sonra IV, I'den sonra gelen başka bir akorla (I→ii) karşılaştırınca da iyi
+  const sc = Style.makeStyleScorer(m, { lambda: 1 });
+  const sec = { tonic: 0, mode: 'major', name: 'Verse' };
+  const good = sc.score(ch(9, 'm'), ch(0, ''), ch(5, ''), sec).trans, bad = sc.score(ch(9, 'm'), ch(0, ''), ch(2, 'm'), sec).trans;
+  assert.ok(good > bad, 'I → vi → IV, I → vi → ii\'den daha olası');
+  // yeniden bitirince çoğalmaz
+  Style.learnProgression(dsU, fb, spec);
+  assert.equal(dsU.songs.length, 1); assert.equal(fb.events.length, 1);
+  assert.equal(Style.progressionInfo(dsU, fb, 'learn-t1').events, 1);
+  // başka proje ayrı birikir; silince yalnızca kendisi gider
+  Style.learnProgression(dsU, fb, Object.assign({}, spec, { id: 'learn-t2' }));
+  assert.equal(dsU.songs.length, 2);
+  const f = Style.forgetProgression(dsU, fb, 'learn-t1');
+  assert.equal(f.songs, 1); assert.equal(dsU.songs.length, 1); assert.ok(fb.events.every((e) => e.learnId === 'learn-t2'));
+  // ton onaysız bölüm → öğrenilmez
+  const none = Style.learnProgression(Style.newDataset(), Style.newFeedback(), { id: 'x', sections: [{ name: 'A', tonic: null, mode: null, chords }] });
+  assert.equal(none.ok, false);
+  return `P(vi|I) ${d1.get('9m').toFixed(2)} · P(IV|I→vi) ${d2.get('5M').toFixed(2)} (ikinci derece) · ${r.summary.pairs} geçiş + ${r.summary.triples} üçlü bağlam`;
+});
+
+await step('👍/👎 üçlü bağlam: öncesi bilinen geçişin çarpanı iki katmanlı (ikili × üçlü), sınırlı 0,5–2', () => {
+  const fb = Style.newFeedback();
+  for (let i = 0; i < 12; i++) fb.events.push({ t: i, kind: 'chord', mode: 'major', transitions: [['9m', '5M']], triples: [['0M', '9m', '5M']], like: 1 });
+  const fi = Style.buildModel(Style.newDataset(), {}, fb).feedback;
+  assert.equal(fi.mult('major', '9m', '5M'), 2); assert.equal(fi.mult3('major', '0M', '9m', '5M'), 2);
+  assert.equal(fi.mult3('major', '5M', '9m', '5M'), 1, 'başka bağlam etkilenmez');
+  return 'çarpan sınırı 2';
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nStil testleri geçti.');
