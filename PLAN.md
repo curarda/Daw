@@ -11,6 +11,18 @@ Source: Codex draft (read-only), corrected by the Visionary. Decisions in VTO.md
 5. Chord-choice storage in Rock 4 must be the **minimal** design that restores the exact chords after style-model changes; the Same Page meeting may simplify the draft's `chordChoices` scheme.
 6. "Demo yap" using the best-ranked pack is a **deferred issue**, not part of these rocks (see ISSUES.md).
 
+## Same Page amendments (round 1) — normative, override the draft below
+
+- **A1 (findings 2, 3, 8):** the saved chord choice primitive is `{sectionId, relBar, half, chord}` (+ lock/pin state kept separately), built in **Rock 3** (used by unlink) and reused by Rock 4. Section-owned content in versions is captured section-relative and rebased onto live boundaries on apply. Drop the draft's section-relative quarter ranges.
+- **A2 (1):** after applying a version snapshot recompute `chordPinsSig` before `refresh()`.
+- **A3 (4):** a version's structure signature = meter + ordered `id:barLength`; any mismatch blocks switching.
+- **A4 (5):** Rock 2 defines an explicit availability merge for locked piano/guitar layers against the single `guitar.instrument` value.
+- **A5 (6):** packs store base settings only; the last-chorus extra is computed in the effective-arrangement resolver after link resolution.
+- **A6 (7):** bass order: synchronize independent sources → resolve linked target bars → loop/tie policy (target bars always from source; loops referencing a linked target are ignored with a warning). Two consecutive refreshes yield identical events.
+- **A7 (9):** bars not covered by any section follow the global arrangement.
+- **A8 (10):** Rock 1 is built in stages 1a (shared event facade, legacy output equivalent, equivalence test first) → 1b (gating and boundary clipping in playback, mix, MIDI) → 1c (migration, undo/redo, UI); each stage has its own proof.
+- **A9 (11):** proof for every rock = `npm test && npm run test:ui` with the rock's new tests registered once in `package.json`; browser assertions cover scheduled events and rendered stems (held notes, fills at disabled boundaries).
+
 ## Rocks (dependency order: 1 → 2 → 3 → 4)
 
 ## Facts
@@ -95,13 +107,11 @@ Legacy projects must not acquire automatic muting on load. Notes spanning bounda
 
 **Proof command**
 
-After implementation; these commands rebuild generated output:
-
 ```sh
-npm test && node tests/matrix.test.mjs &&
-npm run test:ui &&
-TONE_JS=node_modules/tone/build/Tone.js node tests/arrangement-ui.test.mjs
+npm test && npm run test:ui
 ```
+
+(See A9; the rock's new tests are registered in package.json scripts.)
 
 Assertions: legacy event equivalence, automatic/manual cells, boundary clipping, parsed MIDI notes, actual stem silence away from release tails, UI undo/redo and save/load.
 
@@ -163,10 +173,10 @@ VTO descriptions are musical intentions, not always literal preset IDs. Existing
 **Proof command**
 
 ```sh
-npm test && node tests/packs.test.mjs &&
-npm run test:ui &&
-TONE_JS=node_modules/tone/build/Tone.js node tests/arrangement-ui.test.mjs
+npm test && npm run test:ui
 ```
+
+(See A9; the rock's new tests are registered in package.json scripts.)
 
 Assertions: all catalog references exist, 14/1/1 eligibility, stable ranking/cycle/wrap, unchanged tempo/meter, locked-column preservation, final-chorus dynamics and single-step undo of the whole apply.
 
@@ -230,10 +240,10 @@ Absolute-bar chord locks, bass ties/loops and chained sources require rebasing. 
 **Proof command**
 
 ```sh
-npm test && node tests/links.test.mjs &&
-npm run test:ui &&
-TONE_JS=node_modules/tone/build/Tone.js node tests/arrangement-ui.test.mjs
+npm test && npm run test:ui
 ```
+
+(See A9; the rock's new tests are registered in package.json scripts.)
 
 Assertions: source changes propagate through chains, target-relative offsets, equal-length/cycle validation, identical effective events before/after unlink, delete/resize preservation, import guards and MIDI/mix parity.
 
@@ -332,10 +342,10 @@ Snapshotting only chord options is insufficient for reproducible chords because 
 **Proof command**
 
 ```sh
-npm test && node tests/versions.test.mjs &&
-npm run test:ui &&
-TONE_JS=node_modules/tone/build/Tone.js node tests/arrangement-ui.test.mjs
+npm test && npm run test:ui
 ```
+
+(See A9; the rock's new tests are registered in package.json scripts.)
 
 Assertions: snapshot allowlist and non-recursion, exact chord restoration after style changes, rename/delete/save/load, mixer-aware undo/redo, shared audio/timing invariance, dirty-state handling and rapid playback switching without duplicate schedules.
 
