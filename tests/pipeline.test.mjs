@@ -1319,6 +1319,161 @@ await step('MIDI içe aktarma: kendi .mid çıktımız projeye geri döner (melo
   return `kendi çıktımız: ${r.notes.length} nota, ${r.sections.length} bölüm, ${r.locks.length} akor kilidi, ${r.pianoStyle}, bas, davul ölçü ${r.drum.startBar} · 6/8: ${r68.settings.bpm} BPM · 5/4 uyarısı`;
 });
 
+const customNote = (median, extra = {}) => Object.assign({ median, nearest: Math.round(median), section: 'a', f0i: 0, f1i: 100, q0: 0, q1: 1, t0: 0, t1: 1 }, extra);
+const customTrack = { f0: Float32Array.from({ length: 100 }, () => Core.midiToHz(61)), hopSec: 0.01 };
+const customAt = (extra = {}) => Object.assign({}, Core.AUTOTUNE_DEFAULTS, { enabled: true, target: 'custom', customSets: { a: [0, 2] } }, extra);
+const customCorrection = (note, at = customAt()) => Core.computeCorrection(customTrack, [note], at, g);
+
+await step('Custom autotune: sparse sets, actual pitch, personal reference and lower ties', () => {
+  const at = customAt({ customSets: { a: [11, 0, 2, 3, 4, 6, 7] } });
+  for (const [pitch, target] of [[61, 60], [60.7, 60], [61.3, 62], [70, 71], [69, 67], [69.1, 71]]) {
+    assert.equal(customCorrection(customNote(pitch), at).info[0].target, target);
+  }
+  assert.equal(customCorrection(customNote(61.3, { refCents: 40 }), at).info[0].target, 60);
+  for (const pitch of [60, 60.3, 65.9, 66, 66.1, 71.8]) {
+    assert.equal(customCorrection(customNote(pitch), customAt({ customSets: { a: [0] } })).info[0].target, pitch <= 66 ? 60 : 72);
+  }
+  const oldNearest = (m, pcs) => {
+    let best = Math.round(m), distance = Infinity;
+    for (let k = Math.floor(m) - 2; k <= Math.ceil(m) + 2; k++) {
+      if (pcs.includes(Core.mod12(k)) && Math.abs(k - m) < distance) { best = k; distance = Math.abs(k - m); }
+    }
+    return best;
+  };
+  for (const mode of Core.MODE_ORDER) for (let tonic = 0; tonic < 12; tonic++) {
+    const pcs = Core.scalePcs(tonic, mode);
+    for (let pitch = 48; pitch <= 84; pitch += 0.25) {
+      assert.equal(Core.nearestScaleNote(pitch, pcs), oldNearest(pitch, pcs), 'elle scale snap değişmedi');
+      assert.equal(customCorrection(customNote(pitch, { scalePcs: pcs }), customAt({ target: 'scale', skipChromatic: false })).info[0].target, oldNearest(pitch, pcs));
+    }
+  }
+});
+
+await step('Custom autotune: empty sets, chromatic bypass, controls and manual locks', () => {
+  for (const customSets of [undefined, {}, { a: [] }, { a: '' }]) {
+    const r = customCorrection(customNote(61), customAt({ customSets }));
+    assert.equal(r.info[0].target, null); assert.equal(r.info[0].source, 'none'); assert.ok(r.shift.every((x) => x === 0));
+  }
+  const notes = [60, 61, 62].map((m, i) => customNote(m, { q0: i, q1: i + 1, scalePcs: [0, 2] }));
+  assert.ok(Core.isChromaticPassing(1, notes, [0, 2], g));
+  const r = Core.computeCorrection(customTrack, notes, customAt(), g);
+  assert.equal(r.info[1].target, 60); assert.equal(r.info[1].chromatic, false);
+  for (const keepVibrato of [true, false]) for (const retuneMs of [0, 30, 100]) {
+    const full = customCorrection(customNote(61), customAt({ keepVibrato, retuneMs }));
+    const half = customCorrection(customNote(61), customAt({ keepVibrato, retuneMs, amount: 50 }));
+    full.shift.forEach((x, i) => assert.ok(Math.abs(half.shift[i] - x / 2) < 1e-5));
+    assert.ok(full.info[0].applied < 0);
+  }
+  const slow = customCorrection(customNote(61), customAt({ retuneMs: 100 }));
+  const fast = customCorrection(customNote(61), customAt({ retuneMs: 0 }));
+  assert.ok(Math.abs(slow.shift[5]) < Math.abs(fast.shift[5]));
+  const vibratoTrack = { hopSec: 0.01, f0: Float32Array.from({ length: 100 }, (_, i) => Core.midiToHz(61 + 0.2 * Math.sin(i / 3))) };
+  const vibrato = (keepVibrato) => Core.computeCorrection(vibratoTrack, [customNote(61)], customAt({ retuneMs: 0, keepVibrato }), g);
+  assert.notDeepEqual(vibrato(true).shift, vibrato(false).shift);
+  assert.equal(customCorrection(customNote(61, { section: null })).info[0].target, null);
+  assert.equal(customCorrection(customNote(61, { locked: true })).info[0].target, null);
+  assert.equal(customCorrection(customNote(61), customAt({ enabled: false })).info[0].target, null);
+  const manual = customCorrection(customNote(61, { locked: true, manualTarget: 65 }));
+  assert.equal(manual.info[0].target, 65); assert.equal(manual.info[0].source, 'manual');
+});
+
+await step('Custom autotune: own section sets, heard-note chords and unchanged key histogram', () => {
+  const p = JSON.parse(JSON.stringify(proj)); p.noteEdits = []; p.pitch.tuning = 'a440';
+  p.autotune = customAt({ customSets: Object.fromEntries(p.sections.map((s, i) => [s.id, [i ? 7 : 0]])) });
+  const a = Core.derive(p, st);
+  for (const n of a.notes) {
+    assert.ok(p.autotune.customSets[n.section].includes(Core.mod12(n.corr.target)));
+    assert.equal(n.effMidi, n.corr.target);
+  }
+  for (const c of a.chords) for (const n of c.notes) assert.equal(n.pc, Core.mod12(a.notes.find((note) => note.id === n.id).effMidi));
+  p.autotune.customSets = Object.fromEntries(p.sections.map((s) => [s.id, [2]]));
+  const b = Core.derive(p, st);
+  assert.deepEqual(a.keyInfo, b.keyInfo);
+  p.autotune.amount = 49;
+  assert.ok(Core.derive(p, st).notes.every((n) => !n.autoMoved && n.effMidi === n.nearest));
+  p.autotune.amount = 50;
+  assert.ok(Core.derive(p, st).notes.some((n) => n.autoMoved));
+  const n = st.rawNotes[0]; p.noteEdits = [{ t0: n.t0, t1: n.t1, label: 69 }];
+  const labeled = Core.derive(p, st);
+  assert.equal(labeled.notes[0].effMidi, 69); assert.equal(Core.mod12(labeled.notes[0].corr.target), 2);
+  assert.deepEqual(Core.customFillSet(labeled.notes, labeled.notes[0].section), Core.customFillSet(b.notes, b.notes[0].section));
+  p.autotune.customSets = Object.fromEntries(p.sections.map((s) => [s.id, [7]]));
+  const relabeledSet = Core.derive(p, st);
+  assert.deepEqual(relabeledSet.keyInfo, labeled.keyInfo);
+  assert.equal(relabeledSet.notes[0].effMidi, 69);
+  assert.equal(Core.mod12(relabeledSet.notes[0].corr.target), 7);
+  const linked = Core.newProject(); linked.pitch.tuning = 'a440';
+  linked.sections = [{ id: 'a', startBar: 1, endBar: 1 }, { id: 'b', startBar: 2, endBar: 2, link: { sourceId: 'a' } }];
+  linked.autotune = customAt({ customSets: { a: [0], b: [7], _all: [2] } });
+  const raw = [customNote(61, { t0: 0, t1: 1 }), customNote(61, { t0: 2, t1: 3 })];
+  assert.deepEqual(Core.derive(linked, { rawNotes: raw, track: customTrack, duration: 4 }).notes.map((n) => Core.mod12(n.corr.target)), [0, 7]);
+});
+
+await step('Custom fill: sung-duration weighting, exact 3% boundary and empty sections', () => {
+  const notes = [customNote(60, { t1: 94 }), customNote(62, { t1: 3 }), customNote(64, { t1: 2.99 }), customNote(65, { t1: 0.01 }), customNote(67, { section: 'b', t1: 1000 })];
+  assert.deepEqual(Core.customFillSet(notes, 'a'), [0, 2]);
+  assert.deepEqual(Core.customFillSet(notes, 'missing'), []);
+  assert.deepEqual(Core.customFillSet([0, -1, NaN, Infinity].map((t1) => customNote(60, { t1 })), 'a'), []);
+  assert.deepEqual(Core.customFillSet([customNote(-1, { locked: true, label: 60, manualTarget: 62 })], 'a'), [11]);
+});
+
+await step('Custom state: defaults isolation, normalization and legacy compatibility', () => {
+  const a = Core.newProject(), b = Core.newProject(); a.autotune.customSets.a = [0];
+  assert.deepEqual(b.autotune.customSets, {}); assert.deepEqual(Core.AUTOTUNE_DEFAULTS.customSets, {});
+  const original = { target: 'custom', customSets: { a: [11, 0, 0, 2, -1, 12, 1.5, '3', null], b: '', c: {}, _all: [4] } };
+  const normalized = Core.normalizeCustomSets(original);
+  assert.deepEqual(normalized.customSets, { a: [0, 2, 11], b: [], c: [], _all: [4] });
+  assert.deepEqual(original.customSets.a, [11, 0, 0, 2, -1, 12, 1.5, '3', null]);
+  assert.deepEqual(Core.normalizeCustomSets(original, ['a']).customSets, { a: [0, 2, 11] });
+  assert.deepEqual(Core.normalizeCustomSets(original, []).customSets, { _all: [4] });
+  assert.deepEqual(Core.normalizeCustomSets(original, ['_all']).customSets, { _all: [4] });
+  assert.deepEqual(Core.normalizeCustomSets(original, ['_all', 'a']).customSets, { a: [0, 2, 11] });
+  assert.deepEqual(Core.normalizeCustomSets({ customSets: [] }).customSets, {});
+  const saved = JSON.stringify(original);
+  assert.deepEqual(Core.normalizeCustomSets(JSON.parse(saved), ['b']).customSets, { b: [] });
+  assert.deepEqual(Core.normalizeCustomSets(JSON.parse(saved), ['a', 'b']).customSets, { a: [0, 2, 11], b: [] });
+  const legacy = JSON.parse(JSON.stringify(proj)); delete legacy.autotune.customSets;
+  const before = Core.derive(legacy, st);
+  legacy.autotune = Core.normalizeCustomSets(legacy.autotune, legacy.sections.map((s) => s.id));
+  assert.equal(JSON.stringify(Core.derive(legacy, st)), JSON.stringify(before));
+});
+
+await step('Custom fill: derive/split/quantize original durations and whole-note membership', () => {
+  const p = Core.newProject(); p.pitch.tuning = 'a440'; p.settings.bpm = 120;
+  p.sections = [{ id: 'a', startBar: 1, endBar: 1 }, { id: 'b', startBar: 2, endBar: 2 }];
+  const raw = [customNote(60, { t0: 0, t1: 1, f0i: 0, f1i: 100 }), customNote(62, { t0: 1.9, t1: 2.4, f0i: 190, f1i: 240 })];
+  const state = { rawNotes: raw, duration: 4 };
+  const original = Core.derive(p, state);
+  assert.equal(original.notes[1].section, 'a');
+  assert.deepEqual(Core.customFillSet(original.notes, 'a'), [0, 2]);
+  const quant = Core.quantizeTargets(original.notes, original.g, { gridQ: 0.5, strength: 1 });
+  p.noteEdits = quant.targets.filter((t) => t.q0to != null).map((t) => ({ t0: t.note.t0, t1: t.note.t1, q0to: t.q0to }));
+  const snapped = Core.derive(p, state);
+  assert.equal(snapped.notes[1].section, 'b');
+  assert.deepEqual(Core.customFillSet(snapped.notes, 'a'), [0]);
+  assert.deepEqual(Core.customFillSet(snapped.notes, 'b'), [2]);
+  assert.equal(snapped.notes[1].t1 - snapped.notes[1].t0, 0.5);
+  // Eşit olmayan sıkışma: D'nin duyulan süresi %3 altına iner, özgün süresi %3 üstünde kalır.
+  const warpedRaw = [customNote(62, { t0: 0, t1: 0.5 }), customNote(60, { t0: 0.6, t1: 1.6 })];
+  p.noteEdits = [{ t0: 0.6, t1: 1.6, q0to: 0.02 }];
+  const warped = Core.derive(p, { rawNotes: warpedRaw, duration: 4 });
+  assert.equal(warped.timeMap.identity, false);
+  assert.ok(warped.notes[0].tl1 - warped.notes[0].tl0 < 0.03 * (warped.notes[1].tl1 - warped.notes[0].tl0));
+  assert.deepEqual(Core.customFillSet(warped.notes, 'a'), [0, 2]);
+  // Tek olayın iki farklı perdeli parçası; ikinci parça bölüme kendi başlangıcıyla atanır.
+  const track = { hopSec: 0.01, f0: Float32Array.from({ length: 300 }, (_, i) => Core.midiToHz(i < 200 ? 60 : 67)) };
+  const whole = customNote(60, { t0: 1.5, t1: 2.5, f0i: 150, f1i: 250 });
+  p.noteEdits = []; p.noteSplits = [2];
+  const split = Core.applyNoteSplits([whole], track, p.noteSplits);
+  const dd = Core.derive(p, { rawNotes: split, track, duration: 4 });
+  assert.deepEqual(dd.notes.map((n) => [n.nearest, n.section, n.t1 - n.t0]), [[60, 'a', 0.5], [67, 'b', 0.5]]);
+  assert.deepEqual(Core.customFillSet(dd.notes, 'a'), [0]);
+  assert.deepEqual(Core.customFillSet(dd.notes, 'b'), [7]);
+  const unsplit = Core.derive(p, { rawNotes: [whole], track, duration: 4 });
+  assert.deepEqual(Core.customFillSet(unsplit.notes, 'a'), [0]);
+  assert.deepEqual(Core.customFillSet(unsplit.notes, 'b'), []);
+});
+
 console.log(results.join('\n'));
 if (failures) { console.error(`\n${failures} adım başarısız`); process.exit(1); }
 console.log('\nTüm adımlar geçti.');

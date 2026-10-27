@@ -382,6 +382,7 @@ async function histRestore(entry, was) {
   HIST.hold++;
   try {
     S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(JSON.parse(str)));
+    S.proj.autotune = C.normalizeCustomSets(S.proj.autotune, S.proj.sections.map((s) => s.id));
     Object.assign(S.proj.mixer, keep, typeof entry === 'string' ? {} : entry.mixer);
     GT.cache = null;
     BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; // bas geçmişi eski izin anlık görüntüleriydi
@@ -3775,6 +3776,7 @@ async function openProject(file) {
   const audioData = p.audioData, midiData = p.midiData;
   delete p.audioData; delete p.midiData; delete p.savedAt;
   S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(p));
+  S.proj.autotune = C.normalizeCustomSets(S.proj.autotune, S.proj.sections.map((s) => s.id));
   S.versionPinsOnLoad = !!(S.proj.versions.activeId && S.proj.chordChoices.length);
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
