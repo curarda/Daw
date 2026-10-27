@@ -306,3 +306,14 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
 #matrixTable { overflow-x: auto; }
 
 #packSuggestions small { display: block; font-size: 10px; opacity: .75; }
+
+/* Bölüm bağları: ortak kaynak / bağı kopar eylemleri. */
+.section-link { margin: 6px 0; }
+.section-link label { display: flex; align-items: center; gap: 6px; }
+.link-info { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+.link-info button { font-size: 11px; padding: 3px 7px; }
+.link-readonly { border: 0; margin: 0; padding: 0; min-width: 0; }
+.link-readonly:disabled { opacity: .65; }
+
+.version-row { border-top: 1px solid var(--line); padding: 8px 0; }
+.version-row .row { margin-top: 5px; flex-wrap: wrap; }
