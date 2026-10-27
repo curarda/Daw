@@ -2650,7 +2650,8 @@ function newProject() {
     pitch: Object.assign({}, PITCH_DEFAULTS, SEG_DEFAULTS),
     sections: [],
     matrix: { enabled: false, rows: {} },
-    pack: { id: null, locks: { piano: false, guitar: false, bass: false, drums: false } },
+    preserveChords: false,
+    pack: { id: null, selectedId: null, locks: { piano: false, guitar: false, bass: false, drums: false } },
     versions: { activeId: null, items: [] },
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
@@ -6678,7 +6679,7 @@ const PACKS = freeze([
 ]);
 function migratePack(proj) {
   const old = proj.pack || {};
-  proj.pack = { ...old, id: old.id ?? null, locks: Object.fromEntries(layers.map((l) => [l, old.locks?.[l] === true])) };
+  proj.pack = { ...old, id: old.id ?? null, selectedId: old.selectedId === undefined ? (PACKS.some((p) => p.id === old.id && p.meters.includes(proj.settings?.meter)) ? old.id : null) : old.selectedId, locks: Object.fromEntries(layers.map((l) => [l, old.locks?.[l] === true])) };
   if (C.migrateLinks) C.migrateLinks(proj);
   return proj;
 }
@@ -6747,6 +6748,7 @@ const C = root.Core, clone = (v) => JSON.parse(JSON.stringify(v));
 const length = (s) => s.endBar - s.startBar + 1;
 function migrateLinks(proj) {
   for (const s of proj.sections || []) if (s.link === undefined) s.link = null;
+  if (proj.preserveChords === undefined) proj.preserveChords = false;
   if (!Array.isArray(proj.chordChoices)) proj.chordChoices = [];
   if (C.migrateVersions) C.migrateVersions(proj);
   return proj;
@@ -6789,24 +6791,70 @@ const linkedRoot = (proj, d, id) => resolveLinks(proj, d)[id]?.rootId || id;
 function captureChordChoices(proj, d, sectionId) {
   const s = d.sections.find((s) => s.id === sectionId);
   if (!s) return [];
-  return d.chords.filter((c) => c.section === sectionId).map((c) => ({ sectionId, relBar: c.bar - s.startBar, half: c.half || 0, chord: clone(c.chord), state: c.locked ? 'lock' : c.pinned ? 'pin' : 'auto' }));
+  const rootId = linkedRoot(proj, d, sectionId);
+  return d.chords.filter((c) => c.section === sectionId).map((c) => {
+    const record = { sectionId, relBar: c.bar - s.startBar, half: c.half || 0, chord: clone(c.chord), state: c.locked ? 'lock' : c.pinned ? 'pin' : 'auto' };
+    const prior = (proj.chordChoices || []).find((x) => x.sectionId === rootId && x.relBar === record.relBar && x.half === record.half);
+    if (prior && Object.prototype.hasOwnProperty.call(prior, 'source')) record.source = prior.source;
+    return record;
+  });
 }
 function applyChordChoices(proj, d) {
   for (const s of d.sections) {
     const choices = (proj.chordChoices || []).filter((c) => c.sectionId === s.id && c.relBar >= 0 && c.relBar < length(s));
     if (!choices.length) continue;
     const old = d.chords.filter((c) => c.section === s.id);
-    const slots = choices.slice().sort((a, b) => a.relBar - b.relBar || a.half - b.half).map((c, i, all) => {
-      const bar = s.startBar + c.relBar, q0 = (bar - 1 + c.half / 2) * d.g.barQ;
-      const next = all[i + 1], q1 = next ? (s.startBar - 1 + next.relBar + next.half / 2) * d.g.barQ : s.endBar * d.g.barQ;
-      const sl = clone(old.find((x) => x.bar === bar && (x.half || 0) === c.half) || old[0] || {});
-      const lock = (proj.chordLocks || []).find((l) => l.bar === bar && (l.half == null || l.half === c.half));
-      return Object.assign(sl, { section: s.id, bar, half: c.half || (next?.relBar === c.relBar ? 0 : null), q0, q1, chord: clone(c.chord), locked: c.state === 'lock', pinned: c.state === 'pin', lockSrc: c.state === 'lock' ? lock?.src || 'user' : null });
-    });
+    const at = (c) => (s.startBar - 1 + c.relBar + c.half / 2) * d.g.barQ;
+    const complete = proj.preserveChords || Array.from({ length: length(s) }, (_, i) => i).every((i) => choices.some((c) => c.relBar === i && c.half === 0)) || old.every((x) => choices.some((c) => at(c) === x.q0));
+    const ordered = choices.slice().sort((a, b) => at(a) - at(b));
+    const slots = complete ? ordered.map((c, i) => {
+      const q0 = at(c), q1 = ordered[i + 1] ? at(ordered[i + 1]) : s.endBar * d.g.barQ;
+      return { ...clone(old.find((x) => x.q0 === q0) || old[0] || {}), section: s.id, bar: s.startBar + c.relBar, half: c.half || (q1 - q0 < d.g.barQ ? 0 : null), q0, q1 };
+    }) : old;
+    for (const sl of slots) {
+      const c = choices.find((c) => at(c) === sl.q0);
+      if (!c) continue;
+      const lock = (proj.chordLocks || []).find((l) => l.bar === sl.bar && (l.half == null || l.half === (sl.half || 0)));
+      // Kullanıcının yeni kilidi, yalnızca dondurmanın seçimini geçersiz kılar.
+      if (c.source === 'freeze' && lock && lock.src !== 'freeze') {
+        sl.chord = clone(lock.chord); sl.locked = true; sl.pinned = false; sl.lockSrc = lock.src || 'user';
+      } else Object.assign(sl, { chord: clone(c.chord), locked: c.state === 'lock', pinned: c.state === 'pin', lockSrc: c.state === 'lock' ? lock?.src || 'user' : null });
+    }
     d.chords = d.chords.filter((c) => c.section !== s.id).concat(slots).sort((a, b) => a.q0 - b.q0);
   }
   return d.chords;
 }
+const chordsAreFrozen = (proj) => proj.preserveChords === true;
+function rekeyChordChoices(proj, fromId, toId) {
+  proj.chordChoices = (proj.chordChoices || []).map((c) => c.sectionId === fromId ? { ...c, sectionId: toId } : c);
+}
+function freezeChords(proj, d) {
+  if (chordsAreFrozen(proj)) return { ok: true, warnings: [] };
+  try {
+    const q = clone(proj), links = resolveLinks(proj, d);
+    if (links.warnings.length) return { ok: false, warnings: links.warnings };
+    q.chordChoices ||= []; q.chordLocks ||= [];
+    for (const s of d.sections.filter((s) => !links[s.id])) {
+      for (const c of captureChordChoices(proj, d, s.id)) {
+        if (!q.chordChoices.some((x) => x.sectionId === c.sectionId && x.relBar === c.relBar && x.half === c.half)) q.chordChoices.push({ ...c, source: 'freeze' });
+      }
+    }
+    for (const c of d.chords.filter((c) => !d.sections.some((s) => c.bar >= s.startBar && c.bar <= s.endBar))) {
+      if (!q.chordLocks.some((l) => l.bar === c.bar && (l.half == null || l.half === c.half))) q.chordLocks.push({ bar: c.bar, half: c.half, chord: clone(c.chord), src: 'freeze' });
+    }
+    q.preserveChords = true;
+    Object.assign(proj, q);
+    return { ok: true, warnings: [] };
+  } catch (e) { return { ok: false, warnings: [e.message] }; }
+}
+function unfreezeChords(proj) {
+  if (!chordsAreFrozen(proj)) return { ok: true, warnings: [] };
+  proj.chordChoices = (proj.chordChoices || []).filter((c) => c.source !== 'freeze');
+  proj.chordLocks = (proj.chordLocks || []).filter((c) => c.src !== 'freeze');
+  proj.preserveChords = false;
+  return { ok: true, warnings: [] };
+}
+
 function resolveLinkedChords(proj, d) {
   applyChordChoices(proj, d);
   const links = resolveLinks(proj, d);
@@ -6886,15 +6934,15 @@ function materializeLinksBeforeStructuralChange(proj, d, sectionIds) {
   Object.assign(proj, q);
   return { ok: true, warnings };
 }
-Object.assign(C, { migrateLinks, validateLink, resolveLinks, linkedRoot, captureChordChoices, applyChordChoices, resolveLinkedChords, resolvedBass, linkSection, unlinkSection, materializeLinksBeforeStructuralChange });
+Object.assign(C, { freezeChords, unfreezeChords, chordsAreFrozen, rekeyChordChoices, migrateLinks, validateLink, resolveLinks, linkedRoot, captureChordChoices, applyChordChoices, resolveLinkedChords, resolvedBass, linkSection, unlinkSection, materializeLinksBeforeStructuralChange });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // Sürüm arşivi yalnızca düzenlemeyi saklar; kayıt, tonlar ve bölüm sınırları ortaktır.
 (function (root) {
 const C = root.Core, B = C.Bass;
 const clone = (v) => v == null ? v : JSON.parse(JSON.stringify(v));
-const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer'];
-const globals = ['pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'chordStartBar'];
+const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer'];
+const globals = ['pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords'];
 const mixerKeys = ['vocal', 'piano', 'guitar', 'bass', 'drums', 'pedal', 'touched'];
 const fail = (reason) => ({ ok: false, warnings: [reason] });
 const object = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
@@ -6902,6 +6950,10 @@ const validChord = (c) => object(c) && Number.isFinite(c.root) && typeof c.q ===
 function migrateVersions(proj) {
   const v = proj.versions || {};
   proj.versions = { activeId: v.activeId ?? null, items: Array.isArray(v.items) ? v.items : [] };
+  for (const item of proj.versions.items) if (object(item.state)) {
+    if (item.state.preserveChords === undefined) item.state.preserveChords = false;
+    if (object(item.state.pack) && item.state.pack.selectedId === undefined) item.state.pack.selectedId = null;
+  }
   return proj;
 }
 function versionSignature(proj, d) {
