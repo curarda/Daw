@@ -120,4 +120,8 @@ Inherited controls are read-only. **Kaynağı düzenle** jumps to the source; **
 
 ### Gerçek sesler (Freesound) — ayarlar
 
-Bu aşama yalnızca anahtarları saklar ve bağlantıyı dener; henüz ses çalmaz. Anahtarlar yalnızca tarayıcının `miniDaw.soundSettings.v1` localStorage alanında (depolama kapalıysa oturum belleğinde) tutulur; proje ve dışa aktarımlara girmez. Freesound anahtarı yalnızca freesound.org API isteğinin Authorization başlığında gönderilir; CDN önizlemelerine anahtar gönderilmez. Yalnızca CC0 ses kayıtları kabul edilir. Gemini anahtarı saklanır; Gemini isteği yapılmaz.
+Anahtarlar yalnızca tarayıcının `miniDaw.soundSettings.v1` localStorage alanında (depolama kapalıysa oturum belleğinde) tutulur; proje ve dışa aktarımlara girmez. Freesound anahtarı yalnızca freesound.org API isteğinin Authorization başlığında gönderilir; CDN önizlemelerine anahtar gönderilmez. Gemini anahtarı saklanır; Gemini isteği yapılmaz.
+
+“Davul setini seç”, sabit aramalarla CC0 tek vuruşları sıralar ve önizlemeleri sırayla çözerek doğrular. Seçim deterministiktir; K (kick), S (snare) ve H (kapalı hi-hat) zorunludur. Açık hi-hat, tom, clap, rim, ride ve pedal hi-hat isteğe bağlıdır; bulunamazsa sentez sesi kullanılır. Zorunlu bir ses bulunamazsa proje değişmez. Seçim tek geri alma adımıdır. Ad, yazar, Freesound bağlantısı ve CC0 kredileri panelde ve akor şemasında yer alır; proje ve sürümler yalnızca kimlikleri/kredileri saklar. ▶ düğmesi seçilen sesi önizler. Kaydedilmiş projeyi açmak yeni arama başlatmaz.
+
+“Gerçek sesleri kullan” tercihi saklanır; bu aşamada çalma ve mix/WAV henüz seçilen sesleri kullanmaz. Ses entegrasyonu bir sonraki adımdadır. Otomatik testler sahte ağ/çözücü kullanır; gerçek anahtarla kimlik doğrulama, CC0 araması, önizleme indirme/çözme ve hız sınırı davranışı kullanıcı ortamında doğrulanmalıdır.

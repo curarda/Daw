@@ -30,11 +30,74 @@ window.__daw = S; // hata ayıklama / testler için
 window.__dawCal = () => Cal.last;
 const soundSettings = C.createSoundSettings();
 let soundNetwork = C.createNetwork({ settings: soundSettings });
+
+const REAL = { generation: 0, decoded: {}, sampleRates: {}, signature: '', source: null, injected: null };
+const soundCache = C.createSoundCache();
+function invalidateSoundSelection(keepDecoded = false) {
+  REAL.generation++;
+  if (!keepDecoded) { REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = ''; }
+  if (!keepDecoded && REAL.source) { try { REAL.source.stop(); } catch (_) {} REAL.source = null; }
+  $('#soundSelectStatus').textContent = '';
+}
+async function decodeSoundPreview(bytes) {
+  const ctx = new OfflineAudioContext(1, 1, 44100);
+  const buffer = await ctx.decodeAudioData(bytes.slice().buffer);
+  return { channels: Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i)), sampleRate: buffer.sampleRate };
+}
+function renderSoundSelection() {
+  const rs = C.normalizeRealSounds(S.proj.realSounds), hasKey = !!soundSettings.get().freesoundKey;
+  $('#btnSoundSelect').disabled = !hasKey;
+  $('#soundSelectHint').textContent = hasKey ? 'CC0 tek vuruşlar sırayla aranır ve doğrulanır.' : 'Önce Freesound API anahtarını kaydet.';
+  $('#inRealSounds').checked = rs.enabled;
+  $('#chipRealSounds').textContent = rs.enabled ? 'açık' : 'kapalı';
+  const signature = JSON.stringify(rs.drums);
+  if (REAL.signature && REAL.signature !== signature) { REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = ''; }
+  $('#soundKitList').innerHTML = Object.entries(rs.drums).map(([lane, r]) => `<div data-sound-lane="${lane}"><b>${lane}</b> <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a> — ${esc(r.author)} — CC0 <button data-sound-preview="${lane}" ${REAL.decoded[lane] ? '' : 'disabled'} aria-label="${lane} önizle">▶</button></div>`).join('');
+  $('#soundCredits').textContent = C.soundCredits(S.proj).join('\n');
+}
+function editRealSounds(fn) {
+  histCommit(); HIST.t = -Infinity;
+  fn(); refresh(); HIST.t = -Infinity;
+}
+$('#btnSoundSelect').onclick = async () => {
+  invalidateSoundSelection();
+  const generation = REAL.generation, project = S.proj;
+  const shouldAbort = () => generation !== REAL.generation || project !== S.proj;
+  const deps = REAL.injected || { network: soundNetwork, decode: decodeSoundPreview, cache: soundCache };
+  $('#soundSelectStatus').textContent = 'CC0 davul seti seçiliyor…';
+  let result;
+  try { result = await C.selectDrumKit({ ...deps, shouldAbort, onProgress: (text) => { if (!shouldAbort()) $('#soundSelectStatus').textContent = text; } }); }
+  catch (_) { result = { ok: false, reason: 'Ses seçilemedi; bağlantını kontrol edip yeniden dene.' }; }
+  if (shouldAbort()) return;
+  if (!result.ok) { $('#soundSelectStatus').textContent = result.reason; return; }
+  editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds({ ...S.proj.realSounds, enabled: true, drums: result.kit }); });
+  REAL.decoded = result.decoded; REAL.sampleRates = result.sampleRates; REAL.signature = JSON.stringify(S.proj.realSounds.drums);
+  renderSoundSelection();
+  $('#soundSelectStatus').textContent = 'Davul seti seçildi. Ses entegrasyonu bir sonraki adımda.';
+};
+$('#inRealSounds').onchange = (e) => { invalidateSoundSelection(true); editRealSounds(() => { S.proj.realSounds.enabled = e.target.checked; }); };
+$('#btnSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds(null); }); };
+$('#soundKitList').onclick = async (e) => {
+  const lane = e.target.closest('[data-sound-preview]')?.dataset.soundPreview, mono = REAL.decoded[lane];
+  if (!mono) return;
+  const generation = REAL.generation;
+  try {
+    const ctx = getCtx(); await ctx.resume();
+    if (generation !== REAL.generation) return;
+    if (REAL.source) { try { REAL.source.stop(); } catch (_) {} }
+    const buffer = ctx.createBuffer(1, mono.length, REAL.sampleRates[lane]); buffer.copyToChannel(mono, 0);
+    const source = ctx.createBufferSource(); source.buffer = buffer; source.connect(ctx.destination); REAL.source = source;
+    source.onended = () => { source.disconnect(); if (REAL.source === source) REAL.source = null; };
+    source.start();
+  } catch (_) { $('#soundSelectStatus').textContent = 'Önizleme çalınamadı; yeniden dene.'; }
+};
+
 function renderSoundSettings() {
   const v = soundSettings.get();
   $('#inFreesoundKey').value = C.maskKey(v.freesoundKey);
   $('#inGeminiKey').value = C.maskKey(v.geminiKey);
   $('#inGeminiModel').value = v.geminiModel;
+  renderSoundSelection();
   const st = soundSettings.status();
   $('#soundStorageStatus').textContent = (st.storageFailed ? 'Tarayıcı depolaması kapalı: ayarlar yalnızca bu oturumda tutulur' : 'Ayarlar yalnızca bu tarayıcıda saklanır.') + ' ' + st.message;
 }
@@ -55,6 +118,7 @@ renderSoundSettings();
 // stil modülünün (styleui.js) kullandığı arayüz
 window.__dawAPI = {
   soundSettings,
+  soundSelection: { inject(deps) { invalidateSoundSelection(); REAL.injected = deps; }, preview: () => REAL.source },
   network: { setFetch(fetch, options = {}) { soundNetwork = C.createNetwork({ ...options, fetch, settings: soundSettings }); }, probe: () => soundNetwork.probe() },
   S, C, status, esc, getCtx, notePreview: () => NotePreview, player: () => Player,
   refresh: () => refresh(),
@@ -252,6 +316,7 @@ function refresh() {
   draw();
   scheduleRender();
   renderChips();
+  renderSoundSelection();
   histCommit();
 }
 
@@ -299,6 +364,7 @@ function importMidiBytes(bytes, name, trackIdx, keep) {
   if (!keep && (S.audio || S.midi) && !confirm('MIDI açılsın mı? Şu anki proje (kaydetmediysen) kaybolur.')) return false;
   Player.stop(true); HIST.reset = true;
   S.loop.on = false; $('#btnLoop').classList.remove('on');
+  invalidateSoundSelection();
   S.proj = C.newProject(); S.customSection = null; S.audio = null; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.sel = null; S.pos = 0;
   const p = S.proj;
   p.settings.bpm = r.settings.bpm; p.settings.meter = r.settings.meter;
@@ -404,6 +470,7 @@ function historyEntry(withMixer) {
   return withMixer ? { project: snapProj(), mixer: Object.fromEntries(['vocal', 'piano', 'guitar', 'bass', 'drums'].map((k) => [k, jclone(S.proj.mixer[k])])) } : snapProj();
 }
 async function histRestore(entry, was) {
+  invalidateSoundSelection();
   const str = typeof entry === 'string' ? entry : entry.project;
   Player.stop(true);
   const keep = { ab: S.proj.mixer.ab }; for (const k of ['vocal', 'piano', 'drums', 'guitar', 'bass']) keep[k] = S.proj.mixer[k];
@@ -2663,6 +2730,7 @@ function versionEdit(fn, message) {
 async function switchVersion(id) {
   const item = S.proj.versions.items.find((v) => v.id === id), compat = C.versionCompat(S.proj, S.d, id);
   if (!item || !compat.ok) { status(compat.warnings.join(' '), 'err'); return; }
+  invalidateSoundSelection();
   const generation = ++VERS.generation;
   const resume = VERS.resume || (Player.playing ? { from: S.pos, region: Player.region ? { ...Player.region } : null } : null);
   histCommit(); HIST.t = -Infinity;
@@ -3765,6 +3833,7 @@ $('#btnTest').onclick = () => loadTest();
 $('#btnNew').onclick = () => {
   if ((S.audio || S.midi) && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
   Player.stop(true); HIST.reset = true; S.loop.on = false; $('#btnLoop').classList.remove('on');
+  invalidateSoundSelection();
   S.proj = C.newProject(); S.customSection = null; S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   syncInputs(); refresh(); status('Yeni proje.');
@@ -3814,6 +3883,7 @@ document.addEventListener('keydown', (e) => {
 async function loadTest() {
   Player.stop(true);
   const t = C.synthTestVocal(44100);
+  invalidateSoundSelection();
   S.proj = C.newProject();
   S.proj.settings.bpm = t.bpm; S.proj.settings.meter = t.meter;
   S.proj.sections = t.sections.map((s) => ({ id: uid(), link: null, name: s.name, startBar: s.startBar, endBar: s.endBar, tonic: null, mode: null }));
@@ -3852,6 +3922,7 @@ function mergeDefaults(base, p) {
   return base;
 }
 async function openProject(file) {
+  invalidateSoundSelection();
   let p;
   try { p = JSON.parse(await file.text()); } catch (e) { status('Proje dosyası okunamadı: ' + e.message, 'err'); return; }
   Player.stop(true); HIST.reset = true;

@@ -58,8 +58,8 @@ function createNetwork({ fetch: fetcher = (...args) => root.fetch(...args), now 
     if (Object.keys(params).some((k) => !['query', 'minDuration', 'maxDuration', 'pageSize', 'fields'].includes(k))) return Promise.reject(new NetError('invalid'));
     const { query = '', minDuration = 0, maxDuration = 6, pageSize = 10, fields = ['id', 'name', 'username', 'url', 'license', 'previews'] } = params;
     if (typeof query !== 'string' || !/^[A-Za-z0-9 _-]{0,120}$/.test(query) || !Number.isFinite(minDuration) || !Number.isFinite(maxDuration) || minDuration < 0 || maxDuration > 6 || minDuration > maxDuration || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 30 || !Array.isArray(fields) || fields.some((f) => !['id', 'name', 'username', 'url', 'license', 'previews', 'duration', 'tags'].includes(f))) return Promise.reject(new NetError('invalid'));
-    const qs = new URLSearchParams({ query, filter: 'license:"Creative Commons 0" duration:[' + minDuration + ' TO ' + maxDuration + ']', page_size: pageSize, fields: [...new Set(['id', 'name', 'username', 'url', 'license', 'previews', ...fields])].join(',') });
-    return run('search/text/?' + qs).then((v) => ({ results: (Array.isArray(v?.results) ? v.results : []).slice(0, pageSize).map(record).filter(Boolean) }));
+    const qs = new URLSearchParams({ query, filter: 'license:"Creative Commons 0" duration:[' + minDuration + ' TO ' + maxDuration + ']', page_size: pageSize, fields: [...new Set(['id', 'name', 'username', 'url', 'license', 'previews', 'duration', 'tags', ...fields])].join(',') });
+    return run('search/text/?' + qs).then((v) => ({ results: (Array.isArray(v?.results) ? v.results : []).slice(0, pageSize).map(record).filter(Boolean), candidates: (Array.isArray(v?.results) ? v.results : []).slice(0, pageSize).map((r) => C.normalizeSoundCandidate({ record: record(r), duration: r?.duration, tags: r?.tags })).filter(Boolean) }));
   }
   function freesoundSound(id) { return Number.isSafeInteger(id) && id > 0 ? run('sounds/' + id + '/').then(record) : Promise.reject(new NetError('invalid')); }
   function freesoundPreview(urlOrId) {

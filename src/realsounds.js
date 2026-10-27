@@ -16,8 +16,14 @@ function normalizeRealSounds(v) {
   if (Array.isArray(v?.bass)) out.bass = v.bass.map(normalizeSoundRecord).filter(Boolean).slice(0, 3);
   return out;
 }
+function soundCredits(proj) {
+  const sounds = normalizeRealSounds(proj?.realSounds), seen = new Set();
+  return [...Object.values(sounds.drums), ...sounds.bass].filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }).map((r) => `${r.name} — ${r.author} — ${r.url} — CC0`);
+}
+const chart = C.chordChart;
+C.chordChart = (proj, d) => { const credits = soundCredits(proj); return chart(proj, d) + (credits.length ? '\nGerçek sesler (CC0):\n' + credits.join('\n') + '\n' : ''); };
 const fresh = C.newProject, migrate = C.migrateMatrix;
 C.newProject = () => ({ ...fresh(), realSounds: normalizeRealSounds(null) });
 C.migrateMatrix = (p) => { p.realSounds = normalizeRealSounds(p.realSounds); return migrate(p); };
-Object.assign(C, { normalizeSoundRecord, normalizeRealSounds });
+Object.assign(C, { normalizeSoundRecord, normalizeRealSounds, soundCredits });
 })(typeof window !== 'undefined' ? window : globalThis);

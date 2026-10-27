@@ -776,13 +776,19 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
       </div>
     </details>
     <details class="step" data-key="s10">
-      <summary><b>10</b> Gerçek sesler <span class="chip">kapalı</span></summary>
+      <summary><b>10</b> Gerçek sesler <span class="chip" id="chipRealSounds">kapalı</span></summary>
       <p class="hint">Freesound (CC0) sesleri için kendi anahtarını gir; yalnızca bu tarayıcıda saklanır, projeye ve dışa aktarmalara girmez.</p>
       <label>Freesound API anahtarı <input id="inFreesoundKey" type="password" autocomplete="off"></label>
       <label>Gemini API anahtarı <input id="inGeminiKey" type="password" autocomplete="off"></label>
       <label>Gemini modeli <input id="inGeminiModel" type="text" list="geminiModels" autocomplete="off"></label>
       <datalist id="geminiModels"><option value="gemini-2.5-flash"><option value="gemini-2.5-pro"></datalist>
       <div class="grid2"><button id="btnSoundSave">Kaydet</button><button id="btnSoundClear">Anahtarları sil</button><button id="btnSoundProbe">Bağlantıyı dene</button></div>
+      <button id="btnSoundSelect">Davul setini seç</button>
+      <p id="soundSelectHint" class="hint"></p>
+      <label><input id="inRealSounds" type="checkbox"> Gerçek sesleri kullan</label>
+      <p class="hint">Ses entegrasyonu bir sonraki adımda.</p>
+      <button id="btnSoundReset">Seçimi temizle</button>
+      <p id="soundSelectStatus" role="status"></p><div id="soundKitList"></div><div id="soundCredits"></div>
       <p id="soundStorageStatus" role="status"></p><p id="soundProbeStatus" role="status"></p>
     </details>
   </aside>
@@ -7019,7 +7025,7 @@ Object.assign(C, { freezeChords, unfreezeChords, chordsAreFrozen, rekeyChordChoi
 (function (root) {
 const C = root.Core, B = C.Bass;
 const clone = (v) => v == null ? v : JSON.parse(JSON.stringify(v));
-const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer'];
+const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer', 'realSounds'];
 const globals = ['pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords'];
 const mixerKeys = ['vocal', 'piano', 'guitar', 'bass', 'drums', 'pedal', 'touched'];
 const fail = (reason) => ({ ok: false, warnings: [reason] });
@@ -7029,6 +7035,7 @@ function migrateVersions(proj) {
   const v = proj.versions || {};
   proj.versions = { activeId: v.activeId ?? null, items: Array.isArray(v.items) ? v.items : [] };
   for (const item of proj.versions.items) if (object(item.state)) {
+    item.state.realSounds = C.normalizeRealSounds(item.state.realSounds);
     if (item.state.preserveChords === undefined) item.state.preserveChords = false;
     if (object(item.state.pack) && item.state.pack.selectedId === undefined) item.state.pack.selectedId = null;
   }
@@ -7092,6 +7099,7 @@ function captureVersionState(proj, d) {
     if (!groups.has(key)) groups.set(key, groups.size);
     return [s.id, groups.get(key)];
   }));
+  state.realSounds = C.normalizeRealSounds(proj.realSounds);
   state.bass = captureBass(proj, d, links);
   for (const key of ['chordLocks', 'chordPins', 'changeMarks']) state[key] = relativeRecords(proj, d, key, links);
   state.chordChoices = d.sections.filter((s) => !links[s.id]).flatMap((s) => C.captureChordChoices(proj, d, s.id));
@@ -7139,8 +7147,9 @@ function applyVersionState(proj, d, state) {
   const compat = signatureCompat(proj, d, state);
   if (!compat.ok) return compat;
   try {
-    if (fields.some((key) => !Object.prototype.hasOwnProperty.call(state, key)) || Object.keys(state).some((key) => !fields.includes(key))) throw new Error('Sürümde geçersiz düzenleme alanları var.');
+    if (fields.some((key) => key !== 'realSounds' && !Object.prototype.hasOwnProperty.call(state, key)) || Object.keys(state).some((key) => !fields.includes(key))) throw new Error('Sürümde geçersiz düzenleme alanları var.');
     const saved = clone(state), q = clone(proj), warnings = captureWarnings(proj, d);
+    q.realSounds = C.normalizeRealSounds(saved.realSounds);
     if (['sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'mixer'].some((key) => !object(saved[key])) || !object(saved.matrix.rows) || !object(saved.guitar.parts) || !object(saved.guitar.parts._all) || !Number.isInteger(saved.chordStartBar) || saved.chordStartBar < 1) throw new Error('Sürümde geçersiz katman ayarları var.');
     if (Object.keys(saved.mixer).some((key) => !mixerKeys.includes(key))) throw new Error('Sürümde geçersiz mikser alanı var.');
     if (Object.keys(saved.sections).length !== d.sections.length) throw new Error('Sürümün bölüm listesi eksik veya fazla.');
@@ -7291,10 +7300,16 @@ function normalizeRealSounds(v) {
   if (Array.isArray(v?.bass)) out.bass = v.bass.map(normalizeSoundRecord).filter(Boolean).slice(0, 3);
   return out;
 }
+function soundCredits(proj) {
+  const sounds = normalizeRealSounds(proj?.realSounds), seen = new Set();
+  return [...Object.values(sounds.drums), ...sounds.bass].filter((r) => { if (seen.has(r.id)) return false; seen.add(r.id); return true; }).map((r) => `${r.name} — ${r.author} — ${r.url} — CC0`);
+}
+const chart = C.chordChart;
+C.chordChart = (proj, d) => { const credits = soundCredits(proj); return chart(proj, d) + (credits.length ? '\nGerçek sesler (CC0):\n' + credits.join('\n') + '\n' : ''); };
 const fresh = C.newProject, migrate = C.migrateMatrix;
 C.newProject = () => ({ ...fresh(), realSounds: normalizeRealSounds(null) });
 C.migrateMatrix = (p) => { p.realSounds = normalizeRealSounds(p.realSounds); return migrate(p); };
-Object.assign(C, { normalizeSoundRecord, normalizeRealSounds });
+Object.assign(C, { normalizeSoundRecord, normalizeRealSounds, soundCredits });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // Sabit uç noktalar; hata nesneleri ağın ham yanıtlarını taşımaz.
@@ -7357,8 +7372,8 @@ function createNetwork({ fetch: fetcher = (...args) => root.fetch(...args), now 
     if (Object.keys(params).some((k) => !['query', 'minDuration', 'maxDuration', 'pageSize', 'fields'].includes(k))) return Promise.reject(new NetError('invalid'));
     const { query = '', minDuration = 0, maxDuration = 6, pageSize = 10, fields = ['id', 'name', 'username', 'url', 'license', 'previews'] } = params;
     if (typeof query !== 'string' || !/^[A-Za-z0-9 _-]{0,120}$/.test(query) || !Number.isFinite(minDuration) || !Number.isFinite(maxDuration) || minDuration < 0 || maxDuration > 6 || minDuration > maxDuration || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 30 || !Array.isArray(fields) || fields.some((f) => !['id', 'name', 'username', 'url', 'license', 'previews', 'duration', 'tags'].includes(f))) return Promise.reject(new NetError('invalid'));
-    const qs = new URLSearchParams({ query, filter: 'license:"Creative Commons 0" duration:[' + minDuration + ' TO ' + maxDuration + ']', page_size: pageSize, fields: [...new Set(['id', 'name', 'username', 'url', 'license', 'previews', ...fields])].join(',') });
-    return run('search/text/?' + qs).then((v) => ({ results: (Array.isArray(v?.results) ? v.results : []).slice(0, pageSize).map(record).filter(Boolean) }));
+    const qs = new URLSearchParams({ query, filter: 'license:"Creative Commons 0" duration:[' + minDuration + ' TO ' + maxDuration + ']', page_size: pageSize, fields: [...new Set(['id', 'name', 'username', 'url', 'license', 'previews', 'duration', 'tags', ...fields])].join(',') });
+    return run('search/text/?' + qs).then((v) => ({ results: (Array.isArray(v?.results) ? v.results : []).slice(0, pageSize).map(record).filter(Boolean), candidates: (Array.isArray(v?.results) ? v.results : []).slice(0, pageSize).map((r) => C.normalizeSoundCandidate({ record: record(r), duration: r?.duration, tags: r?.tags })).filter(Boolean) }));
   }
   function freesoundSound(id) { return Number.isSafeInteger(id) && id > 0 ? run('sounds/' + id + '/').then(record) : Promise.reject(new NetError('invalid')); }
   function freesoundPreview(urlOrId) {
@@ -7428,6 +7443,110 @@ function createSoundCache({ indexedDB = root.indexedDB, cap = 40000000, backend 
   };
 }
 C.createSoundCache = createSoundCache;
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// Sabit sözlükle seçim; çözülmüş sesler yalnızca bu işlemin belleğinde yaşar.
+(function (root) {
+const C = root.Core;
+const SOUND_TRIM_THRESHOLD = 0.001, SOUND_RMS_THRESHOLD = 0.0001, SOUND_MEMORY_LIMIT = 24000000;
+const rejected = ['loop', 'loops', 'break', 'breakbeat', 'pattern', 'melody', 'vocal', 'vocals'];
+const vocabulary = {
+  K: ['kick drum', ['kick', 'bass-drum']], S: ['snare drum', ['snare']], H: ['closed hihat', ['closed', 'hihat', 'hi-hat']],
+  O: ['open hihat', ['open', 'hihat']], F: ['floor tom', ['floor', 'tom']], T: ['rack tom', ['rack', 'tom']],
+  C: ['hand clap', ['clap']], R: ['rim click', ['rim', 'click']], D: ['ride cymbal', ['ride', 'cymbal']], P: ['pedal hihat', ['pedal', 'hihat']]
+};
+const LANE_SPECS = Object.freeze(Object.fromEntries(C.DRUM_KINDS.map((kind) => [kind, Object.freeze({ kind, required: ['K', 'S', 'H'].includes(kind), query: vocabulary[kind][0], minDuration: 0.05, maxDuration: 2, preferredTags: Object.freeze(vocabulary[kind][1]), rejectedTags: Object.freeze([...rejected, ...(kind === 'H' ? ['open'] : [])]) })])));
+function normalizeSoundCandidate(raw) {
+  const record = C.normalizeSoundRecord(raw?.record);
+  if (!record || !Number.isFinite(raw.duration) || raw.duration < 0 || raw.duration > 6) return null;
+  const tags = [...new Set((Array.isArray(raw.tags) ? raw.tags : []).filter((t) => typeof t === 'string').map((t) => t.toLowerCase()).filter((t) => /^[a-z0-9-]{1,24}$/.test(t)))].slice(0, 12);
+  return { record, duration: raw.duration, tags };
+}
+function rankCandidates(spec, candidates) {
+  if (!spec || !Array.isArray(candidates)) return [];
+  return candidates.slice(0, 30).map(normalizeSoundCandidate).filter(Boolean).filter((c) => {
+    const words = c.record.name.toLowerCase().split(/[^a-z0-9-]+/);
+    return c.duration >= spec.minDuration && c.duration <= spec.maxDuration && !spec.rejectedTags.some((t) => c.tags.includes(t) || words.includes(t));
+  }).map((candidate) => ({ candidate, score: spec.preferredTags.reduce((n, tag) => n + (candidate.tags.includes(tag) ? 4 : 0) + (candidate.record.name.toLowerCase().split(/[^a-z0-9-]+/).includes(tag) ? 2 : 0), 0) }))
+    .sort((a, b) => b.score - a.score || a.candidate.duration - b.candidate.duration || a.candidate.record.id - b.candidate.record.id).map((v) => v.candidate);
+}
+function validateDecoded(pcm, sampleRate) {
+  const fail = (reason) => ({ ok: false, reason, mono: null, sampleRate });
+  const channels = Array.isArray(pcm) ? pcm : pcm?.channels;
+  if (!Number.isSafeInteger(sampleRate) || sampleRate <= 0 || !Array.isArray(channels) || !channels.length || !channels[0]?.length) return fail('Ses verisi geçersiz.');
+  const length = channels[0].length;
+  if (length > sampleRate * 6 || channels.some((c) => !c || c.length !== length)) return fail('Ses en fazla 6 saniye olmalı.');
+  // Önce boyut ve örnekleri denetle; pahalı kopyalama bundan sonra.
+  for (const channel of channels) for (let i = 0; i < length; i++) if (!Number.isFinite(channel[i])) return fail('Ses sonlu olmayan örnekler içeriyor.');
+  const mixed = (i) => channels.reduce((sum, c) => sum + c[i] / channels.length, 0);
+  let start = 0; while (start < length && Math.abs(mixed(start)) < SOUND_TRIM_THRESHOLD) start++;
+  const end = Math.min(length, start + sampleRate * 2);
+  if (start >= end) return fail('Ses sessiz.');
+  let sum = 0, square = 0, min = Infinity, max = -Infinity;
+  for (let i = start; i < end; i++) { const v = mixed(i); if (!Number.isFinite(v)) return fail('Ses geçersiz.'); sum += v; square += v * v; min = Math.min(min, v); max = Math.max(max, v); }
+  const count = end - start, rms = Math.sqrt(square / count), variance = square / count - (sum / count) ** 2;
+  if (!Number.isFinite(rms) || rms < SOUND_RMS_THRESHOLD) return fail('Ses çok kısık.');
+  if (max - min < SOUND_TRIM_THRESHOLD || variance < SOUND_RMS_THRESHOLD ** 2) return fail('Ses sabit/DC sinyal içeriyor.');
+  const mono = new Float32Array(count); for (let i = 0; i < count; i++) { mono[i] = mixed(start + i); if (!Number.isFinite(mono[i])) return fail('Ses geçersiz.'); }
+  return { ok: true, reason: '', mono, sampleRate };
+}
+const searches = new WeakMap();
+async function selectDrumKit({ network, decode, cache, shouldAbort = () => false, onProgress = () => {} }) {
+  const kit = {}, decoded = {}, sampleRates = {}, skipped = [], chosen = new Map(); let resident = 0;
+  const fail = (reason) => ({ ok: false, reason, kit: null });
+  const cancelled = () => shouldAbort();
+  if (!searches.has(network)) searches.set(network, new Map());
+  const searchCache = searches.get(network);
+  for (const spec of Object.values(LANE_SPECS)) {
+    if (cancelled()) return fail('Seçim iptal edildi.');
+    onProgress(spec.kind + ': CC0 ses aranıyor…');
+    let candidates = [];
+    try {
+      const saved = searchCache.get(spec.kind);
+      if (saved && Date.now() - saved.time < 600000) candidates = saved.candidates;
+      else {
+        const result = await network.freesoundSearch({ query: spec.query, minDuration: spec.minDuration, maxDuration: spec.maxDuration, pageSize: 20, fields: ['duration', 'tags'] });
+        if (cancelled()) return fail('Seçim iptal edildi.');
+        candidates = (result.candidates || result.results || []).slice(0, 30).map(normalizeSoundCandidate).filter(Boolean);
+        searchCache.set(spec.kind, { time: Date.now(), candidates });
+      }
+    } catch (_) { if (spec.required) return fail(spec.kind + ': CC0 ses aranamadı; bağlantını ve anahtarını kontrol et.'); }
+    for (const candidate of rankCandidates(spec, candidates).slice(0, 5)) {
+      if (cancelled()) return fail('Seçim iptal edildi.');
+      const record = C.normalizeSoundRecord({ ...candidate.record, selector: 'fallback', why: '' });
+      if (!record) continue;
+      const key = record.id + '|' + record.previewUrl;
+      try {
+        let valid = chosen.get(key);
+        if (!valid) {
+          let entry = await cache?.get(record.id, record.previewUrl);
+          if (cancelled()) return fail('Seçim iptal edildi.');
+          let bytes = entry?.bytes;
+          if (!(bytes instanceof Uint8Array)) bytes = await network.freesoundPreview(record.previewUrl);
+          entry = null;
+          if (cancelled()) return fail('Seçim iptal edildi.');
+          if (!(bytes instanceof Uint8Array) || bytes.byteLength > 1500000) continue;
+          await cache?.put(record, bytes);
+          if (cancelled()) return fail('Seçim iptal edildi.');
+          let pcm = await decode(bytes);
+          if (cancelled()) return fail('Seçim iptal edildi.');
+          // Çıktı sınırını aşacak bir ses için mono tampon ayırma.
+          if (resident + Math.min(pcm?.channels?.[0]?.length || 0, (pcm?.sampleRate || 0) * 2) * 4 > SOUND_MEMORY_LIMIT) { pcm = null; continue; }
+          valid = validateDecoded(pcm, pcm?.sampleRate); pcm = null;
+          if (!valid.ok) continue;
+          if (resident + valid.mono.byteLength > SOUND_MEMORY_LIMIT) continue;
+          resident += valid.mono.byteLength; chosen.set(key, valid);
+        }
+        kit[spec.kind] = record; decoded[spec.kind] = valid.mono; sampleRates[spec.kind] = valid.sampleRate;
+        break;
+      } catch (_) { /* Başarısız adaydan sonra sıradakini dene. */ }
+    }
+    if (cancelled()) return fail('Seçim iptal edildi.');
+    if (!kit[spec.kind]) { if (spec.required) return fail(spec.kind + ': Uygun CC0 tek vuruş bulunamadı; tekrar dene.'); skipped.push(spec.kind); }
+  }
+  return { ok: true, kit, decoded, sampleRates, skipped };
+}
+Object.assign(C, { LANE_SPECS, SOUND_TRIM_THRESHOLD, SOUND_RMS_THRESHOLD, SOUND_MEMORY_LIMIT, normalizeSoundCandidate, rankCandidates, validateDecoded, selectDrumKit });
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="stylecore">/* =====================================================================
@@ -8803,11 +8922,74 @@ window.__daw = S; // hata ayıklama / testler için
 window.__dawCal = () => Cal.last;
 const soundSettings = C.createSoundSettings();
 let soundNetwork = C.createNetwork({ settings: soundSettings });
+
+const REAL = { generation: 0, decoded: {}, sampleRates: {}, signature: '', source: null, injected: null };
+const soundCache = C.createSoundCache();
+function invalidateSoundSelection(keepDecoded = false) {
+  REAL.generation++;
+  if (!keepDecoded) { REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = ''; }
+  if (!keepDecoded && REAL.source) { try { REAL.source.stop(); } catch (_) {} REAL.source = null; }
+  $('#soundSelectStatus').textContent = '';
+}
+async function decodeSoundPreview(bytes) {
+  const ctx = new OfflineAudioContext(1, 1, 44100);
+  const buffer = await ctx.decodeAudioData(bytes.slice().buffer);
+  return { channels: Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i)), sampleRate: buffer.sampleRate };
+}
+function renderSoundSelection() {
+  const rs = C.normalizeRealSounds(S.proj.realSounds), hasKey = !!soundSettings.get().freesoundKey;
+  $('#btnSoundSelect').disabled = !hasKey;
+  $('#soundSelectHint').textContent = hasKey ? 'CC0 tek vuruşlar sırayla aranır ve doğrulanır.' : 'Önce Freesound API anahtarını kaydet.';
+  $('#inRealSounds').checked = rs.enabled;
+  $('#chipRealSounds').textContent = rs.enabled ? 'açık' : 'kapalı';
+  const signature = JSON.stringify(rs.drums);
+  if (REAL.signature && REAL.signature !== signature) { REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = ''; }
+  $('#soundKitList').innerHTML = Object.entries(rs.drums).map(([lane, r]) => `<div data-sound-lane="${lane}"><b>${lane}</b> <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a> — ${esc(r.author)} — CC0 <button data-sound-preview="${lane}" ${REAL.decoded[lane] ? '' : 'disabled'} aria-label="${lane} önizle">▶</button></div>`).join('');
+  $('#soundCredits').textContent = C.soundCredits(S.proj).join('\n');
+}
+function editRealSounds(fn) {
+  histCommit(); HIST.t = -Infinity;
+  fn(); refresh(); HIST.t = -Infinity;
+}
+$('#btnSoundSelect').onclick = async () => {
+  invalidateSoundSelection();
+  const generation = REAL.generation, project = S.proj;
+  const shouldAbort = () => generation !== REAL.generation || project !== S.proj;
+  const deps = REAL.injected || { network: soundNetwork, decode: decodeSoundPreview, cache: soundCache };
+  $('#soundSelectStatus').textContent = 'CC0 davul seti seçiliyor…';
+  let result;
+  try { result = await C.selectDrumKit({ ...deps, shouldAbort, onProgress: (text) => { if (!shouldAbort()) $('#soundSelectStatus').textContent = text; } }); }
+  catch (_) { result = { ok: false, reason: 'Ses seçilemedi; bağlantını kontrol edip yeniden dene.' }; }
+  if (shouldAbort()) return;
+  if (!result.ok) { $('#soundSelectStatus').textContent = result.reason; return; }
+  editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds({ ...S.proj.realSounds, enabled: true, drums: result.kit }); });
+  REAL.decoded = result.decoded; REAL.sampleRates = result.sampleRates; REAL.signature = JSON.stringify(S.proj.realSounds.drums);
+  renderSoundSelection();
+  $('#soundSelectStatus').textContent = 'Davul seti seçildi. Ses entegrasyonu bir sonraki adımda.';
+};
+$('#inRealSounds').onchange = (e) => { invalidateSoundSelection(true); editRealSounds(() => { S.proj.realSounds.enabled = e.target.checked; }); };
+$('#btnSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds(null); }); };
+$('#soundKitList').onclick = async (e) => {
+  const lane = e.target.closest('[data-sound-preview]')?.dataset.soundPreview, mono = REAL.decoded[lane];
+  if (!mono) return;
+  const generation = REAL.generation;
+  try {
+    const ctx = getCtx(); await ctx.resume();
+    if (generation !== REAL.generation) return;
+    if (REAL.source) { try { REAL.source.stop(); } catch (_) {} }
+    const buffer = ctx.createBuffer(1, mono.length, REAL.sampleRates[lane]); buffer.copyToChannel(mono, 0);
+    const source = ctx.createBufferSource(); source.buffer = buffer; source.connect(ctx.destination); REAL.source = source;
+    source.onended = () => { source.disconnect(); if (REAL.source === source) REAL.source = null; };
+    source.start();
+  } catch (_) { $('#soundSelectStatus').textContent = 'Önizleme çalınamadı; yeniden dene.'; }
+};
+
 function renderSoundSettings() {
   const v = soundSettings.get();
   $('#inFreesoundKey').value = C.maskKey(v.freesoundKey);
   $('#inGeminiKey').value = C.maskKey(v.geminiKey);
   $('#inGeminiModel').value = v.geminiModel;
+  renderSoundSelection();
   const st = soundSettings.status();
   $('#soundStorageStatus').textContent = (st.storageFailed ? 'Tarayıcı depolaması kapalı: ayarlar yalnızca bu oturumda tutulur' : 'Ayarlar yalnızca bu tarayıcıda saklanır.') + ' ' + st.message;
 }
@@ -8828,6 +9010,7 @@ renderSoundSettings();
 // stil modülünün (styleui.js) kullandığı arayüz
 window.__dawAPI = {
   soundSettings,
+  soundSelection: { inject(deps) { invalidateSoundSelection(); REAL.injected = deps; }, preview: () => REAL.source },
   network: { setFetch(fetch, options = {}) { soundNetwork = C.createNetwork({ ...options, fetch, settings: soundSettings }); }, probe: () => soundNetwork.probe() },
   S, C, status, esc, getCtx, notePreview: () => NotePreview, player: () => Player,
   refresh: () => refresh(),
@@ -9025,6 +9208,7 @@ function refresh() {
   draw();
   scheduleRender();
   renderChips();
+  renderSoundSelection();
   histCommit();
 }
 
@@ -9072,6 +9256,7 @@ function importMidiBytes(bytes, name, trackIdx, keep) {
   if (!keep && (S.audio || S.midi) && !confirm('MIDI açılsın mı? Şu anki proje (kaydetmediysen) kaybolur.')) return false;
   Player.stop(true); HIST.reset = true;
   S.loop.on = false; $('#btnLoop').classList.remove('on');
+  invalidateSoundSelection();
   S.proj = C.newProject(); S.customSection = null; S.audio = null; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.sel = null; S.pos = 0;
   const p = S.proj;
   p.settings.bpm = r.settings.bpm; p.settings.meter = r.settings.meter;
@@ -9177,6 +9362,7 @@ function historyEntry(withMixer) {
   return withMixer ? { project: snapProj(), mixer: Object.fromEntries(['vocal', 'piano', 'guitar', 'bass', 'drums'].map((k) => [k, jclone(S.proj.mixer[k])])) } : snapProj();
 }
 async function histRestore(entry, was) {
+  invalidateSoundSelection();
   const str = typeof entry === 'string' ? entry : entry.project;
   Player.stop(true);
   const keep = { ab: S.proj.mixer.ab }; for (const k of ['vocal', 'piano', 'drums', 'guitar', 'bass']) keep[k] = S.proj.mixer[k];
@@ -11436,6 +11622,7 @@ function versionEdit(fn, message) {
 async function switchVersion(id) {
   const item = S.proj.versions.items.find((v) => v.id === id), compat = C.versionCompat(S.proj, S.d, id);
   if (!item || !compat.ok) { status(compat.warnings.join(' '), 'err'); return; }
+  invalidateSoundSelection();
   const generation = ++VERS.generation;
   const resume = VERS.resume || (Player.playing ? { from: S.pos, region: Player.region ? { ...Player.region } : null } : null);
   histCommit(); HIST.t = -Infinity;
@@ -12538,6 +12725,7 @@ $('#btnTest').onclick = () => loadTest();
 $('#btnNew').onclick = () => {
   if ((S.audio || S.midi) && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
   Player.stop(true); HIST.reset = true; S.loop.on = false; $('#btnLoop').classList.remove('on');
+  invalidateSoundSelection();
   S.proj = C.newProject(); S.customSection = null; S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   syncInputs(); refresh(); status('Yeni proje.');
@@ -12587,6 +12775,7 @@ document.addEventListener('keydown', (e) => {
 async function loadTest() {
   Player.stop(true);
   const t = C.synthTestVocal(44100);
+  invalidateSoundSelection();
   S.proj = C.newProject();
   S.proj.settings.bpm = t.bpm; S.proj.settings.meter = t.meter;
   S.proj.sections = t.sections.map((s) => ({ id: uid(), link: null, name: s.name, startBar: s.startBar, endBar: s.endBar, tonic: null, mode: null }));
@@ -12625,6 +12814,7 @@ function mergeDefaults(base, p) {
   return base;
 }
 async function openProject(file) {
+  invalidateSoundSelection();
   let p;
   try { p = JSON.parse(await file.text()); } catch (e) { status('Proje dosyası okunamadı: ' + e.message, 'err'); return; }
   Player.stop(true); HIST.reset = true;

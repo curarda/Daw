@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { loadCore } from './load-core.mjs';
 const { Core: C } = loadCore(), B = C.Bass;
 const clone = (v) => JSON.parse(JSON.stringify(v));
-const keys = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer'];
+const keys = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer', 'realSounds'];
 const derive = (p, extra = {}) => C.derive(p, { duration: 0, rawNotes: [], ...extra });
 function project(meter = '4/4', bars = 12) {
   const p = C.newProject(); p.settings.meter = meter; p.guitar = C.defaultGuitarState(meter); p.guitar.instrument = 'both'; p.bass.enabled = true;
