@@ -11,6 +11,18 @@ Source: Codex draft (read-only) corrected by the Visionary. Decisions in VTO-2.m
 5. **Drum kit lanes (Rock 6):** required real lanes are K (kick), S (snare), H (hi-hat; plus O open hat only if the drum engine models it as a separate kind); other lanes (F, T, C, R, D, P) are OPTIONAL, each independently falls back to the built-in synth voice if no usable CC0 sound is found. The draft's "all ten kinds" is relaxed accordingly.
 6. Real-API behaviour cannot be verified in the build sandbox (no keys); every automated test uses fixtures/mocks. The final report of Rocks 6-8 must list which behaviours the user has to check with real keys.
 
+## Same Page amendments (round 1) — normative, override the draft below
+
+- **B1 (findings 1, 2, 3):** `applyChordChoices` becomes a sparse slot-level override (relBar + half); generated slots, holds and half-bar boundaries not named are untouched. `source: 'freeze'` is set only by the freeze and preserved per record through `captureChordChoices`, unlink/materialization and version capture/restore. Bars outside every section: flagged absolute `chordLocks` (`src: 'freeze'`), removed on OFF; version capture keeps its gap limitation with a warning.
+- **B2 (4):** Demo's section creation and key confirmation stay; when Demo creates the whole-song section while `_all` choices exist, re-key those choices to the new section id.
+- **B3 (5):** Demo is a single history transaction isolated on both edges (`histCommit()` before, `HIST.t = -Infinity` after, no nested playback restart); tests for immediately adjacent edits.
+- **B4 (6, 7):** keys/model live only in a separate browser settings store (never in `S.proj`, history, versions, exports, logs, errors, fixtures). Fixed endpoint constants; Freesound key only as `Authorization` header to `https://freesound.org/apiv2/`; Gemini key only as `x-goog-api-key` to `https://generativelanguage.googleapis.com/`; no credentials on CDN preview requests; `redirect: 'error'`; model id `^[A-Za-z0-9._-]{1,64}$`; errors redacted. Sound records normalized on every ingress (`url` = `https://freesound.org/people/<name>/sounds/<id>/`, `previewUrl` = `https://cdn.freesound.org/previews/...` without query/credentials, exact CC0 license URL, bounded strings). Sentinel-key tests over project JSON, history, versions, exports, status text and console.
+- **B5 (8):** metadata sent to Gemini is delimited data; queries restricted to a fixed vocabulary and allowlisted parameters; "why" rendered as text, length-bounded; tests assert outgoing bodies against malicious fixtures.
+- **B6 (9):** one canonical mono decoded buffer per sound; rate-keyed prepared banks (live context rate, 22,050 auto-mix, 44,100 WAV); shared trim threshold; tests compare onset, duration, level, pitch across the three paths.
+- **B7 (10):** limits: preview <= 1.5 MB, decoded <= 6 s (drum one-shots trimmed to <= 2 s), IndexedDB cache <= 40 MB LRU, resident prepared banks <= 24 MB, sequential preparation, release obsolete buffers; undo/versions keep ids only; oversized inputs fail before expensive processing.
+- **B8 (11):** one generation-guarded `prepareRealSounds(project, generation)` from load, undo/redo, version switch, play and render; immutable bank snapshot per operation; late completions ignored.
+- **B9 (12):** acceptance gates: Rock 6 = 6a (settings, transport, cache, normalizers) -> 6b (deterministic selection, credits) -> 6c (audio integration: playback, stems, WAV); Rock 8 = 8a (analysis) -> 8b (integration); tests registered at each gate; the Tone/piano centralization text in the draft is void.
+
 ## Rocks (dependency order: 5 -> 6 -> 7 -> 8)
 
 ## Facts
