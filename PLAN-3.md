@@ -9,6 +9,15 @@ Source: Codex draft (read-only), reviewed by the Visionary. VTO-3.md decisions s
 3. Stale section ids in `customSets` (deleted sections) are ignored on use and dropped on normalization; the implicit `_all` set is not migrated when sections are later created (note it in ISSUES, no extra work now).
 4. The widened `nearestScaleNote` window must not change any existing scale-mode or manual-snap result: keep a regression assertion.
 
+## Same Page amendments (round 1) — normative
+
+- **C1 (1):** normalize `customSets` against current section ids on every refresh before signatures/history capture; `_all` valid only while there are no explicit sections, dropped afterwards; tests: delete, save/load, undo, later section creation.
+- **C2 (2):** fill / copy / toggles are isolated history transactions (`histCommit()` before, no intermediate commits, `HIST.t = -Infinity` after); test the toggle -> fill -> copy -> toggle sequence undone step by step.
+- **C3 (3, 4):** integration tests through real derive/split/quantize (unequal time warp, a note moved across a section boundary, `noteSplits` with different pitches) asserting original-duration weighting and whole-note membership; label-only override test (fill uses detected pitch, audio targets the set, chord identity keeps the label, key histogram unaffected by set changes).
+- **C4 (5):** `doRender()` generation check: obsolete results are discarded and the latest pending state is scheduled; test edit + undo during the render yield.
+- **C5 (6):** export tests are output-level: parse exported MIDI pitches and analyze a stable interior of the exported vocal WAV against the expected custom target, with original and empty-set controls, starting while rendering is pending.
+- **C6 (7):** native checkboxes / `aria-pressed` buttons in a labeled group, labeled section selector, hints associated, keyboard operation, focus retained after toggle, fill, copy, undo (in-place update or focus restore); browser assertions.
+
 ## Facts
 
 - Defaults: disabled, `target: "semitone"`, amount 100, retune 30 ms, keep vibrato and skip chromatic enabled (`src/core.js:609`).
