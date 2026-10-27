@@ -605,14 +605,38 @@ function keyAmbiguity(cands, h, gap = 0.2) {
 
 // ---------------------------------------------------------------- AUTOTUNE / DÜZELTME EĞRİSİ
 // target: 'semitone' (varsayılan) = söylenen notanın en yakın yarım sesine çek, notanın kimliği ASLA değişmez;
-//         'scale' = scale'in en yakın notasına çek (kimliği değiştirebilir; yalnızca açıkça seçilirse)
-const AUTOTUNE_DEFAULTS = { enabled: false, target: 'semitone', amount: 100, retuneMs: 30, keepVibrato: true, skipChromatic: true };
+//         'scale' = scale'in, 'custom' = bölümün izin verilen kümesinin en yakın notasına çek (kimliği değiştirebilir)
+const AUTOTUNE_DEFAULTS = { enabled: false, target: 'semitone', amount: 100, retuneMs: 30, keepVibrato: true, skipChromatic: true, customSets: {} };
+function normalizeCustomSets(autotune, sectionIds) {
+  const sets = autotune && autotune.customSets;
+  const ids = sectionIds == null ? null : new Set(sectionIds.filter((id) => id !== '_all'));
+  if (ids && !ids.size) ids.add('_all');
+  const customSets = {};
+  if (sets && typeof sets === 'object' && !Array.isArray(sets)) {
+    for (const [id, pcs] of Object.entries(sets)) {
+      if (ids && !ids.has(id)) continue;
+      Object.defineProperty(customSets, id, { value: Array.isArray(pcs) ? [...new Set(pcs.filter((pc) => Number.isInteger(pc) && pc >= 0 && pc <= 11))].sort((a, b) => a - b) : [], enumerable: true, writable: true, configurable: true });
+    }
+  }
+  return Object.assign({}, autotune || {}, { customSets });
+}
+function customFillSet(notes, sectionId) {
+  const durations = new Array(12).fill(0);
+  let total = 0;
+  for (const n of notes) {
+    const duration = n.t1 - n.t0;
+    if (n.section !== sectionId || !Number.isFinite(duration) || duration <= 0) continue;
+    total += duration;
+    if (Number.isInteger(n.nearest)) durations[mod12(n.nearest)] += duration;
+  }
+  return total > 0 ? durations.flatMap((duration, pc) => duration >= 0.03 * total ? [pc] : []) : [];
+}
 // bu kadar cent içinde söylenen nota "tam tonunda" sayılır (kişisel akort referansına göre)
 const IN_TUNE_CENTS = 20;
 function nearestScaleNote(m, pcs) {
   if (!pcs) return Math.round(m);
   let best = Math.round(m), bd = Infinity;
-  for (let k = Math.floor(m) - 2; k <= Math.ceil(m) + 2; k++) {
+  for (let k = Math.floor(m) - 6; k <= Math.ceil(m) + 6; k++) {
     if (!pcs.includes(mod12(k))) continue;
     const d = Math.abs(k - m);
     if (d < bd) { bd = d; best = k; }
@@ -628,7 +652,7 @@ function isChromaticPassing(i, notes, pcs, g) {
   const d1 = n.nearest - p.nearest, d2 = x.nearest - n.nearest;
   return d1 !== 0 && Math.sign(d1) === Math.sign(d2) && Math.abs(d1) <= 2 && Math.abs(d2) <= 2 && (Math.abs(d1) === 1 || Math.abs(d2) === 1);
 }
-// notes: zaman sıralı, her birinde { f0i, f1i, median, nearest, scalePcs, locked, manualTarget }
+// notes: zaman sıralı, her birinde { f0i, f1i, median, nearest, section, scalePcs, locked, manualTarget }
 function computeCorrection(track, notes, at, g) {
   const nF = track.f0.length, hop = track.hopSec;
   const shift = new Float32Array(nF);
@@ -638,7 +662,12 @@ function computeCorrection(track, notes, at, g) {
     if (n.manualTarget != null) {
       target = n.manualTarget; tau = 0.01; amount = 1; keepVib = true; info[i].source = 'manual';
     } else if (at.enabled && !n.locked) {
-      if (at.target === 'scale') {
+      if (at.target === 'custom') {
+        const pcs = n.section != null && at.customSets && Object.prototype.hasOwnProperty.call(at.customSets, n.section) ? at.customSets[n.section] : null;
+        if (!Array.isArray(pcs) || !pcs.length) return;
+        target = nearestScaleNote(n.median - (n.refCents || 0) / 100, pcs);
+        info[i].identityChange = target !== n.nearest;
+      } else if (at.target === 'scale') {
         if (at.skipChromatic && isChromaticPassing(i, notes, n.scalePcs, g)) { info[i].chromatic = true; return; }
         target = nearestScaleNote(n.median - (n.refCents || 0) / 100, n.scalePcs); // kişisel akort referansına göre
         info[i].identityChange = target !== n.nearest; // scale'e çekme notayı başka yarım sese taşıdı
@@ -1887,7 +1916,7 @@ function newProject() {
     pack: { id: null, selectedId: null, locks: { piano: false, guitar: false, bass: false, drums: false } },
     versions: { activeId: null, items: [] },
     noteEdits: [],
-    autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
+    autotune: Object.assign({}, AUTOTUNE_DEFAULTS, { customSets: {} }),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
     chordLocks: [], chordPins: [], changeMarks: [], chordChoices: [],
     swing: { ratio: 0.5 }, // alt bölme: 0,5 düz · 0,667 üçleme · arası swing (ölçülen %70 → 0,70); gitar ve bas da aynı ızgaraya oturur
@@ -1982,7 +2011,7 @@ function derive(proj, st) {
   }
   // Akor bulucu DUYULAN notayı kullanır:
   //  - etiket (kullanıcı düzeltmesi; "notayı taşı" da etiket koyar) varsa o,
-  //  - yoksa autotune notayı başka bir yarım sese taşıdıysa (yalnızca "scale'e çek", miktar ≥ %50) autotune'un hedefi,
+  //  - yoksa autotune notayı başka bir yarım sese taşıdıysa (scale veya custom, miktar ≥ %50) autotune'un hedefi,
   //  - yoksa söylenen nota. "En yakın yarım ses" autotune'u notanın yarım sesini zaten değiştirmez.
   // Ton önerisi (4. adım) bundan önce, söylenen notalarla hesaplanır: autotune seçili scale'i kendi kendine doğrulamaz.
   for (const n of notes) {
@@ -2516,7 +2545,7 @@ const Core = {
   mod12, clamp, median, percentile, hzToMidi, midiToHz, pcName, noteName, parsePc,
   makeGrid, scalePcs, keyUsesFlats, keyName, resample,
   detectPitch, segmentNotes, metricPos, chordWeight, histWeight, suggestKeys, lastWeightedNote,
-  nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
+  normalizeCustomSets, customFillSet, nearestScaleNote, isChromaticPassing, computeCorrection, psolaShift, keyAmbiguity, tuningReference, normSectionType, SECTION_TYPES, SECTION_TYPE_NAMES, CLICK_FEELS, clickKind, parseChordChart, blankChart, parseKeyText,
   diatonicChords, homeChord, chordPcs, chordName, parseChord, roleLabel, scoreChord, slotNotes, buildChords, buildChordsViterbi, CHORD_ENGINES, voiceChords, sameChord,
   writeMidi, parseMidi, encodeWav, decodeWav, renderPiano, renderSynth, SYNTH, synthEnv, synthPianoSample, synthTestVocal,
   PIANO_STYLES, PIANO_DEFAULTS, ARP_RATES, pianoOpts, readMidiFile, importMidi, pickMelodyTrack, arrangePiano, swingMap, swingUnmap, estimateSwing, swingToPart, getFFT, arrangeDrums, applyNoteSplits, addNoteSplit, removeNoteSplit, shiftSong,

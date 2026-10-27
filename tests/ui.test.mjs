@@ -1954,6 +1954,220 @@ try {
     return `github.io engelli → ${info.trim()} · ikisi de engelliyken: "${(await page.textContent('#pianoBadge')).trim()}" + Tekrar dene`;
   });
 
+  const customPcs = [0, 2, 3, 4, 6, 7, 11];
+  const customBox = (pc) => `#customNotes input[data-custom-pc="${pc}"]`;
+  const customState = () => S(() => JSON.parse(JSON.stringify(window.__daw.proj.autotune.customSets)));
+  const customFixture = (audio = false) => {
+    const p = Core.newProject(); p.settings.bpm = 120; p.pitch.tuning = 'a440';
+    p.audio.source = audio ? 'file' : 'midi'; p.audio.offsetSec = 0; p.audio.alignMode = 'none';
+    p.sections = [{ id: 'a', name: 'Verse', startBar: 1, endBar: 1, tonic: 0, mode: 'major' }, { id: 'b', name: 'Nakarat', startBar: 2, endBar: 2, tonic: 0, mode: 'major' }];
+    p.autotune = { ...p.autotune, target: 'custom', retuneMs: 0, customSets: { a: [0], b: [7] } };
+    if (audio) {
+      const sr = 22050, x = new Float32Array(sr * 4), hz = Core.midiToHz(61);
+      for (const start of [0.2, 2.2]) for (let i = Math.round(start * sr); i < Math.round((start + 1.4) * sr); i++) {
+        const t = i / sr - start, env = Math.min(1, t / .02, (1.4 - t) / .02);
+        x[i] = env * (.4 * Math.sin(2 * Math.PI * hz * t) + .08 * Math.sin(4 * Math.PI * hz * t));
+      }
+      p.audioData = { name: 'custom-Csharp.wav', sr, wavBase64: Buffer.from(Core.encodeWav([x], sr)).toString('base64') };
+    } else p.midiData = { name: 'custom.mid', endQ: 8, notes: [{ q0: .4, q1: 3.2, midi: 61, vel: 90 }, { q0: 4.4, q1: 7.2, midi: 61, vel: 90 }] };
+    return p;
+  };
+  const customOpen = async (p) => {
+    await page.setInputFiles('#fileProject', { name: 'custom.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(p)) });
+    await waitStatus(/Proje açıldı/);
+    await page.locator('details[data-key=s5]').evaluate((el) => { el.open = true; });
+  };
+  const customReady = () => page.waitForFunction(() => {
+    const s = window.__daw, at = s.proj.autotune;
+    const sig = JSON.stringify([at.target, at.target === 'custom' ? Object.keys(at.customSets).sort().map((id) => [id, at.customSets[id]]) : null]);
+    return s.correctedSig === sig && s.correctedShift && s.d.correction.shift.every((v, i) => v === s.correctedShift[i]) && (s.d.timeMap?.sig || '') === (s.correctedWarp || '');
+  }, null, { timeout: 30000 });
+
+  await step('Custom picker: section selection, fill, independent whole-song copy and linked targets', async () => {
+    const p = customFixture(); p.autotune.customSets.a = customPcs; p.autotune.customSets.b = [];
+    p.sections[1].link = { sourceId: 'a' };
+    await customOpen(p);
+    assert.ok(await page.isChecked('input[name=atTarget][value=custom]'));
+    assert.ok(await page.isVisible('#customPanel'));
+    assert.equal(await page.getByRole('group', { name: 'İzin verilen notalar', exact: true }).getByRole('checkbox').count(), 12);
+    assert.equal(await page.getByRole('checkbox', { name: 'Do (C)', exact: true }).count(), 1);
+    assert.equal(await page.getByLabel('Nota kümesi bölümü', { exact: true }).count(), 1);
+    assert.equal(await page.locator('#inSkipChrom').isDisabled(), true);
+    assert.match(await page.textContent('#customChromHint'), /her nota taşınır/);
+    assert.equal((await page.textContent('#customSetHint')).trim(), 'Do, Re, Re♯, Mi, Fa♯, Sol, Si');
+    await page.selectOption('#inCustomSection', 'b');
+    assert.match(await page.textContent('#customSetHint'), /kümesi boş/);
+    await page.selectOption('#inCustomSection', 'a');
+    await S(() => window.__dawAPI.refresh());
+    assert.equal(await page.inputValue('#inCustomSection'), 'a');
+    // Zaman çizelgesinin bölüm şeridi seçiciyi izletir.
+    await page.locator('#tlScroll').evaluate((el) => { el.scrollLeft = 0; });
+    const tl = await page.locator('#tl').boundingBox(), px = await S(() => window.__daw.view.pxPerQ);
+    await page.mouse.click(tl.x + 46 + 4.5 * px, tl.y + 35);
+    assert.equal(await page.inputValue('#inCustomSection'), 'b');
+    await page.locator('#btnCustomFill').focus(); await page.keyboard.press('Space');
+    assert.deepEqual((await customState()).b, [1]);
+    assert.equal(await S(() => window.__daw.proj.autotune.enabled), false);
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'btnCustomFill');
+    await page.locator('#btnCustomCopy').focus(); await page.keyboard.press('Enter');
+    assert.deepEqual(await customState(), { a: [1], b: [1] });
+    assert.ok(await S(() => window.__daw.proj.autotune.customSets.a !== window.__daw.proj.autotune.customSets.b));
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'btnCustomCopy');
+    await page.locator(customBox(2)).focus(); await page.keyboard.press('Space');
+    assert.deepEqual(await customState(), { a: [1], b: [1, 2] });
+    assert.equal(await page.locator(customBox(2)).evaluate((el) => document.activeElement === el), true);
+    await page.keyboard.press('Control+z');
+    await page.waitForFunction(() => window.__daw.proj.autotune.customSets.b.join() === '1');
+    assert.equal(await page.locator(customBox(2)).evaluate((el) => document.activeElement === el), true);
+    assert.equal(await page.isChecked(customBox(2)), false);
+  });
+
+  await step('Custom autotune: render and chord-pin invalidation after set edits', async () => {
+    const p = customFixture(true); p.autotune.enabled = true; p.autotune.customSets.b = [0];
+    await customOpen(p); await customReady();
+    await S(() => {
+      window.__customPreviousAudio = window.__daw.corrected;
+      window.__dawAPI.placeChords([window.Core.parseChord('C')], 1, { tonic: 0, mode: 'major' });
+    });
+    assert.ok(await S(() => window.__daw.proj.chordPins.length > 0));
+    const previousShift = await S(() => Array.from(window.__daw.correctedShift));
+    await page.check(customBox(7)); await customReady();
+    assert.deepEqual(await S(() => Array.from(window.__daw.correctedShift)), previousShift, 'eşit kaydırmada da küme imzası değişir');
+    assert.ok(await S(() => window.__daw.corrected !== window.__customPreviousAudio));
+    assert.equal(await S(() => window.__daw.proj.chordPins.length), 0);
+    await S(() => {
+      const s = window.__daw, sets = s.proj.autotune.customSets;
+      window.__customPreviousAudio = s.corrected;
+      s.proj.autotune.customSets = { b: sets.b.slice(), a: sets.a.slice() };
+      window.__dawAPI.refresh();
+    });
+    assert.ok(await S(() => window.__daw.corrected === window.__customPreviousAudio), 'anahtar sırası önbelleği bozmaz');
+    // Render'ın gerçek tick() noktasını tut: düzenleme + geri alma, eski işi yayımlamamalı.
+    await S(() => {
+      const C = window.Core, original = C.psolaShift;
+      window.__customPsolaCalls = 0;
+      C.psolaShift = (...args) => { window.__customPsolaCalls++; return original(...args); };
+      window.__customRestorePsola = () => { C.psolaShift = original; };
+      for (const pc of [0, 7, 2]) document.querySelector(`#customNotes input[data-custom-pc="${pc}"]`).click();
+      document.querySelector('#btnCustomCopy').click();
+      const timer = window.setTimeout;
+      window.setTimeout = (fn, ms, ...args) => {
+        if (ms === 0 && /vokal render ediliyor/.test(document.querySelector('#status').textContent)) {
+          window.setTimeout = timer;
+          window.__customRenderResume = () => timer(fn, 0, ...args);
+          return 0;
+        }
+        return timer(fn, ms, ...args);
+      };
+      document.querySelector('#btnAutoApply').click();
+    });
+    await page.waitForFunction(() => !!window.__customRenderResume);
+    await page.check(customBox(7));
+    await page.locator(customBox(7)).focus(); await page.keyboard.press('Control+z');
+    await page.waitForFunction(() => window.__daw.proj.autotune.customSets.a.join() === '2');
+    assert.equal(await S(() => window.__customPsolaCalls), 0);
+    await S(() => window.__customRenderResume()); await customReady();
+    assert.equal(await S(() => window.__customPsolaCalls), 1, 'yalnızca son durum işlendi');
+    assert.ok(await S(() => window.__daw.d.notes.every((n) => n.corr.target === 62)));
+    assert.equal(await page.locator(customBox(7)).evaluate((el) => document.activeElement === el), true);
+    await S(() => { window.__customRestorePsola(); delete window.__customRenderResume; });
+  });
+
+  await step('Custom autotune: undo/redo, save/load and legacy project restoration', async () => {
+    await customOpen(customFixture());
+    const sequence = await S(() => {
+      const snapshots = [], save = () => snapshots.push(JSON.parse(JSON.stringify(window.__daw.proj.autotune.customSets)));
+      const before = window.__dawAPI.hist().undo.length;
+      save(); document.querySelector('#customNotes input[data-custom-pc="2"]').click(); save();
+      document.querySelector('#btnCustomFill').click(); save();
+      document.querySelector('#btnCustomCopy').click(); save();
+      document.querySelector('#customNotes input[data-custom-pc="1"]').click(); save();
+      return { snapshots, steps: window.__dawAPI.hist().undo.length - before };
+    });
+    assert.equal(sequence.steps, 4, 'beklemeden toggle → fill → copy → toggle dört adım');
+    await page.locator(customBox(1)).focus();
+    for (let i = 3; i >= 0; i--) {
+      await page.keyboard.press('Control+z');
+      await page.waitForFunction((expected) => JSON.stringify(window.__daw.proj.autotune.customSets) === expected, JSON.stringify(sequence.snapshots[i]));
+      assert.equal(await page.locator(customBox(1)).evaluate((el) => document.activeElement === el), true);
+    }
+    for (let i = 1; i <= 4; i++) {
+      await page.keyboard.press('Control+Shift+z');
+      await page.waitForFunction((expected) => JSON.stringify(window.__daw.proj.autotune.customSets) === expected, JSON.stringify(sequence.snapshots[i]));
+    }
+    const saved = JSON.parse((await download('#btnSave')).data.toString());
+    await customOpen(saved);
+    assert.deepEqual(await customState(), sequence.snapshots[4]);
+    assert.ok(await page.isChecked('input[name=atTarget][value=custom]'));
+    await page.locator('details[data-key=s4]').evaluate((el) => { el.open = true; });
+    await page.click('#sectionList button[data-act=secDel][data-id=b]');
+    assert.deepEqual(await customState(), { a: [] });
+    assert.equal(await page.inputValue('#inCustomSection'), 'a');
+    const deleted = JSON.parse((await download('#btnSave')).data.toString());
+    assert.equal(Object.hasOwn(deleted.autotune.customSets, 'b'), false);
+    await page.click('#btnUndo');
+    await page.waitForFunction(() => window.__daw.proj.sections.length === 2);
+    assert.deepEqual(await customState(), sequence.snapshots[4]);
+    await customOpen(deleted); assert.deepEqual(await customState(), { a: [] });
+    const implicit = customFixture(); implicit.sections = []; implicit.autotune.customSets = { _all: [0, 2] };
+    await customOpen(implicit);
+    assert.equal(await page.inputValue('#inCustomSection'), '_all');
+    assert.match(await page.textContent('#inCustomSection'), /Tümü/);
+    await page.selectOption('#inSecName', 'Verse'); await page.fill('#inSecStart', '1'); await page.fill('#inSecEnd', '1'); await page.click('#btnSecAdd');
+    assert.deepEqual(await customState(), {}, '_all yeni bölüme taşınmaz');
+    await page.click('#btnUndo'); await page.waitForFunction(() => window.__daw.proj.sections.length === 0);
+    assert.deepEqual(await customState(), { _all: [0, 2] });
+    const legacy = customFixture(); delete legacy.autotune.customSets; legacy.autotune.target = 'semitone';
+    await customOpen(legacy);
+    assert.ok(await page.isChecked('input[name=atTarget][value=semitone]'));
+    assert.equal(await page.isVisible('#customPanel'), false); assert.deepEqual(await customState(), {});
+    await page.check('input[name=atTarget][value=custom]'); assert.ok(await page.isVisible('#customPanel'));
+    page.removeAllListeners('dialog'); page.once('dialog', (d) => d.accept()); await page.click('#btnNew');
+    assert.ok(await page.isChecked('input[name=atTarget][value=semitone]'));
+    assert.equal(await page.isVisible('#customPanel'), false); assert.deepEqual(await customState(), {});
+  });
+
+  await step('Custom autotune: corrected MIDI and vocal WAV exports', async () => {
+    const p = customFixture(true); p.autotune.customSets = { a: [0], b: [0] };
+    await customOpen(p); await customReady();
+    const midiPitches = (bytes) => Core.parseMidi(new Uint8Array(bytes)).tracks.find((t) => /Vokal/.test(t.name)).notes.map((n) => n.midi);
+    const wavPitch = async (bytes) => {
+      const w = Core.decodeWav(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      const track = await Core.detectPitch(w.data.slice(Math.round(.6 * w.sr), Math.round(1.2 * w.sr)), w.sr, Core.PITCH_DEFAULTS);
+      return Core.median(Array.from(track.f0).filter((f) => f > 0).map(Core.hzToMidi));
+    };
+    const originalMidi = midiPitches((await download('#btnExpMidi')).data);
+    assert.deepEqual(originalMidi, [61, 61]);
+    const originalPitch = await wavPitch((await download('#btnExpVocal')).data);
+    assert.ok(Math.abs(originalPitch - 61) < .12, `orijinal ${originalPitch}`);
+    // Aynı JS turunda uygula + dışa aktar: hazır olmasını beklemeden başlat.
+    const pendingExport = async (button, empty = false) => {
+      const event = page.waitForEvent('download');
+      const pending = await page.evaluate(({ button, empty }) => {
+        if (empty) {
+          document.querySelector('#customNotes input[data-custom-pc="0"]').click();
+          document.querySelector('#btnCustomCopy').click();
+        }
+        const s = window.__daw, previous = s.correctedShift;
+        document.querySelector('#btnAutoApply').click();
+        const pending = !previous || s.d.correction.shift.some((v, i) => v !== previous[i]);
+        document.querySelector(button).click();
+        return pending;
+      }, { button, empty });
+      const dl = await event;
+      assert.equal(pending, true, 'dışa aktarım render beklerken başladı');
+      return readFileSync(await dl.path());
+    };
+    assert.deepEqual(midiPitches(await pendingExport('#btnExpMidi')), [60, 60]);
+    // Render'ı tekrar beklemeye al: WAV aynı düzeltmenin tamamlanmasını bekler.
+    await page.click('#btnAutoOff'); await customReady();
+    const correctedPitch = await wavPitch(await pendingExport('#btnExpVocal'));
+    assert.ok(Math.abs(correctedPitch - 60) < .12, `düzeltilmiş ${correctedPitch}`);
+    const emptyPitch = await wavPitch(await pendingExport('#btnExpVocal', true));
+    assert.ok(Math.abs(emptyPitch - originalPitch) < .05, `boş küme ${emptyPitch}`);
+    assert.deepEqual(midiPitches((await download('#btnExpMidi')).data), originalMidi);
+  });
+
   assert.deepEqual(errors, [], 'tarayıcı hataları');
   console.log(log.join('\n'));
   console.log('\nArayüz testi geçti.');
