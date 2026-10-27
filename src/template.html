@@ -29,6 +29,7 @@
   </div>
   <div class="group">
     <button id="btnDemo" class="accent" title="Ölçü + ton + akorlar + davul + bas tek tuşla; sonra çalar">✨ Demo yap</button>
+    <label class="chk" title="Açıkken Demo yap, paket uygulama ve ⟳ akorlara dokunmaz; kendi seçtiğin akorlar korunur."><input type="checkbox" id="inPreserveChordsToolbar"> 🔒 Akorları koru</label>
     <button id="btnTest" class="accent">Test melodisi üret</button>
     <button id="btnUndo" title="Geri al (Ctrl+Z)" disabled>↶</button><button id="btnRedo" title="Yinele (Ctrl+Shift+Z)" disabled>↷</button>
     <button id="btnNew">Yeni</button>
@@ -164,6 +165,7 @@
 
     <details class="step" data-key="s4a">
       <summary><b>4a</b> Tür paketi <span class="chip" id="chipPack">yok</span></summary>
+      <label class="chk" title="Açıkken Demo yap, paket uygulama ve ⟳ akorlara dokunmaz; kendi seçtiğin akorlar korunur."><input type="checkbox" id="inPreserveChords"> 🔒 Akorları koru</label>
       <p class="hint">Tempon ve ölçün aynı kalır; paket davul, bas, akor sesi, gitar ve bölüm dinamiklerini birlikte kurar.</p>
       <p class="hint" id="packUnavailable" hidden>Bu ölçü için paket yok (4/4, 3/4 ve 6/8 desteklenir)</p>
       <div>Tempoya uygun</div>
@@ -245,6 +247,7 @@
         <select id="inEngine"><option value="viterbi">süreli Viterbi (bölüm boyunca, 3 alternatif)</option><option value="greedy">ölçü ölçü (eski)</option></select></label>
       <div class="row"><label class="grow" title="Akor motoru bu ölçüyü 1. ölçü sayar; öncesinde akor ve piyano çalmaz. Zaman çizelgesinde cetveldeki 🎹 bayrağını sürükleyerek de ayarlanır"><b>🎹 Akorlar şu ölçüden girsin</b><input type="number" id="inChordStart" min="1" value="1"></label><button id="btnChordHere" title="Oynatma imlecinin (kırmızı çizgi) olduğu ölçü">İmleçten</button></div>
       <div id="chordStartInfo" class="hint"></div>
+      <p class="hint" id="preserveChordsHint" hidden>Akorları koru açık: toplu motor işlemleri için önce korumayı kapat.</p>
       <div class="row"><button id="btnApplyAfter" class="accent" title="Son ✂ işaretinin ya da elle yazdığın akorun ölçüsünden SONRAKİ akorları motor bütün olarak belirler; öncesi aynen kalır">↧ Son elle yaptığımdan sonrasını otomatik uygula <span id="afterInfo"></span></button></div>
       <p class="hint"><b>Öncelik:</b> 1) ✂ ile seçtiğin değişim noktaları · 2) elle yazdığın akorlar · 3) motor. Akor değişimini işaretlediğin an o noktadaki akor motorca yeniden belirlenir (diğerleri yerinde kalır). Sonra istediğin akorları elle yaz; en son bu düğmeyle şarkının kalanını bir bütün olarak tamamlat — son yaptığın ölçüye kadar hiçbir şey değişmez.</p>
       <div class="row"><button id="btnUnlockAll" class="danger" title="Elle seçilen / kilitlenen bütün akorları otomatiğe döndürür">🔓 Tüm akor kilitlerini kaldır <span id="lockCount"></span></button>

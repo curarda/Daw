@@ -68,13 +68,13 @@ window.__dawAPI = {
     }
     if (Array.from({ length: nBars }, (_, i) => startBar + i).every((bar) => linkedAtBar(bar))) { status('Progresyon yerleştirilmedi.' + linkedSkipNote()); return false; }
     pinOthers((b) => b >= startBar && b <= end && !linkedAtBar(b));
-    for (const sec of covering) if (!linkSource(sec.id)) S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== sec.id);
+    for (const sec of covering) if (!C.chordsAreFrozen(S.proj) && !linkSource(sec.id)) S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== sec.id);
     for (let i = 0; i < nBars; i++) {
       const bar = startBar + i;
       if (linkedAtBar(bar)) continue;
       const h0 = cells[2 * i], h1 = cells[2 * i + 1];
       S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar !== bar);
-      const lk = (ch, half) => S.proj.chordLocks.push({ bar, half, chord: { root: ch.root, q: ch.q, bass: null } });
+      const lk = (ch, half) => { editFrozenChoice(bar, half, { root: ch.root, q: ch.q, bass: null }); S.proj.chordLocks.push({ bar, half, chord: { root: ch.root, q: ch.q, bass: null } }); };
       if (C.sameChord(h0, h1) || !g.split) lk(h0, null); else { lk(h0, 0); lk(h1, 1); }
     }
     refresh();
@@ -213,6 +213,7 @@ function refresh() {
   renderVersions();
   renderInspector();
   renderInfo();
+  renderChordPreservation();
   renderDrums();
   renderGuitar();
   renderBass();
@@ -224,6 +225,33 @@ function refresh() {
   renderChips();
   histCommit();
 }
+
+const PRESERVE_HINT = 'Akorları koru açık: toplu motor işlemleri için önce korumayı kapat.';
+function guardFrozenChords() {
+  if (!C.chordsAreFrozen(S.proj)) return false;
+  status(PRESERVE_HINT); return true;
+}
+function renderChordPreservation() {
+  const frozen = C.chordsAreFrozen(S.proj);
+  for (const id of ['inPreserveChords', 'inPreserveChordsToolbar']) $('#' + id).checked = frozen;
+  $('#preserveChordsHint').hidden = !frozen;
+  for (const el of $$('#btnApplyAfter, #btnApplySug, #btnUnlockAll, #btnUnlockChords, #btnChartRemove, #btnReseed, [data-act="secUnlockAll"], #altBox input')) {
+    if (el.dataset.unfrozenTitle === undefined) el.dataset.unfrozenTitle = el.title;
+    el.title = frozen ? PRESERVE_HINT : el.dataset.unfrozenTitle;
+    if (['btnUnlockChords', 'btnReseed'].includes(el.id) || el.matches('#altBox input, [data-act="secUnlockAll"]')) el.disabled = frozen;
+    else if (frozen) el.disabled = true;
+  }
+}
+function toggleChordPreservation(e) {
+  const on = e.target.checked, n = S.d.chords.length;
+  let result;
+  const restarting = matrixEdit(() => { result = on ? C.freezeChords(S.proj, S.d) : C.unfreezeChords(S.proj); });
+  const message = result.ok ? on ? `${n} akor donduruldu` : 'Akorlar serbest: motor yeniden belirleyebilir' : result.warnings.join(' ');
+  status(message, result.ok ? undefined : 'err');
+  if (restarting) restarting.then(() => status(message, result.ok ? undefined : 'err'));
+}
+$('#inPreserveChords').onchange = toggleChordPreservation;
+$('#inPreserveChordsToolbar').onchange = toggleChordPreservation;
 
 // ---------------------------------------------------------------- MIDI İÇE AKTARMA: .mid → proje (ses yok; melodi MIDI notalarından)
 // Notalar çeyrek cinsinden saklanır: BPM değişince müzikal yerleri korunur; ham zamanlar (düzenlemelerin t0/t1'i) oranla ölçeklenir.
@@ -332,6 +360,9 @@ function histCommit() {
   const cur = snapProj();
   if (HIST.reset || HIST.base == null) { HIST.undo = []; HIST.redo = []; HIST.base = cur; HIST.reset = false; histButtons(); return; }
   if (cur === HIST.base) return;
+  const prior = JSON.parse(HIST.base);
+  if (prior.pack) prior.pack.selectedId = S.proj.pack.selectedId;
+  if (JSON.stringify(prior) === cur) return; // paket seçimi tek başına geçmiş adımı değildir
   const now = performance.now();
   if (now - HIST.t > 500 || !HIST.undo.length) { HIST.undo.push(HIST.base); if (HIST.undo.length > 100) HIST.undo.shift(); }
   HIST.t = now; HIST.base = cur; HIST.redo = []; HIST.last = 'proj';
@@ -508,14 +539,18 @@ async function renderStems(sr, lenSec) {
   };
 }
 // 🎚 otomatik miks: izler fader'sız render edilip vokalin kapılı RMS'ine göre dengelenir (akor −7, gitar −6, bas −5, davul −6 dB); vokal 0 dB
-async function autoMix(quiet) {
+async function autoMix(quiet, current = () => true) {
   if (!S.d) { status('Önce bir akor izi gerekli.', 'err'); return false; }
   let res;
   await busy('Ses dengesi ölçülüyor…', async () => {
     await tick();
-    const sr = 22050, st = await renderStems(sr, Math.min(S.d.bars * S.d.g.barSec + 1.5, 150));
-    res = C.autoMixLevels(st, sr);
+    if (!current()) return;
+    try {
+      const sr = 22050, st = await renderStems(sr, Math.min(S.d.bars * S.d.g.barSec + 1.5, 150));
+      if (current()) res = C.autoMixLevels(st, sr);
+    } catch (e) { if (current()) throw e; }
   });
+  if (!current() || !res) return false;
   const m = S.proj.mixer, names = { piano: 'akor', guitar: 'gitar', bass: 'bas', drums: 'davul' };
   for (const k of Object.keys(res.levels)) if (m[k]) m[k].vol = res.levels[k];
   syncInputs(); Player.applyMixer(); queueVersions();
@@ -909,9 +944,15 @@ function applyMeterEstimate(est) { // 8b'deki "Uygula" ile aynı; yenilemeyi ça
   }
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.half == null || C.METERS[set.meter].split);
 }
+let demoGeneration = 0;
 function makeDemo() {
   if (!S.d || (!S.audio && !S.midi) || !S.rawNotes || !S.rawNotes.length) { status('Demo için önce bir ses kaydı/yükleme ve analiz gerekli ("Test melodisi üret" ile de deneyebilirsin).', 'err'); return; }
+  const selectedPackId = $('#inPack').value, pack = C.eligiblePacks(S.proj).find((p) => p.id === selectedPackId);
+  const project = S.proj, generation = ++demoGeneration;
+  const current = () => S.proj === project && generation === demoGeneration;
+  histCommit(); HIST.t = -Infinity;
   Player.stop(true);
+  clearTimeout(BS.timer);
   const did = [];
   HIST.hold++; // bütün adımlar tek geri alma adımı
   try {
@@ -925,46 +966,72 @@ function makeDemo() {
       if (sw && sw.confident && Math.abs(sw.ratio - swingR()) > 0.04) did.push(`alt bölme senin ayarın (${swingMode() === 'straight' ? 'düz' : '%' + Math.round(swingR() * 100)}); melodide ≈%${Math.round(sw.ratio * 100)} swing ölçüldü — dokunmadım, 1. adımdan uygulayabilirsin`);
     }
     // 2) bölüm ve ton: bölüm yoksa tek bölüm; onaylanmamış önerilen tonlar onaylanır
-    if (!S.proj.sections.length) { S.proj.sections.push({ id: uid(), link: null, name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: null, mode: null }); refresh(); }
+    if (!S.proj.sections.length) {
+      const id = uid(); C.rekeyChordChoices(S.proj, '_all', id);
+      S.proj.sections.push({ id, link: null, name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: null, mode: null }); refresh();
+    }
     let keyed = 0;
     for (const s of S.proj.sections) if (s.tonic == null) { const ds = S.d.sections.find((x) => x.id === s.id); if (ds && ds.tonic != null) { s.tonic = ds.tonic; s.mode = ds.mode; keyed++; } }
     refresh();
     did.push(`ton: ${S.d.sections.filter((x) => !x.implicit && x.tonic != null).map((x) => `${x.name} ${C.keyName(x.tonic, x.mode)}`).join(', ') || '—'}${keyed ? ' (öneriler onaylandı)' : ''}`);
-    // 3) davul + bas aç. Elle seçtiklerine (loop, bas kalıbı, fill, bölüm düzenlemesi) dokunmaz; yalnızca "otomatik" olanı doldurur
-    S.proj.drums.on = true; bassNormalize(); S.proj.bass.enabled = true; // bas: 8d'deki üretici (elle düzenlenmiş / kilitli ölçüler zaten üretilmişse korunur)
-    const manual = [];
-    if (S.audio && !S.proj.vocalFx.touched) { S.proj.vocalFx.on = true; did.push('vokal temizliği açık'); } // senin ayarladığına (touched) dokunmaz
-    if (S.proj.drums.loop && S.proj.drums.loop !== 'auto') manual.push('davul loop\'u');
-    if (S.proj.bass.generated && S.proj.bass.bars.some((b) => b.locked || b.source === 'manual')) manual.push('bas ölçüleri');
-    // 4) bölüm başına çeşitlilik: nakarat varsa verse / giriş daha sade davul (bas enerji eğrisini kendi üreticisi izler). Elle verilen bölüm düzenlemesi korunur; önceki demo'nun otomatik düzenlemesi yenilenir
-    for (const s of S.proj.sections) if (s.arr && s.arr.auto) delete s.arr;
-    const types = S.proj.sections.map((s) => C.normSectionType(s.type || s.name));
-    if (S.proj.sections.length >= 2 && types.includes('chorus')) {
-      const sade = loopById('minimal');
-      S.proj.sections.forEach((s, i) => {
-        if (s.arr) { manual.push(`"${s.name}" bölüm düzenlemesi`); return; }
-        if (types[i] === 'verse' || types[i] === 'intro') {
-          s.arr = { auto: true };
-          if (sade && S.proj.drums.loop === 'auto' && currentLoop() && currentLoop().id !== 'minimal') s.arr.drums = 'minimal';
-          if (!s.arr.drums) delete s.arr;
-        }
+    if (S.audio && !S.proj.vocalFx.touched) { S.proj.vocalFx.on = true; did.push('vokal temizliği açık'); }
+    if (pack) {
+      S.proj.pack.selectedId = selectedPackId;
+      const result = C.applyPack(S.proj, S.d, selectedPackId, { keepManual: true });
+      if (result.manual.includes('drums')) S.proj.drums.on = true; // elle seçilen loop korunur ama Demo davulu yine açar
+      const manual = [];
+      if (result.manual.includes('drums')) manual.push("davul loop'u");
+      if (result.manual.includes('piano')) manual.push('akor sesi');
+      for (const s of S.proj.sections) if (!s.arr?.auto && (s.arr?.drums != null || s.arr?.piano != null)) manual.push(`"${s.name}" bölüm düzenlemesi`);
+      if (S.proj.bass.bars.some((b) => b.locked || b.source === 'manual')) manual.push('bas ölçüleri');
+      if (manual.length) did.push(`elle seçtiklerin korundu: ${manual.join(', ')}`);
+      const types = S.proj.sections.map((s) => C.normSectionType(s.type || s.name));
+      if (types.includes('chorus')) S.proj.sections.forEach((s, i) => {
+        if (!s.arr && ['verse', 'intro'].includes(types[i])) s.arr = { auto: true }; // dinamikleri artık matris kurar
       });
-      if (S.proj.sections.some((s) => s.arr && s.arr.auto)) did.push('verse/giriş daha sade davul, nakarat dolu');
+      PACK_UI.project = S.proj; PACK_UI.warnings = result.warnings; PACK_UI.kept = result.kept.filter((l) => S.proj.pack.locks[l]);
+      did.push(...result.warnings);
+      syncInputs(); refresh();
+    } else {
+      did.push('Bu ölçü için paket yok; eski Demo düzenlemesi kullanıldı');
+      // 3) davul + bas aç. Elle seçtiklerine (loop, bas kalıbı, fill, bölüm düzenlemesi) dokunmaz; yalnızca "otomatik" olanı doldurur
+      S.proj.drums.on = true; bassNormalize(); S.proj.bass.enabled = true; // bas: 8d'deki üretici (elle düzenlenmiş / kilitli ölçüler zaten üretilmişse korunur)
+      const manual = [];
+      if (S.proj.drums.loop && S.proj.drums.loop !== 'auto') manual.push('davul loop\'u');
+      if (S.proj.bass.generated && S.proj.bass.bars.some((b) => b.locked || b.source === 'manual')) manual.push('bas ölçüleri');
+      // 4) bölüm başına çeşitlilik: nakarat varsa verse / giriş daha sade davul (bas enerji eğrisini kendi üreticisi izler). Elle verilen bölüm düzenlemesi korunur; önceki demo'nun otomatik düzenlemesi yenilenir
+      for (const s of S.proj.sections) if (s.arr && s.arr.auto) delete s.arr;
+      const types = S.proj.sections.map((s) => C.normSectionType(s.type || s.name));
+      if (S.proj.sections.length >= 2 && types.includes('chorus')) {
+        const sade = loopById('minimal');
+        S.proj.sections.forEach((s, i) => {
+          if (s.arr) { manual.push(`"${s.name}" bölüm düzenlemesi`); return; }
+          if (types[i] === 'verse' || types[i] === 'intro') {
+            s.arr = { auto: true };
+            if (sade && S.proj.drums.loop === 'auto' && currentLoop() && currentLoop().id !== 'minimal') s.arr.drums = 'minimal';
+            if (!s.arr.drums) delete s.arr;
+          }
+        });
+        if (S.proj.sections.some((s) => s.arr && s.arr.auto)) did.push('verse/giriş daha sade davul, nakarat dolu');
+      }
+      if (manual.length) did.push(`elle seçtiklerin korundu: ${manual.join(', ')}`);
+      syncInputs(); refresh();
+      if (S.d.chords.length && !S.proj.bass.generated) { Bs.bassGenerateAll(S.proj.bass, bCtx()); renderBass(); drawBass(); } // 8d'deki üretici; tek geri alma adımının içinde
     }
-    if (manual.length) did.push(`elle seçtiklerin korundu: ${manual.join(', ')}`);
-    syncInputs(); refresh();
-    if (S.d.chords.length && !S.proj.bass.generated) { Bs.bassGenerateAll(S.proj.bass, bCtx()); renderBass(); drawBass(); } // 8d'deki üretici; tek geri alma adımının içinde
   } finally { HIST.hold--; }
-  histCommit();
+  histCommit(); HIST.t = -Infinity;
+  clearTimeout(BS.timer);
   const L = currentLoop(), bt = S.proj.bass;
   did.push(`davul: ${L ? C.loopLabel(L) : '—'}`, `bas: ${bt.generated ? (Bs.profileById(bt, bt.styleProfileId) || {}).name : '—'}`, `akor sesi: ${C.PIANO_STYLES[S.proj.piano.style].name}`);
   S.pos = 0; $('#tlScroll').scrollLeft = 0;
-  const msg = () => '✨ Demo hazır → ' + did.join(' · ') + '. Çalıyor; beğenmediğini ⟳ ile değiştir, Ctrl+Z ile geri al.';
+  const msg = () => `✨ Demo hazır: ${pack ? pack.name : 'eski düzenleme'}${C.chordsAreFrozen(project) ? ' · akorlar korundu' : ''} → ` + did.join(' · ') + '. Çalıyor; beğenmediğini ⟳ ile değiştir, Ctrl+Z ile geri al.';
   status(msg());
   (async () => { // ses dengesi: fader'a hiç dokunmadıysan izler vokale göre otomatik dengelenir (mikser geri almaya dahil değil)
-    if (!S.proj.mixer.touched) { try { if (await autoMix(true)) did.push('ses dengesi otomatik'); } catch (e) { /* ölçüm başarısızsa mevcut seviyeler kalır */ } }
+    if (!S.proj.mixer.touched) { try { if (await autoMix(true, current)) did.push('ses dengesi otomatik'); } catch (e) { /* ölçüm başarısızsa mevcut seviyeler kalır */ } }
+    if (!current()) return;
     status(msg());
-    Player.play();
+    await Player.play();
+    if (current() && Player.playing) status(msg());
   })();
 }
 
@@ -2298,7 +2365,7 @@ function seek(sec) {
   if (wasPlaying) Player.play();
 }
 function select(sel) {
-  S.sel = sel; if (sel) clearBassSel(); renderInspector(); renderSections(); draw();
+  S.sel = sel; if (sel) clearBassSel(); renderInspector(); renderSections(); renderChordPreservation(); draw();
   if (S.loop.on && sel && sel.type === 'section') { setLoopRegion(); if (Player.playing) Player.play(); } // döngü seçili bölümü izler
 }
 
@@ -2481,12 +2548,12 @@ function renderPacks() {
   const p = S.proj;
   C.migratePack(p);
   if (PACK_UI.project !== p) { PACK_UI.project = p; PACK_UI.warnings = []; PACK_UI.kept = []; }
-  const ranked = C.rankPacks(p), select = $('#inPack'), selected = select.value;
+  const ranked = C.rankPacks(p), select = $('#inPack');
   const record = (id) => C.PACKS.find((pack) => pack.id === id);
   const fit = (r) => r.fits ? 'BPM aralığına uyuyor' : `±${r.distance} BPM dışında`;
   $('#chipPack').textContent = record(p.pack.id)?.name || 'yok';
   select.innerHTML = ranked.map((r) => `<option value="${r.id}">${esc(record(r.id).name)} — ${fit(r)}</option>`).join('');
-  select.value = ranked.some((r) => r.id === selected) ? selected : ranked.some((r) => r.id === p.pack.id) ? p.pack.id : ranked[0]?.id || '';
+  select.value = ranked.some((r) => r.id === p.pack.selectedId) ? p.pack.selectedId : ranked.some((r) => r.id === p.pack.id) ? p.pack.id : ranked[0]?.id || '';
   $('#packSuggestions').innerHTML = C.topSuggestions(p).map((r) => `<button data-pack="${r.id}">${esc(record(r.id).name)}<small>${fit(r)}</small></button>`).join('');
   $('#packUnavailable').hidden = !!ranked.length;
   for (const el of [select, $('#btnPackApply'), $('#btnPackNext'), ...$$('[data-pack-lock]')]) el.disabled = !ranked.length;
@@ -2500,6 +2567,7 @@ function applyPackUI(id) {
     const restarting = matrixEdit(() => {
       const result = C.applyPack(S.proj, S.d, id);
       PACK_UI.project = S.proj; PACK_UI.warnings = result.warnings; PACK_UI.kept = result.kept;
+      S.proj.pack.selectedId = id;
       $('#inPack').value = id;
     });
     clearTimeout(BS.timer);
@@ -2510,6 +2578,11 @@ function applyPackUI(id) {
   } catch (e) { status(e.message, 'err'); }
 }
 $('#packSuggestions').onclick = (e) => { const b = e.target.closest('[data-pack]'); if (b) applyPackUI(b.dataset.pack); };
+$('#inPack').onchange = (e) => {
+  histCommit();
+  S.proj.pack.selectedId = e.target.value || null;
+  renderVersions();
+};
 $('#btnPackApply').onclick = () => applyPackUI($('#inPack').value);
 $('#btnPackNext').onclick = () => applyPackUI(C.nextPack(S.proj, S.proj.pack.id || $('#inPack').value));
 $('#packLocks').onclick = (e) => {
@@ -2928,6 +3001,7 @@ $('#inspector').addEventListener('click', (e) => {
     return;
   }
   if (act === 'secUnlockAll' && S.sel.type === 'section') {
+    if (guardFrozenChords()) return;
     const s = S.proj.sections.find((x) => x.id === S.sel.id);
     if (s && !guardLinked(s.id)) { S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== s.id); S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar < s.startBar || l.bar > s.endBar); refresh(); status(`“${s.name}” bölümündeki akor kilitleri kaldırıldı.`); }
     return;
@@ -2980,7 +3054,8 @@ $('#inspector').addEventListener('click', (e) => {
     if (act === 'pickChord') { setLock(slot.bar, half, { root: +b.dataset.r, q: b.dataset.q, bass: bOf() }); }
     if (act === 'applyPinSug' && slot.pinSuggest) {
       const ps = slot.pinSuggest.chord;
-      S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== slot.section);
+      if (!C.chordsAreFrozen(S.proj)) S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== slot.section);
+      editFrozenChoice(slot.bar, slot.half, ps, 'pin');
       S.proj.chordPins = (S.proj.chordPins || []).filter((p) => !(p.bar === slot.bar && (slot.half == null || p.half == null || p.half === slot.half)));
       S.proj.chordPins.push({ bar: slot.bar, half: slot.half, chord: { root: ps.root, q: ps.q, bass: null } });
       refresh();
@@ -3033,10 +3108,11 @@ $('#inspector').addEventListener('change', (e) => {
 $('#inspector').addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'chInput') $('#inspector button[data-act=manualChord]').click(); });
 function unlockSlot(slot) {
   if (guardLinked(slot.section)) return;
-  if (S.proj.chordChoices.some((c) => c.sectionId === slot.section)) {
+  if (!C.chordsAreFrozen(S.proj) && S.proj.chordChoices.some((c) => c.sectionId === slot.section)) {
     pinOthers((bar, half) => bar === slot.bar && (slot.half == null || half == null || half === slot.half));
     S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== slot.section);
   }
+  editFrozenChoice(slot.bar, slot.half, slot.chord, 'auto');
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === slot.bar && (slot.half == null || l.half == null || l.half === slot.half)));
   refresh();
   status(`Ölçü ${slot.bar}${slot.half != null ? ` (${slot.half + 1}. yarı)` : ''}: kilit kaldırıldı, akor otomatiğe döndü.`);
@@ -3096,7 +3172,7 @@ function setMark(bar, half, kind) {
     S.proj.chordPins = out;
   }
   const sec = sectionAtBar(bar);
-  S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== sec?.id);
+  if (!C.chordsAreFrozen(S.proj)) S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== sec?.id);
   S.proj.changeMarks = (S.proj.changeMarks || []).filter((m) => !(m.bar === bar && (m.half || 0) === half));
   if (kind) S.proj.changeMarks.push({ bar, half, kind });
   refresh();
@@ -3105,7 +3181,7 @@ function setMark(bar, half, kind) {
 }
 // covers(bar, half): yeni kilitlerin (bar, yarım) konumunu kapsayıp kapsamadığı; half null = tüm ölçü
 function pinOthers(covers) {
-  if (!S.d) return;
+  if (!S.d || C.chordsAreFrozen(S.proj)) return;
   if (S.proj.chordPinsSig !== pinSig()) S.proj.chordPins = (S.proj.chordPins || []).filter((p) => linkedAtBar(p.bar));
   const pins = S.proj.chordPins || (S.proj.chordPins = []);
   const split = !!S.d.g.split;
@@ -3122,13 +3198,28 @@ function pinOthers(covers) {
   }
   S.proj.chordPinsSig = pinSig();
 }
+// Dondurulmuş aralıkta yalnızca elle düzenlenen hücre kaynağını bırakır.
+function editFrozenChoice(bar, half, chord, state = 'lock') {
+  if (!C.chordsAreFrozen(S.proj)) return;
+  const sec = S.d.sections.find((s) => bar >= s.startBar && bar <= s.endBar);
+  if (!sec || !S.proj.chordChoices.some((c) => c.sectionId === sec.id)) return;
+  const start = bar - sec.startBar + (half || 0) / 2, end = start + (half == null ? 1 : .5);
+  const pos = (c) => c.relBar + c.half / 2;
+  const choices = S.proj.chordChoices.filter((c) => c.sectionId === sec.id).sort((a, b) => pos(a) - pos(b));
+  const prior = choices.filter((c) => pos(c) <= end).at(-1);
+  const keep = choices.filter((c) => pos(c) < start || pos(c) >= end);
+  if (prior && end < sec.endBar - sec.startBar + 1 && !keep.some((c) => pos(c) === end)) keep.push({ ...jclone(prior), relBar: Math.floor(end), half: end % 1 ? 1 : 0 });
+  keep.push({ sectionId: sec.id, relBar: Math.floor(start), half: start % 1 ? 1 : 0, chord: jclone(chord), state });
+  S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== sec.id).concat(keep);
+}
 function setLock(bar, half, chord) {
   if (linkedAtBar(bar)) { guardLinked(linkedAtBar(bar).id); return; }
   pinOthers((b, h) => b === bar && (half == null || h == null || h === half));
   S.proj.chordPins = (S.proj.chordPins || []).filter((p) => !(p.bar === bar && (half == null || p.half == null || p.half === half)));
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => !(l.bar === bar && (half == null || l.half == null || l.half === half)));
   const section = sectionAtBar(bar);
-  S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== section?.id);
+  if (!C.chordsAreFrozen(S.proj)) S.proj.chordChoices = S.proj.chordChoices.filter((c) => c.sectionId !== section?.id);
+  editFrozenChoice(bar, half, { root: chord.root, q: chord.q, bass: chord.bass ?? null });
   S.proj.chordLocks.push({ bar, half, chord: { root: chord.root, q: chord.q, bass: chord.bass ?? null } });
   refresh();
   status(`Ölçü ${bar}${half != null ? ` (${half + 1}. yarı)` : ''}: ${C.chordName(chord)} kilitlendi.`);
@@ -3253,7 +3344,7 @@ function renderAlternatives() {
 }
 $('#altBox').addEventListener('change', (e) => {
   const t = e.target;
-  if (!t.dataset.sec) return;
+  if (!t.dataset.sec || guardFrozenChords()) return;
   S.proj.chordOpts.altChoice = Object.assign({}, S.proj.chordOpts.altChoice, { [t.dataset.sec]: +t.value });
   refresh();
   status(`Alternatif ${+t.value + 1} seçildi.`);
@@ -3397,7 +3488,8 @@ function applyChart(text) {
   S.proj.chordPins = (S.proj.chordPins || []).filter((p) => !cov(p.bar, p.half));
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => !cov(l.bar, l.half));
   const edited = new Set(cells.map((c) => sectionAtBar(c.bar)?.id));
-  S.proj.chordChoices = S.proj.chordChoices.filter((c) => !edited.has(c.sectionId));
+  if (!C.chordsAreFrozen(S.proj)) S.proj.chordChoices = S.proj.chordChoices.filter((c) => !edited.has(c.sectionId));
+  for (const c of cells) editFrozenChoice(c.bar, c.half, { root: c.chord.root, q: c.chord.q, bass: c.chord.bass ?? null });
   for (const c of cells) S.proj.chordLocks.push({ bar: c.bar, half: c.half, chord: { root: c.chord.root, q: c.chord.q, bass: c.chord.bass ?? null }, src: 'chart' });
   refresh();
   const bars = new Set(cells.map((c) => c.bar)).size;
@@ -3416,6 +3508,7 @@ $('#fileChart').addEventListener('change', async (e) => {
 $('#btnChartBlank').onclick = () => { if (!needData()) return; const t = C.blankChart(S.proj, S.d); $('#chartText').value = t; $('#chartBox').open = true; download(t, 'akor-sablonu.txt', 'text/plain;charset=utf-8'); };
 $('#btnChartCurrent').onclick = () => { if (!needData()) return; const t = '# Şu anki akorlar — düzenleyip "Zaman çizelgesine uygula" ya da .txt olarak geri yükle\n' + C.chordChart(S.proj, S.d); $('#chartText').value = t; $('#chartBox').open = true; download(t, 'akor-sablonu.txt', 'text/plain;charset=utf-8'); };
 $('#btnChartRemove').onclick = () => {
+  if (guardFrozenChords()) return;
   const n = S.proj.chordLocks.filter((l) => l.src === 'chart').length;
   if (!n) return;
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.src !== 'chart' || linkedAtBar(l.bar)); refresh(); status('Şablon kilitleri kaldırıldı.' + linkedSkipNote());
@@ -3430,6 +3523,7 @@ function lastManualBar() {
   return bars.length ? Math.max(...bars) : 0;
 }
 function applyAfterLast() {
+  if (guardFrozenChords()) return;
   const last = lastManualBar();
   if (!last) { status('Önce bir ✂ değişim noktası işaretle ya da bir akoru elle yaz / kilitle.', 'err'); return; }
   if (S.proj.chordChoices.some((c) => !linkSource(c.sectionId))) {
@@ -3497,12 +3591,14 @@ for (const [id, k] of [['Denoise', 'denoise'], ['Comp', 'comp'], ['Reverb', 'rev
 $('#btnAutoMix').onclick = () => autoMix(false);
 
 $('#btnApplySug').onclick = () => {
+  if (guardFrozenChords()) return;
   const n = S.d.chords.filter((c) => c.pinSuggest).length;
   S.proj.chordPins = (S.proj.chordPins || []).filter((p) => linkedAtBar(p.bar));
   S.proj.chordChoices = S.proj.chordChoices.filter((c) => linkSource(c.sectionId)); refresh();
   status(`Motorun ${n} önerisi uygulandı: kilitlerin dışındaki akorlar yeniden hesaplandı.${linkedSkipNote()}`);
 };
 $('#btnUnlockAll').onclick = () => {
+  if (guardFrozenChords()) return;
   const n = S.proj.chordLocks.filter((l) => !linkedAtBar(l.bar)).length;
   if (!n) { if (linkedSkipNote()) status('Kaldırılacak bağımsız akor kilidi yok.' + linkedSkipNote()); return; }
   S.proj.chordLocks = S.proj.chordLocks.filter((l) => linkedAtBar(l.bar)); S.proj.chordPins = (S.proj.chordPins || []).filter((p) => linkedAtBar(p.bar));
@@ -3536,7 +3632,7 @@ $('#inEngine').addEventListener('change', (e) => { S.proj.chordOpts.engine = e.t
 $('#inColorPen').addEventListener('input', (e) => { S.proj.chordOpts.colorPenalty = +e.target.value; $('#outColorPen').textContent = e.target.value; refresh(); });
 $('#btnModeLabel').onclick = () => setEditMode('label');
 $('#btnLatencyCal').onclick = () => Cal.run();
-$('#btnUnlockChords').onclick = () => { S.proj.chordLocks = S.proj.chordLocks.filter((l) => linkedAtBar(l.bar)); refresh(); status('Akor kilitleri kaldırıldı.' + linkedSkipNote()); };
+$('#btnUnlockChords').onclick = () => { if (guardFrozenChords()) return; S.proj.chordLocks = S.proj.chordLocks.filter((l) => linkedAtBar(l.bar)); refresh(); status('Akor kilitleri kaldırıldı.' + linkedSkipNote()); };
 $('#inPedal').addEventListener('change', (e) => { S.proj.mixer.pedal = e.target.checked; refresh(); });
 $('#inClickFeel').addEventListener('change', (e) => { S.proj.settings.clickFeel = e.target.value; });
 // alt bölme / swing

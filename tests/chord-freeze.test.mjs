@@ -119,4 +119,11 @@ for (const change of ['split', 'append']) {
   assert.deepEqual(generated.map((c) => c.bar), [5, 6, 7, 8]);
   assert.deepEqual(after.filter((c) => c.section === 'b'), generated, change + ': new B uses engine chords');
 }
+{
+  const p = project(), d = derive(p), saved = C.saveVersion(p, d);
+  p.pack.selectedId = 'dream-pop';
+  assert.equal(C.isVersionDirty(p, d, saved.id), false);
+  assert.equal(C.captureVersionState(p, d).pack.selectedId, 'dream-pop');
+  p.piano.style = 'synth-chord'; assert.equal(C.isVersionDirty(p, d, saved.id), true);
+}
 console.log('chord-freeze: sparse slots, meters, freeze/OFF edits, provenance, links, gaps, re-key, versions, migration and new sections passed');

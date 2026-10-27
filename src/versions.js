@@ -224,7 +224,12 @@ function deleteVersion(proj, id) {
 const normalized = (v) => JSON.stringify(v, (key, value) => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, value[k]])) : value);
 function isVersionDirty(proj, d, id) {
   const item = items(proj).find((v) => v.id === id);
-  return !!item && normalized(captureVersionState(proj, d)) !== normalized(item.state);
+  const compare = (state) => {
+    const saved = clone(state);
+    if (saved.pack) delete saved.pack.selectedId;
+    return normalized(saved);
+  };
+  return !!item && compare(captureVersionState(proj, d)) !== compare(item.state);
 }
 Object.assign(C, { migrateVersions, versionSignature, captureVersionState, applyVersionState, saveVersion, updateVersion, renameVersion, deleteVersion, isVersionDirty, versionCompat });
 })(typeof window !== 'undefined' ? window : globalThis);

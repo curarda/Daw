@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "test": "node build.mjs && node tests/pipeline.test.mjs && node tests/style.test.mjs && node tests/guitar.test.mjs && node tests/bass.test.mjs && node tests/arrangement-golden.test.mjs && node tests/matrix.test.mjs && node tests/packs.test.mjs && node tests/links.test.mjs && node tests/versions.test.mjs && node tests/chord-freeze.test.mjs",
-    "test:ui": "node build.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/style-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/bass-audio.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/arrangement-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/packs-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/links-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/versions-ui.test.mjs"
+    "test": "node build.mjs && node tests/pipeline.test.mjs && node tests/style.test.mjs && node tests/guitar.test.mjs && node tests/bass.test.mjs && node tests/arrangement-golden.test.mjs && node tests/matrix.test.mjs && node tests/packs.test.mjs && node tests/links.test.mjs && node tests/versions.test.mjs && node tests/chord-freeze.test.mjs && node tests/pack-keepmanual.test.mjs",
+    "test:ui": "node build.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/style-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/bass-audio.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/arrangement-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/packs-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/links-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/versions-ui.test.mjs && TONE_JS=node_modules/tone/build/Tone.js node tests/preserve-chords-ui.test.mjs"
   },
   "devDependencies": {
     "playwright": "1.56.1",

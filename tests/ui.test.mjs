@@ -1697,24 +1697,28 @@ try {
     const pre = await S(() => ({ drums: window.__daw.proj.drums.on, bass: window.__daw.proj.bass.enabled, secs: window.__daw.proj.sections.map((s) => s.tonic) }));
     assert.equal(pre.drums, false); assert.equal(pre.bass, false); assert.deepEqual(pre.secs, [null, null]);
     await pause();
+    const selectedPack = await page.inputValue('#inPack');
     await page.click('#btnDemo');
     await page.waitForFunction(() => window.__dawAPI.player().playing, null, { timeout: 20000 });
     const st = await page.textContent('#status');
     assert.match(st, /Demo hazır/); assert.match(st, /ton: Verse C# Frig, Nakarat B Dorian/); assert.match(st, /davul: /); assert.match(st, /bas: /);
-    const r = await S(() => { const p = window.__daw.proj; return { drums: p.drums.on, bass: p.bass.enabled, loop: p.drums.loop, fills: p.drums.fills, secs: p.sections.map((s) => [s.tonic != null, s.arr || null]), ev: window.__dawAPI.arrangement() }; });
+    const r = await S(() => { const p = window.__daw.proj; return { drums: p.drums.on, bass: p.bass.enabled, loop: p.drums.loop, pack: p.pack, matrix: p.matrix.enabled, cells: window.__daw.d.sections.map((s) => window.Core.effectiveLayers(p, window.__daw.d, s.id)), fills: p.drums.fills, secs: p.sections.map((s) => [s.tonic != null, s.arr || null]), ev: window.Core.arrangedEvents(window.__daw.d, p) }; });
     assert.equal(r.drums, true); assert.equal(r.bass, true); assert.equal(r.fills, true);
     assert.ok(r.secs.every(([k]) => k), 'tonlar onaylandı');
-    assert.ok(r.secs[0][1] && r.secs[0][1].drums === 'minimal', 'verse: sade davul'); assert.equal(r.secs[1][1], null, 'nakarat: genel ayar');
-    assert.ok(r.ev.drums.length > 0 && r.ev.bass.length > 0 && r.ev.drums.some((e) => e.fill));
+    assert.equal(r.pack.id, selectedPack); assert.equal(r.pack.selectedId, selectedPack); assert.equal(r.matrix, true);
+    assert.equal(r.cells[0].drums, false, 'verse: matris davulu bekletir'); assert.equal(r.cells[1].drums, true, 'nakarat: davul açık');
+    assert.ok(r.ev.piano.length > 0 && r.ev.guitar.length > 0, 'akor ve gitar duyulur');
+    assert.ok(r.ev.drums.length > 0 && r.ev.bass.length > 0);
+    assert.equal(r.ev.drums.some((e) => e.fill), false, 'matris kapalı verse sınırında fill üretmez');
     await page.waitForFunction(() => window.__daw.pos > 0.4, null, { timeout: 15000 });
     await page.click('#btnPlay');
     // tek adımda geri
     assert.equal((await hist()).u, 1, 'demo tek geri alma adımı');
     await page.keyboard.press('Control+z');
     await page.waitForFunction(() => !window.__daw.proj.bass.enabled, null, { timeout: 5000 });
-    const z = await S(() => { const p = window.__daw.proj; return { drums: p.drums.on, bass: p.bass.enabled, secs: p.sections.map((s) => [s.tonic, !!s.arr]) }; });
-    assert.deepEqual(z, { drums: false, bass: false, secs: [[null, false], [null, false]] });
-    return `davul ${r.loop}, ${r.ev.drums.length} vuruş (fill var), bas ${r.ev.bass.length} nota; Ctrl+Z ile hepsi geri`;
+    const z = await S(() => { const p = window.__daw.proj; return { drums: p.drums.on, bass: p.bass.enabled, pack: p.pack.id, matrix: p.matrix.enabled, secs: p.sections.map((s) => [s.tonic, !!s.arr]) }; });
+    assert.deepEqual(z, { drums: false, bass: false, pack: null, matrix: false, secs: [[null, false], [null, false]] });
+    return `davul ${r.loop}, ${r.ev.drums.length} vuruş (matris sınırında fill yok), bas ${r.ev.bass.length} nota; Ctrl+Z ile hepsi geri`;
   });
 
   await step('Progresyonu bitirdim: bütün progresyon ağırlıklı şarkı + seçtiğin akorların komşu ilişkileri öğrenilir, motorun akorları değişmez, güncellenir, silinir', async () => {

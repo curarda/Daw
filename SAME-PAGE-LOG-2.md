@@ -66,3 +66,7 @@ VERDICT: SAME PAGE
 ## Outcome
 
 `VERDICT: SAME PAGE` after 2 rounds; no new blockers. Build may start (Rock 5 first).
+
+## User override (recorded) — Rock 5 / 5b
+
+Codex hit its ChatGPT usage limit in the middle of 5b fix round 1 (error: "try again at 10:35 AM"). The remaining change was one line (Demo must still set `drums.on = true` when `applyPack(..., { keepManual: true })` keeps a manually chosen drum loop, as the old Demo did). The user explicitly chose "Kayayı ben bitireyim" (skill rule "Claude does not write implementation code" relaxed once). The Visionary wrote that single line in `src/app.js` and verified with `npm test` and the full browser suite. Later rocks go back to Codex.

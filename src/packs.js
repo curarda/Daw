@@ -65,11 +65,19 @@ function validatePack(p, meter) {
   const pattern = C.GUITAR_PATTERNS.find((g) => g.id === p.guitar.pattern && g.meter === meter);
   if (!p.meters.includes(meter) || ![p.drums.loop, p.drums.alt].every((id) => C.DRUM_LOOPS.some((l) => l.id === id && l.meter === meter)) || !C.PIANO_STYLES[p.piano] || !pattern || !pattern.compatibleModes.includes(p.guitar.mode) || !B.BASS_PRESETS[p.bass.preset] || (p.bass.profile && !B.BUILTIN_PROFILES.some((b) => b.id === p.bass.profile)) || !['guitar', 'synth'].includes(p.bass.instrumentType) || (p.bass.templateFamily !== 'auto' && !B.BASS_TEMPLATES.some((t) => t.family === p.bass.templateFamily && t.meter === meter))) throw new Error('Geçersiz paket ayarları');
 }
-function applyPack(proj, d, packId) {
+function applyPack(proj, d, packId, opts = {}) {
   const p = PACKS.find((p) => p.id === packId);
   if (!p) throw new Error('Paket bulunamadı');
   validatePack(p, proj.settings.meter);
-  const q = migratePack(clone(proj)), locks = q.pack.locks, warnings = [];
+  const q = migratePack(clone(proj)), locks = { ...q.pack.locks }, warnings = [], manual = [];
+  if (opts.keepManual) {
+    const previous = PACKS.find((p) => p.id === q.pack.id), loop = q.drums?.loop;
+    if (loop && loop !== 'auto' && ![previous?.drums.loop, previous?.drums.alt].includes(loop) || q.sections.some((s) => s.arr?.drums != null && !s.arr.auto)) manual.push('drums');
+    const style = q.piano?.style ?? C.PIANO_DEFAULTS.style;
+    if (style !== C.PIANO_DEFAULTS.style && style !== previous?.piano || q.sections.some((s) => s.arr?.piano != null && !s.arr.auto)) manual.push('piano');
+    // Elle seçimler yalnızca bu çağrıda kilit sayılır; paket kilitleri değişmez.
+    for (const layer of manual) locks[layer] = true;
+  }
   const prior = Object.fromEntries(d.sections.map((s) => [s.id, C.effectiveLayers(proj, d, s.id)]));
   const ins = q.guitar?.instrument || 'piano', current = { piano: ins !== 'guitar', guitar: ins !== 'piano' };
   const on = { piano: locks.piano ? current.piano : p.pianoOn, guitar: locks.guitar ? current.guitar : p.guitarOn };
@@ -109,7 +117,7 @@ function applyPack(proj, d, packId) {
   }
   for (const r of Object.values(q.matrix.rows)) for (const l of layers) if (!locks[l]) r[l] = null;
   Object.assign(proj, q);
-  return { warnings, changed: layers.filter((l) => !locks[l]), kept: layers.filter((l) => locks[l]) };
+  return { warnings, changed: layers.filter((l) => !locks[l]), kept: layers.filter((l) => locks[l]), ...(opts.keepManual ? { manual } : {}) };
 }
 Object.assign(C, { PACKS, migratePack, eligiblePacks, rankPacks, topSuggestions, nextPack, applyPack });
 })(typeof window !== 'undefined' ? window : globalThis);
