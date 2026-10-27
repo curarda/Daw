@@ -223,12 +223,40 @@
         <div class="modes" role="radiogroup" aria-label="Autotune hedefi">
           <label><input type="radio" name="atTarget" value="semitone" checked> En yakın yarım sese çek <small class="hint">(önerilen — notanın kimliği değişmez)</small></label>
           <label><input type="radio" name="atTarget" value="scale"> Bölüm scale'ine çek <small class="hint">(notanın kimliğini değiştirebilir)</small></label>
+          <label><input type="radio" name="atTarget" value="custom" aria-describedby="customTargetHint"> Kendi nota kümene çek <small id="customTargetHint" class="hint">(seçtiğin notalara en yakın olana taşır; yukarı ve aşağı bakar)</small></label>
         </div>
+        <div id="customPanel" hidden>
+          <label for="inCustomSection">Nota kümesi bölümü</label>
+          <select id="inCustomSection" aria-describedby="customFillHint customSetHint"></select>
+          <div id="customNotesLabel">İzin verilen notalar</div>
+          <div id="customNotes" class="row" role="group" aria-labelledby="customNotesLabel" aria-describedby="customFillHint customSetHint">
+            <label class="chk"><input type="checkbox" data-custom-pc="0" aria-label="Do (C)" aria-describedby="customSetHint"> Do</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="1" aria-label="Do♯ (C#)" aria-describedby="customSetHint"> Do♯</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="2" aria-label="Re (D)" aria-describedby="customSetHint"> Re</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="3" aria-label="Re♯ (D#)" aria-describedby="customSetHint"> Re♯</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="4" aria-label="Mi (E)" aria-describedby="customSetHint"> Mi</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="5" aria-label="Fa (F)" aria-describedby="customSetHint"> Fa</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="6" aria-label="Fa♯ (F#)" aria-describedby="customSetHint"> Fa♯</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="7" aria-label="Sol (G)" aria-describedby="customSetHint"> Sol</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="8" aria-label="Sol♯ (G#)" aria-describedby="customSetHint"> Sol♯</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="9" aria-label="La (A)" aria-describedby="customSetHint"> La</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="10" aria-label="La♯ (A#)" aria-describedby="customSetHint"> La♯</label>
+            <label class="chk"><input type="checkbox" data-custom-pc="11" aria-label="Si (B)" aria-describedby="customSetHint"> Si</label>
+          </div>
+          <div class="row">
+            <button id="btnCustomFill" aria-describedby="customFillHint">Şarkıdaki notalardan doldur</button>
+            <button id="btnCustomCopy" aria-describedby="customSetHint">Şarkının hepsine uygula</button>
+          </div>
+          <p id="customFillHint" class="hint">Doldur: bölümde söylenen özgün toplam sürenin en az %3'ünü kaplayan notalar. Eşit uzaklıkta alttaki nota seçilir.</p>
+          <p id="customSetHint" class="hint" aria-live="polite"></p>
+        </div>
+        <div id="customWarn" class="st-warn" hidden>⚠ Kendi kümen açık: kümen dışında kalan notalar — tam tonunda olsalar bile — en yakın küme notasına taşınır. Akorlar duyduğun (taşınmış) notaları kullanır.</div>
         <div id="scaleWarn" class="st-warn" hidden>⚠ Scale'e çekme açık: scale dışında kalan notalar — tam tonunda söylenmiş olsalar bile — başka bir yarım sese taşınır. Mod yanlış seçildiyse doğru notaları bozar. Akorlar duyduğun (taşınmış) notaya göre bulunur; ton önerisi söylediğin notaya göre kalır.</div>
         <label>Miktar <output id="outAmount">100%</output><input type="range" id="inAmount" min="0" max="100" value="100"></label>
         <label>Retune hızı <output id="outRetune">30 ms</output><input type="range" id="inRetune" min="0" max="400" step="5" value="30"></label>
         <label class="chk"><input type="checkbox" id="inKeepVib" checked> Vibratoyu koru</label>
-        <label class="chk"><input type="checkbox" id="inSkipChrom" checked> Kromatik geçiş notalarına dokunma <small class="hint">(scale modunda)</small></label>
+        <label class="chk"><input type="checkbox" id="inSkipChrom" aria-describedby="customChromHint" checked> Kromatik geçiş notalarına dokunma <small class="hint">(scale modunda)</small></label>
+        <p id="customChromHint" class="hint" hidden>Kendi kümende geçerli değil: her nota taşınır.</p>
         <div class="row">
           <button id="btnAutoApply" class="accent">Autotune uygula</button>
           <button id="btnAutoOff">Autotune kapat</button>

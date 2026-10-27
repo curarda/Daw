@@ -17,6 +17,7 @@ const S = {
   track: null, rawNotes: null,
   d: null,
   corrected: null, correctedShift: null,
+  customSection: null,
   sel: null,              // {type:'note', id} | {type:'chord', q} | {type:'section', id}
   editMode: 'sound', // sürükleyince: 'sound' = notayı taşı (varsayılan), 'label' = yalnızca etiket, 'select' = yalnızca seç
   view: { pxPerQ: 44 },
@@ -164,6 +165,7 @@ async function analyze() {
   status(`Analiz tamam: ${S.rawNotes.length} nota.`);
 }
 function refresh() {
+  S.proj.autotune = C.normalizeCustomSets(S.proj.autotune, S.proj.sections.map((s) => s.id));
   // eski projelerde olmayan alanlar
   S.proj.drums = S.proj.drums || { on: false, loop: 'auto' };
   S.proj.quant = S.proj.quant || { grid: '1/8', strength: 100 };
@@ -208,6 +210,7 @@ function refresh() {
     S.sel = ids.length > 1 ? { type: 'notes', ids } : ids.length ? { type: 'note', id: ids[0] } : null;
   }
   renderSections();
+  renderCustomPicker();
   renderMatrix();
   renderPacks();
   renderVersions();
@@ -270,7 +273,7 @@ function importMidiBytes(bytes, name, trackIdx, keep) {
   if (!keep && (S.audio || S.midi) && !confirm('MIDI açılsın mı? Şu anki proje (kaydetmediysen) kaybolur.')) return false;
   Player.stop(true); HIST.reset = true;
   S.loop.on = false; $('#btnLoop').classList.remove('on');
-  S.proj = C.newProject(); S.audio = null; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.sel = null; S.pos = 0;
+  S.proj = C.newProject(); S.customSection = null; S.audio = null; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.sel = null; S.pos = 0;
   const p = S.proj;
   p.settings.bpm = r.settings.bpm; p.settings.meter = r.settings.meter;
   p.matrix = { enabled: false, rows: {} };
@@ -432,7 +435,9 @@ const drumEventsAll = () => arrangedEventsAll(['drums']).drums;
 const pianoEventsAll = () => arrangedEventsAll(['piano']).piano;
 
 // ---------------------------------------------------------------- düzeltilmiş vokal render (TD-PSOLA)
-let renderTimer = null;
+let renderTimer = null, renderGeneration = 0, renderWork = null;
+const customRenderSig = () => JSON.stringify([S.proj.autotune.target, S.proj.autotune.target === 'custom'
+  ? Object.keys(S.proj.autotune.customSets).sort().map((id) => [id, S.proj.autotune.customSets[id]]) : null]);
 const hasShift = (a) => { for (let i = 0; i < a.length; i++) if (a[i] !== 0) return true; return false; };
 function shiftsEqual(a, b) {
   if (!a || !b || a.length !== b.length) return false;
@@ -440,28 +445,36 @@ function shiftsEqual(a, b) {
   return true;
 }
 function scheduleRender(now) {
-  const corr = S.d && S.d.correction;
-  if (!corr || !S.audio) return;
-  if (renderReady()) return;
+  renderGeneration++;
   clearTimeout(renderTimer);
+  const corr = S.d && S.d.correction;
+  if (!corr || !S.audio || renderReady()) return;
   $('#renderInfo').textContent = 'Düzeltilmiş vokal yeniden render edilecek…';
   renderTimer = setTimeout(doRender, now ? 0 : 350);
 }
 async function doRender() {
-  if (!S.d || !S.d.correction || !S.audio) return; // proje değişti (ör. MIDI açıldı): bekleyen render geçersiz
+  if (renderWork) return renderWork;
+  if (!S.d || !S.d.correction || !S.audio) return;
   if (S.drag) { renderTimer = setTimeout(doRender, 150); return; }
-  const shift = S.d.correction.shift.slice(), map = S.d.timeMap;
-  await busy(map && !map.identity ? 'Düzeltilmiş vokal render ediliyor (perde: TD-PSOLA · zamanlama: WSOLA)…' : 'Düzeltilmiş vokal render ediliyor (TD-PSOLA, formant korumalı)…', async () => {
+  const shift = S.d.correction.shift.slice(), map = S.d.timeMap, audio = S.audio, track = S.track;
+  const generation = renderGeneration, sig = customRenderSig();
+  renderWork = busy(map && !map.identity ? 'Düzeltilmiş vokal render ediliyor (perde: TD-PSOLA · zamanlama: WSOLA)…' : 'Düzeltilmiş vokal render ediliyor (TD-PSOLA, formant korumalı)…', async () => {
     await tick();
-    const pitched = hasShift(shift) ? C.psolaShift(S.audio.data, S.audio.sr, S.track, shift) : S.audio.data;
-    S.corrected = map && !map.identity ? C.wsolaWarp(pitched, S.audio.sr, map) : pitched;
-    S.correctedShift = shift; S.correctedWarp = map ? map.sig : '';
+    if (generation !== renderGeneration || audio !== S.audio || track !== S.track) return;
+    const pitched = hasShift(shift) ? C.psolaShift(audio.data, audio.sr, track, shift) : audio.data;
+    const corrected = map && !map.identity ? C.wsolaWarp(pitched, audio.sr, map) : pitched;
+    if (generation !== renderGeneration) return;
+    S.corrected = corrected; S.correctedShift = shift; S.correctedWarp = map ? map.sig : ''; S.correctedSig = sig;
+    Player.buffersDirty = true;
+    renderInfo();
+    status('Düzeltilmiş vokal hazır (ayrı iz). A/B ile karşılaştırın.');
   });
-  Player.buffersDirty = true;
-  renderInfo();
-  status('Düzeltilmiş vokal hazır (ayrı iz). A/B ile karşılaştırın.');
+  try { await renderWork; } finally {
+    renderWork = null;
+    if (S.audio && S.d && S.d.correction && !renderReady()) scheduleRender(true);
+  }
 }
-const renderReady = () => !!S.d && !!S.d.correction && shiftsEqual(S.d.correction.shift, S.correctedShift) && (S.d.timeMap ? S.d.timeMap.sig : '') === (S.correctedWarp || '');
+const renderReady = () => !!S.d && !!S.d.correction && shiftsEqual(S.d.correction.shift, S.correctedShift) && (S.d.timeMap ? S.d.timeMap.sig : '') === (S.correctedWarp || '') && S.correctedSig === customRenderSig();
 
 // ---------------------------------------------------------------- VOKAL TEMİZLİĞİ (gürültü azaltma · sıkıştırıcı · seviye eşitleme · reverb) — oynatma ve dışa aktarım aynı işlenmiş sesi kullanır
 // Kaynak değişince (yeni kayıt / yeniden render) ya da ayar değişince bir sonraki çalmada / dışa aktarmada yeniden işlenir; sonuç ref + ayar anahtarıyla önbelleklenir.
@@ -2366,6 +2379,8 @@ function seek(sec) {
   if (wasPlaying) Player.play();
 }
 function select(sel) {
+  if (sel && sel.type === 'section') S.customSection = sel.id;
+  renderCustomPicker();
   S.sel = sel; if (sel) clearBassSel(); renderInspector(); renderSections(); renderChordPreservation(); draw();
   if (S.loop.on && sel && sel.type === 'section') { setLoopRegion(); if (Player.playing) Player.play(); } // döngü seçili bölümü izler
 }
@@ -2529,7 +2544,7 @@ function addSection(name, a, b) {
   const s = { id: uid(), link: null, name, startBar: a, endBar: b, tonic: null, mode: null };
   S.proj.sections.push(s);
   S.proj.sections.sort((p, q) => p.startBar - q.startBar);
-  S.sel = { type: 'section', id: s.id };
+  S.sel = { type: 'section', id: s.id }; S.customSection = s.id;
   refresh();
   status(`“${name}” bölümü eklendi (ölçü ${a}–${b}). Tonunu 4. adımda seçin.`);
 }
@@ -2920,7 +2935,7 @@ function renderNoteInspector(box, n) {
   const corr = n.corr || { source: 'none' };
   let soundDesc;
   if (corr.source === 'manual') soundDesc = `Manuel: ${nn(corr.target)}${Math.abs(corr.target - Math.round(corr.target)) > 0.001 ? ` ${Math.round((corr.target - Math.round(corr.target)) * 100)}c` : ''} (kaydırma ${Math.round(corr.applied)} cent) — kilitli`;
-  else if (corr.source === 'auto') soundDesc = `Autotune → ${nn(corr.target)} (kaydırma ${Math.round(corr.applied)} cent)${corr.identityChange ? ' — UYARI: scale\'e çekme notayı başka yarım sese taşıdı' : ''}`;
+  else if (corr.source === 'auto') soundDesc = `Autotune → ${nn(corr.target)} (kaydırma ${Math.round(corr.applied)} cent)${corr.identityChange ? ` — UYARI: ${S.proj.autotune.target === 'custom' ? 'kendi kümene' : "scale'e"} çekme notayı başka yarım sese taşıdı` : ''}`;
   else if (corr.chromatic) soundDesc = 'Kromatik geçiş notası — autotune dokunmadı';
   else if (n.locked) soundDesc = 'Kilitli — autotune dokunmaz';
   else soundDesc = S.proj.autotune.enabled ? 'Düzeltme yok' : 'Düzeltme yok (autotune kapalı)';
@@ -2941,7 +2956,7 @@ function renderNoteInspector(box, n) {
   if (n.splitStart != null) rms.push({ text: 'Bu nota çift tıkla bölünerek oluştu <span class="hint">(öncekinden ayrıldı)</span>', act: 'unsplitStart', btn: 'Bölmeyi geri al (öncekiyle birleştir)' });
   if (n.splitEnd != null) rms.push({ text: 'Bu nota çift tıkla bölündü <span class="hint">(sonrakiyle ayrıldı)</span>', act: 'unsplitEnd', btn: 'Bölmeyi geri al (sonrakiyle birleştir)' });
   const atLine = manual ? 'Elle düzeltildi — autotune bu notaya dokunmaz.'
-    : corr.source === 'auto' ? `Autotune bu notayı ${Math.round(corr.applied) >= 0 ? '+' : ''}${Math.round(corr.applied)} cent kaydırıyor → ${esc(nn(corr.target))}.${n.autoMoved ? ` ⚠ Scale'e çekme notayı ${esc(nn(n.sungMidi))}'den ${esc(nn(n.effMidi))}'ye taşıdı: akorlar duyduğun ${esc(nn(n.effMidi))}'ye göre bulunuyor (ton önerisi söylediğin ${esc(nn(n.sungMidi))}'yi kullanır).` : ''}`
+    : corr.source === 'auto' ? `Autotune bu notayı ${Math.round(corr.applied) >= 0 ? '+' : ''}${Math.round(corr.applied)} cent kaydırıyor → ${esc(nn(corr.target))}.${n.autoMoved ? ` ⚠ ${S.proj.autotune.target === 'custom' ? 'Kendi kümene' : "Scale'e"} çekme notayı ${esc(nn(n.sungMidi))}'den ${esc(nn(n.effMidi))}'ye taşıdı: akorlar duyduğun ${esc(nn(n.effMidi))}'ye göre bulunuyor (ton önerisi söylediğin ${esc(nn(n.sungMidi))}'yi kullanır).` : ''}`
     : corr.chromatic ? 'Kromatik geçiş notası — autotune dokunmadı.'
     : n.locked ? 'Autotune bu notada kapalı.'
     : S.proj.autotune.enabled ? 'Autotune bu notada düzeltme gerektirmedi.' : 'Autotune kapalı (5. adım).';
@@ -3123,6 +3138,7 @@ function unlockSlot(slot) {
 function pinSig() {
   const p = S.proj, SU = window.StyleUI && window.StyleUI.state;
   return JSON.stringify({
+    ...(p.autotune.target === 'custom' ? { custom: customRenderSig() } : {}),
     set: [p.settings.bpm, p.settings.meter], at: [p.autotune.enabled, p.autotune.target, p.autotune.amount >= 50], sec: p.sections.map((x) => [x.id, x.startBar, x.endBar, x.tonic, x.mode]),
     lab: p.noteEdits.filter((e) => e.label != null).map((e) => [e.t0, e.t1, e.label]),
     co: p.chordOpts, pi: p.pitch, off: p.audio.offsetSec, ped: p.mixer.pedal, rn: S.rawNotes ? S.rawNotes.length : 0,
@@ -3377,8 +3393,7 @@ function syncInputs() {
   $('#inRetune').value = p.autotune.retuneMs; $('#outRetune').textContent = p.autotune.retuneMs + ' ms';
   $('#inKeepVib').checked = p.autotune.keepVibrato; $('#inSkipChrom').checked = p.autotune.skipChromatic;
   document.querySelectorAll('input[name=atTarget]').forEach((r) => { r.checked = r.value === (p.autotune.target || 'semitone'); });
-  $('#scaleWarn').hidden = p.autotune.target !== 'scale';
-  $('#inSkipChrom').disabled = p.autotune.target !== 'scale';
+  renderCustomPicker();
   $('#inPct').value = p.chordOpts.changePct; $('#outPct').textContent = '%' + p.chordOpts.changePct; $('#inMaxBars').value = p.chordOpts.maxBars;
   $('#inEngine').value = p.chordOpts.engine || 'greedy';
   $('#inHomeEvery').value = p.chordOpts.homeEvery; $('#inColorPen').value = p.chordOpts.colorPenalty; $('#outColorPen').textContent = p.chordOpts.colorPenalty;
@@ -3445,11 +3460,52 @@ onNum('#inTuneWin', (v) => { S.proj.pitch.tuningWindowSec = Math.max(2, v); refr
 $('#inAmount').addEventListener('input', (e) => { S.proj.autotune.amount = +e.target.value; $('#outAmount').textContent = e.target.value + '%'; if (S.proj.autotune.enabled) refresh(); });
 $('#inRetune').addEventListener('input', (e) => { S.proj.autotune.retuneMs = +e.target.value; $('#outRetune').textContent = e.target.value + ' ms'; if (S.proj.autotune.enabled) refresh(); });
 $('#inKeepVib').addEventListener('change', (e) => { S.proj.autotune.keepVibrato = e.target.checked; if (S.proj.autotune.enabled) refresh(); });
+const CUSTOM_NAMES = ['Do', 'Do♯', 'Re', 'Re♯', 'Mi', 'Fa', 'Fa♯', 'Sol', 'Sol♯', 'La', 'La♯', 'Si'];
+function renderCustomPicker() {
+  const at = S.proj.autotune, custom = at.target === 'custom';
+  $('#customPanel').hidden = !custom; $('#customWarn').hidden = !custom;
+  $('#customChromHint').hidden = !custom;
+  $('#scaleWarn').hidden = at.target !== 'scale'; $('#inSkipChrom').disabled = at.target !== 'scale';
+  const sections = S.proj.sections.length ? S.proj.sections : [{ id: '_all', name: 'Tümü' }];
+  if (!sections.some((s) => s.id === S.customSection)) S.customSection = sections[0].id;
+  const select = $('#inCustomSection');
+  const options = sections.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+  if (select.innerHTML !== options) select.innerHTML = options;
+  select.value = S.customSection;
+  const pcs = at.customSets && at.customSets[S.customSection] || [];
+  $$('#customNotes input').forEach((input) => { input.checked = pcs.includes(+input.dataset.customPc); });
+  $('#customSetHint').textContent = pcs.length ? pcs.map((pc) => CUSTOM_NAMES[pc]).join(', ') : 'Bu bölümün kümesi boş: autotune bu bölümde çalışmaz';
+}
+// Küme eylemleri tek başına geri alınır; bağlı bölümün vokali kendi kümesini kullanır.
+function customEdit(fn) {
+  histCommit(); HIST.t = -Infinity;
+  fn(); refresh(); HIST.t = -Infinity;
+  if (Player.playing) Player.play();
+}
+$('#inCustomSection').onchange = (e) => { S.customSection = e.target.value; renderCustomPicker(); };
+$('#customNotes').onchange = (e) => {
+  const input = e.target.closest('input[data-custom-pc]'); if (!input) return;
+  customEdit(() => {
+    const pcs = new Set(S.proj.autotune.customSets[S.customSection] || []), pc = +input.dataset.customPc;
+    if (input.checked) pcs.add(pc); else pcs.delete(pc);
+    S.proj.autotune.customSets[S.customSection] = [...pcs].sort((a, b) => a - b);
+  });
+};
+$('#btnCustomFill').onclick = () => customEdit(() => { S.proj.autotune.customSets[S.customSection] = C.customFillSet(S.d ? S.d.notes : [], S.customSection); });
+$('#btnCustomCopy').onclick = () => customEdit(() => {
+  const pcs = S.proj.autotune.customSets[S.customSection] || [];
+  for (const s of S.d.sections) S.proj.autotune.customSets[s.id] = pcs.slice();
+});
+$('#customPanel').addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && e.target.closest('button')) { e.stopPropagation(); return; }
+  if ((e.ctrlKey || e.metaKey) && 'zZyY'.includes(e.key)) {
+    e.preventDefault(); e.stopPropagation();
+    if (e.shiftKey || 'yY'.includes(e.key)) histRedo(); else histUndo();
+  }
+});
 $('#inSkipChrom').addEventListener('change', (e) => { S.proj.autotune.skipChromatic = e.target.checked; if (S.proj.autotune.enabled) refresh(); });
 document.querySelectorAll('input[name=atTarget]').forEach((r) => r.addEventListener('change', (e) => {
   S.proj.autotune.target = e.target.value;
-  $('#scaleWarn').hidden = e.target.value !== 'scale';
-  $('#inSkipChrom').disabled = e.target.value !== 'scale';
   refresh();
   if (e.target.value === 'scale') status('Uyarı: scale\'e çekme notaların kimliğini değiştirebilir (bkz. kırmızı uyarı).', 'err');
 }));
@@ -3683,7 +3739,7 @@ $('#btnTest').onclick = () => loadTest();
 $('#btnNew').onclick = () => {
   if ((S.audio || S.midi) && !confirm('Yeni proje? Kaydedilmemiş değişiklikler kaybolur.')) return;
   Player.stop(true); HIST.reset = true; S.loop.on = false; $('#btnLoop').classList.remove('on');
-  S.proj = C.newProject(); S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
+  S.proj = C.newProject(); S.customSection = null; S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   syncInputs(); refresh(); status('Yeni proje.');
 };
@@ -3777,6 +3833,7 @@ async function openProject(file) {
   delete p.audioData; delete p.midiData; delete p.savedAt;
   S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(p));
   S.proj.autotune = C.normalizeCustomSets(S.proj.autotune, S.proj.sections.map((s) => s.id));
+  S.customSection = null;
   S.versionPinsOnLoad = !!(S.proj.versions.activeId && S.proj.chordChoices.length);
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
@@ -3801,7 +3858,7 @@ function alignedVocal(src, sr, lenSec) {
 }
 const exportLenSec = () => (S.audio ? Math.max(S.d.bars * S.d.g.barSec, S.audio.data.length / S.audio.sr - S.d.off) + 1.5 : S.d.bars * S.d.g.barSec + 1.5);
 async function ensureRendered() {
-  if (!renderReady()) { clearTimeout(renderTimer); await doRender(); }
+  while (S.audio && S.d && S.d.correction && !renderReady()) { clearTimeout(renderTimer); await doRender(); }
 }
 $('#btnExpMidi').onclick = () => { if (!needData(true)) return; { const dev = drumEventsAll(), L = currentLoop();
   download(C.exportMidi(S.proj, S.d, dev.length ? { name: L ? L.name : 'loop', events: dev } : null), 'akorlar-ve-melodi.mid', 'audio/midi');
