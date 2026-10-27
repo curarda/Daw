@@ -326,6 +326,9 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
 .link-info button { font-size: 11px; padding: 3px 7px; }
 .link-readonly { border: 0; margin: 0; padding: 0; min-width: 0; }
 .link-readonly:disabled { opacity: .65; }
+
+.version-row { border-top: 1px solid var(--line); padding: 8px 0; }
+.version-row .row { margin-top: 5px; flex-wrap: wrap; }
 </style>
 </head>
 <body>
@@ -502,6 +505,13 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
       <p class="hint" id="matrixOff">Otomatik aranje kapalı: tüm katmanlar her bölümde çalar</p>
       <div id="matrixTable"></div>
       <button id="btnMatrixReset">Hepsini otomatiğe döndür</button>
+    </details>
+
+    <details class="step" data-key="s4c">
+      <summary><b>4c</b> Sürümler <span class="chip" id="chipVersions">yok</span></summary>
+      <p class="hint">Aranjeyi (paket, matris, bölüm bağları, akorlar, katman ayarları, mikser) sürüm olarak sakla; kayıt sesi, nota düzeltmeleri, tempo ve ölçü saklanmaz.</p>
+      <div class="row"><input type="text" id="inVersionName" aria-label="Yeni sürüm adı" placeholder="Ad (boş = A, B, C…)"><button id="btnVersionSave">＋ Sürüm kaydet</button></div>
+      <div id="versionList"></div>
     </details>
 
     <details class="step" data-key="s5">
@@ -8630,6 +8640,7 @@ function refresh() {
   S.proj.mixer.guitar = S.proj.mixer.guitar || { vol: -4, mute: false, solo: false };
   S.proj.guitar = C.normalizeGuitarState(S.proj.guitar, S.proj.settings.meter);
   bassNormalize();
+  if (S.versionPinsOnLoad) { syncMidi(); S.proj.chordPinsSig = pinSig(); S.versionPinsOnLoad = false; }
   if (S.proj.chordPins && S.proj.chordPins.length && S.proj.chordPinsSig !== pinSig()) S.proj.chordPins = S.proj.chordPins.filter((p) => linkedAtBar(p.bar)); // başka bir şey değişti: yeniden hesapla
   // stil modeli (varsa): akor bulucuya λ·log P(geçiş) + renk puanı olarak girer
   const style = window.StyleUI ? window.StyleUI.scorer() : null;
@@ -8658,6 +8669,7 @@ function refresh() {
   renderSections();
   renderMatrix();
   renderPacks();
+  renderVersions();
   renderInspector();
   renderInfo();
   renderDrums();
@@ -8757,7 +8769,7 @@ function renderChips() {
 // ---------------------------------------------------------------- GENEL GERİ ALMA / YİNELEME (Ctrl+Z, Ctrl+Shift+Z)
 // Proje durumunun anlık görüntüleri: her değişiklikten (refresh) sonra önceki durum geri alma yığınına girer.
 // Sürükleme tek adımdır (bırakınca); 0,5 sn içindeki art arda değişiklikler (kaydırıcılar) tek adımda birleşir.
-// Mikser seviyeleri ve A/B geri almaya dahil değil. Ses verisi (kayıt / yükleme) geri alınamaz: yeni ses geçmişi sıfırlar.
+// Sürüm geçişi dışında mikser seviyeleri ve A/B geri almaya dahil değil. Ses verisi (kayıt / yükleme) geri alınamaz: yeni ses geçmişi sıfırlar.
 // last: son geri alınabilir eylem kimin? 'bass' → Ctrl+Z bas şeridinin kendi geçmişini (bassui.js) geri alır, 'proj' → genel geçmişi
 const HIST = { undo: [], redo: [], base: null, t: 0, hold: 0, reset: true, last: 'proj' };
 const bassUndoFirst = () => HIST.last === 'bass' && (BS.hist.undo.length || BS.hist.redo.length);
@@ -8786,17 +8798,23 @@ function histCommit() {
 }
 const detSig = (p) => JSON.stringify([p.fmin, p.fmax, p.silenceDb, p.hopMs, p.analysisSr]);
 const segSig = (p, sp) => JSON.stringify([p.minNoteMs, p.changeSemis, sp]);
-async function histRestore(str, was) {
+// Yalnızca sürüm geçişleri mikser şeritlerini de geri alır; A/B ortak kalır.
+function historyEntry(withMixer) {
+  return withMixer ? { project: snapProj(), mixer: Object.fromEntries(['vocal', 'piano', 'guitar', 'bass', 'drums'].map((k) => [k, jclone(S.proj.mixer[k])])) } : snapProj();
+}
+async function histRestore(entry, was) {
+  const str = typeof entry === 'string' ? entry : entry.project;
   Player.stop(true);
   const keep = { ab: S.proj.mixer.ab }; for (const k of ['vocal', 'piano', 'drums', 'guitar', 'bass']) keep[k] = S.proj.mixer[k];
   const old = { det: detSig(S.proj.pitch), seg: segSig(S.proj.pitch, S.proj.noteSplits) };
   HIST.hold++;
   try {
     S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(JSON.parse(str)));
-    Object.assign(S.proj.mixer, keep);
+    Object.assign(S.proj.mixer, keep, typeof entry === 'string' ? {} : entry.mixer);
+    GT.cache = null;
     BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; // bas geçmişi eski izin anlık görüntüleriydi
     S.sel = null;
-    syncInputs();
+    syncInputs(); Player.applyMixer();
     if (S.track) {
       if (detSig(S.proj.pitch) !== old.det) await analyze();
       else if (segSig(S.proj.pitch, S.proj.noteSplits) !== old.seg) resegment();
@@ -8810,15 +8828,17 @@ async function histRestore(str, was) {
 async function histUndo() {
   if (!HIST.undo.length) { status('Geri alınacak bir şey yok.'); return; }
   const was = Player.playing;
-  HIST.redo.push(snapProj());
-  await histRestore(HIST.undo.pop(), was);
+  const entry = HIST.undo.pop();
+  HIST.redo.push(historyEntry(typeof entry !== 'string'));
+  await histRestore(entry, was);
   status(`Geri alındı (${HIST.undo.length} adım daha geri alınabilir, ${HIST.redo.length} yinelenebilir).`);
 }
 async function histRedo() {
   if (!HIST.redo.length) { status('Yinelenecek bir şey yok.'); return; }
   const was = Player.playing;
-  HIST.undo.push(snapProj());
-  await histRestore(HIST.redo.pop(), was);
+  const entry = HIST.redo.pop();
+  HIST.undo.push(historyEntry(typeof entry !== 'string'));
+  await histRestore(entry, was);
   status(`Yinelendi (${HIST.redo.length} adım daha yinelenebilir).`);
 }
 
@@ -8957,7 +8977,7 @@ async function autoMix(quiet) {
   });
   const m = S.proj.mixer, names = { piano: 'akor', guitar: 'gitar', bass: 'bas', drums: 'davul' };
   for (const k of Object.keys(res.levels)) if (m[k]) m[k].vol = res.levels[k];
-  syncInputs(); Player.applyMixer();
+  syncInputs(); Player.applyMixer(); queueVersions();
   const txt = Object.entries(res.levels).filter(([k]) => k !== 'vocal').map(([k, v]) => `${names[k]} ${v > 0 ? '+' : ''}${v} dB`).join(' · ');
   $('#mixInfo').textContent = `Vokal referans (0 dB, ${res.measured.vocal.toFixed(0)} dBFS) → ${txt || 'çalan iz yok'}`;
   if (!quiet) status(`🎚 Seviyeler ayarlandı: ${txt || 'çalan iz yok'} (vokala göre). Fader'larla istediğin gibi değiştirebilirsin.`);
@@ -9503,23 +9523,26 @@ const Player = {
   },
   // opts.preview: tek seferlik önizleme · opts.from: başlangıç sn · opts.countIn: başlamadan önce beklenecek sn (tap kaydı sayımı) · opts.onStart(ses saati) · opts.noBass: bas çalmasın · opts.click: metronomu zorla
   async play(opts = {}) {
+    const generation = this.generation = (this.generation || 0) + 1;
     if (!S.d) return;
     try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
-    this.stop(true);
+    if (generation !== this.generation) return;
+    this.stop(true, true);
     const pv = opts.preview || null; // tek seferlik önizleme: bölge bir kez çalar, seçili ayarlar değişmez
     PREVIEW.drums = pv ? pv.drums : null;
     await vfxEnsure();
+    if (generation !== this.generation) return;
     this.updateBuffers();
     this.freshPlayers();
     this.applyMixer();
     const ins = S.proj.guitar.instrument; // 'piano' | 'guitar' | 'both'
     let gtr = null;
-    if (ins !== 'piano') { status('Gitar partisi hazırlanıyor…', 'busy'); await tick(); gtr = guitarTrack(Tone.getContext().rawContext.sampleRate); }
+    if (ins !== 'piano') { status('Gitar partisi hazırlanıyor…', 'busy'); await tick(); if (generation !== this.generation) return; gtr = guitarTrack(Tone.getContext().rawContext.sampleRate); }
     const T = this.transport();
     T.cancel(0);
     const g = S.d.g, off = S.d.off;
     // döngü: seçili bölüm (ya da imleçten 4 ölçü) tekrar tekrar çalınır; tekrarlar baştan zamanlanır, aralarda boşluk olmaz
-    const region = pv ? { from: pv.from, to: pv.to } : opts.from == null && S.loop.on && S.loop.to > S.loop.from + 0.05 ? S.loop : null;
+    const region = pv ? { from: pv.from, to: pv.to } : opts.region || (opts.from == null && S.loop.on && S.loop.to > S.loop.from + 0.05 ? S.loop : null);
     let from = opts.from ?? S.pos;
     if (region && (from < region.from - 1e-6 || from >= region.to - 1e-6)) from = region.from;
     const len = region ? region.to - region.from : 0;
@@ -9708,7 +9731,8 @@ const Player = {
     this.previewTimer = setTimeout(() => { T.stop(); T.cancel(0); }, (at * g.barSec + 2) * 1000);
     status(`Önizleme: ${chords.map((c, i) => `${C.chordName(c)} (${durs ? durs[i] : 1})`).join(' → ')} · ${S.proj.settings.bpm} BPM`);
   },
-  stop(silent) {
+  stop(silent, preparing) {
+    if (!preparing) { this.generation = (this.generation || 0) + 1; VERS.resume = null; }
     if (!this.ready) return;
     const T = this.transport();
     T.stop(); T.cancel(0);
@@ -10952,6 +10976,84 @@ $('#packLocks').onclick = (e) => {
   matrixEdit(() => { const l = b.dataset.packLock; S.proj.pack.locks[l] = !S.proj.pack.locks[l]; });
 };
 
+// ---------------------------------------------------------------- SÜRÜMLER: çalışma kopyası, tek adımlı geçiş ve karşılaştırmalı dinleme
+const VERS = { confirm: null, rename: null, timer: null, generation: 0, resume: null, project: null };
+function queueVersions() {
+  if (!S.proj.versions.items.length) return;
+  clearTimeout(VERS.timer);
+  VERS.timer = setTimeout(renderVersions, 120);
+}
+function renderVersions() {
+  clearTimeout(VERS.timer);
+  if (VERS.project !== S.proj) { VERS.project = S.proj; VERS.confirm = null; VERS.rename = null; }
+  const versions = S.proj.versions, active = versions.items.find((v) => v.id === versions.activeId);
+  $('#chipVersions').textContent = active ? active.name : 'yok';
+  const dirty = active && C.isVersionDirty(S.proj, S.d, active.id);
+  $('#versionList').innerHTML = versions.items.map((v) => {
+    const compat = C.versionCompat(S.proj, S.d, v.id);
+    return `<div class="version-row" data-version="${esc(v.id)}">
+      <div><b>${esc(v.name)}</b> ${v.id === versions.activeId ? '<span class="chip">aktif</span>' + (dirty ? ' <span class="chip version-dirty">Değiştirildi</span>' : '') : ''}</div>
+      ${compat.ok ? '' : `<p class="hint">${esc(compat.warnings.join(' '))}</p>`}
+      <div class="row"><button data-version-act="switch" ${compat.ok ? '' : 'disabled'}>Geç</button><button data-version-act="update">${VERS.confirm === v.id ? 'Güncelle — onayla' : 'Güncelle'}</button><button data-version-act="rename">Ad ver</button><button data-version-act="delete">Sil</button></div>
+      ${VERS.rename === v.id ? `<div class="row"><input type="text" data-version-name aria-label="Sürüm adı" value="${esc(v.name)}"><button data-version-act="renameSave">Adı kaydet</button></div>` : ''}
+    </div>`;
+  }).join('') || '<p class="hint">Henüz sürüm yok.</p>';
+}
+function versionEdit(fn, message) {
+  let result;
+  matrixEdit(() => { result = fn(); });
+  status(result.ok ? message + (result.warnings.length ? ' ' + result.warnings.join(' ') : '') : result.warnings.join(' '), result.ok ? undefined : 'err');
+}
+async function switchVersion(id) {
+  const item = S.proj.versions.items.find((v) => v.id === id), compat = C.versionCompat(S.proj, S.d, id);
+  if (!item || !compat.ok) { status(compat.warnings.join(' '), 'err'); return; }
+  const generation = ++VERS.generation;
+  const resume = VERS.resume || (Player.playing ? { from: S.pos, region: Player.region ? { ...Player.region } : null } : null);
+  histCommit(); HIST.t = -Infinity;
+  const before = historyEntry(true);
+  const result = C.applyVersionState(S.proj, S.d, item.state);
+  if (!result.ok) { status(result.warnings.join(' '), 'err'); return; }
+  Player.stop(true);
+  clearTimeout(BS.timer); clearTimeout(GT.timer); clearTimeout(vfxTimer);
+  VERS.resume = resume;
+  S.proj.versions.activeId = id;
+  if (result.needsPinSigRefresh) S.proj.chordPinsSig = pinSig();
+  BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.drag = null; BS.form = null;
+  GT.cache = null;
+  syncInputs(); Player.applyMixer();
+  HIST.hold++;
+  try { refresh(); } finally { HIST.hold--; }
+  HIST.undo.push(before); if (HIST.undo.length > 100) HIST.undo.shift();
+  HIST.redo = []; HIST.base = snapProj(); HIST.t = -Infinity; HIST.last = 'proj'; histButtons();
+  VERS.confirm = null; VERS.rename = null; renderVersions();
+  if (resume) { S.pos = resume.from; await Player.play({ from: resume.from, region: resume.region }); }
+  if (generation !== VERS.generation) return;
+  VERS.resume = null;
+  status(`“${item.name}” sürümüne geçildi. Değişiklikler Ctrl+Z ile geri alınabilir.` + (result.warnings.length ? ' ' + result.warnings.join(' ') : ''));
+}
+$('#btnVersionSave').onclick = () => {
+  const name = $('#inVersionName').value.trim();
+  versionEdit(() => C.saveVersion(S.proj, S.d, name || undefined), 'Sürüm kaydedildi.');
+  $('#inVersionName').value = '';
+};
+$('#versionList').onclick = (e) => {
+  const b = e.target.closest('[data-version-act]'), row = b && b.closest('[data-version]');
+  if (!row || b.disabled) return;
+  const id = row.dataset.version, act = b.dataset.versionAct;
+  if (act === 'switch') { void switchVersion(id); return; }
+  if (act === 'rename') { VERS.rename = id; renderVersions(); $('#versionList [data-version-name]').focus(); return; }
+  if (act === 'update' && VERS.confirm !== id) { VERS.confirm = id; renderVersions(); status('Kaydedilmiş sürümü değiştirmek için Güncelle düğmesine yeniden basın.'); return; }
+  const name = row.querySelector('[data-version-name]')?.value;
+  VERS.confirm = null; VERS.rename = null;
+  if (act === 'update') versionEdit(() => C.updateVersion(S.proj, S.d, id), 'Sürüm güncellendi.');
+  if (act === 'delete') versionEdit(() => C.deleteVersion(S.proj, id), 'Sürüm silindi; mevcut aranje korundu.');
+  if (act === 'renameSave') versionEdit(() => C.renameVersion(S.proj, id, name), 'Sürümün adı değiştirildi.');
+};
+// Yenileme yapmayan çalgı kontrolleri de rozeti günceller; ses karelerinde hesap yapılmaz.
+for (const event of ['input', 'change', 'click']) document.addEventListener(event, (e) => {
+  if (!e.target.closest('details[data-key="s4c"]')) queueVersions();
+});
+
 // Matris ve paket eylemleri komşu düzenlemelerle birleşmeyen ayrı geri alma adımlarıdır.
 function matrixEdit(fn) {
   histCommit(); HIST.t = -Infinity;
@@ -11926,9 +12028,9 @@ function setEditMode(m) {
 }
 $$('.strip').forEach((strip) => {
   const tr = strip.dataset.track, m = () => S.proj.mixer[tr];
-  strip.querySelector('.vol').addEventListener('input', (e) => { m().vol = +e.target.value; S.proj.mixer.touched = true; strip.querySelector('output').textContent = e.target.value + ' dB'; Player.applyMixer(); });
-  strip.querySelector('.mute').onclick = (e) => { m().mute = !m().mute; e.target.classList.toggle('on', m().mute); Player.applyMixer(); };
-  strip.querySelector('.solo').onclick = (e) => { m().solo = !m().solo; e.target.classList.toggle('on', m().solo); Player.applyMixer(); };
+  strip.querySelector('.vol').addEventListener('input', (e) => { m().vol = +e.target.value; S.proj.mixer.touched = true; strip.querySelector('output').textContent = e.target.value + ' dB'; Player.applyMixer(); queueVersions(); });
+  strip.querySelector('.mute').onclick = (e) => { m().mute = !m().mute; e.target.classList.toggle('on', m().mute); Player.applyMixer(); queueVersions(); };
+  strip.querySelector('.solo').onclick = (e) => { m().solo = !m().solo; e.target.classList.toggle('on', m().solo); Player.applyMixer(); queueVersions(); };
 });
 $('#inZoom').addEventListener('input', (e) => { const W = sc.clientWidth; setZoom(+e.target.value, xToQ(W / 2), W / 2); });
 
@@ -12036,6 +12138,7 @@ async function openProject(file) {
   const audioData = p.audioData, midiData = p.midiData;
   delete p.audioData; delete p.midiData; delete p.savedAt;
   S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(p));
+  S.versionPinsOnLoad = !!(S.proj.versions.activeId && S.proj.chordChoices.length);
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   if (midiData) S.midi = { name: midiData.name, bytes: null, notes: midiData.notes, endQ: midiData.endQ, tracks: [], trackIndex: null, warnings: [] };
@@ -12114,7 +12217,7 @@ const jclone = (x) => JSON.parse(JSON.stringify(x));
 // ---- parti → ses (çalma, ön dinleme ve mix WAV aynı yolu kullanır; render önbellekli)
 function guitarTrack(sr) {
   const g = S.d.g, slots = C.guitarSlotsFrom(S.d);
-  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts) + JSON.stringify(C.resolveLinks(S.proj, S.d)) + JSON.stringify(S.d.sections.map((s) => [s.id, s.startBar, s.endBar, C.effectiveLayers(S.proj, S.d, s.id)]));
+  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts) + JSON.stringify(S.proj.guitar.voiceGroups) + JSON.stringify(C.resolveLinks(S.proj, S.d)) + JSON.stringify(S.d.sections.map((s) => [s.id, s.startBar, s.endBar, C.effectiveLayers(S.proj, S.d, s.id)]));
   if (GT.cache && GT.cache.key === key) return GT.cache;
   const events = arrangedEventsAll(['guitar']).guitar;
   const n = Math.ceil((S.d.bars * g.barSec + 2.5) * sr);
@@ -12142,7 +12245,7 @@ function gRefreshSound() {
   if (GT.auditioning) GT.timer = setTimeout(() => Player.auditionGuitar(), 140); // seçim anında sese yansır
   else if (Player.playing) GT.timer = setTimeout(() => Player.play(), 140);
 }
-function gChanged() { renderGuitar(); gRefreshSound(); }
+function gChanged() { renderGuitar(); gRefreshSound(); queueVersions(); }
 function gEdit(fn) {
   if (guardLinked(GT.target)) return;
   const p = gOwn();
@@ -12425,6 +12528,7 @@ function bsDo(fn, msg) {
   bsAfter(msg);
 }
 function bsAfter(msg) {
+  queueVersions();
   const t = bTrack(), ctx = bCtx();
   if (ctx) { Bs.applyTies(t, ctx); if (Object.keys(C.resolveLinks(S.proj, S.d)).length) Bs.bassSync(t, ctx); }
   renderBass(); drawBass();

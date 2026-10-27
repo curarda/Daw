@@ -40,6 +40,7 @@ function bsDo(fn, msg) {
   bsAfter(msg);
 }
 function bsAfter(msg) {
+  queueVersions();
   const t = bTrack(), ctx = bCtx();
   if (ctx) { Bs.applyTies(t, ctx); if (Object.keys(C.resolveLinks(S.proj, S.d)).length) Bs.bassSync(t, ctx); }
   renderBass(); drawBass();

@@ -18,7 +18,7 @@ const jclone = (x) => JSON.parse(JSON.stringify(x));
 // ---- parti → ses (çalma, ön dinleme ve mix WAV aynı yolu kullanır; render önbellekli)
 function guitarTrack(sr) {
   const g = S.d.g, slots = C.guitarSlotsFrom(S.d);
-  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts) + JSON.stringify(C.resolveLinks(S.proj, S.d)) + JSON.stringify(S.d.sections.map((s) => [s.id, s.startBar, s.endBar, C.effectiveLayers(S.proj, S.d, s.id)]));
+  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts) + JSON.stringify(S.proj.guitar.voiceGroups) + JSON.stringify(C.resolveLinks(S.proj, S.d)) + JSON.stringify(S.d.sections.map((s) => [s.id, s.startBar, s.endBar, C.effectiveLayers(S.proj, S.d, s.id)]));
   if (GT.cache && GT.cache.key === key) return GT.cache;
   const events = arrangedEventsAll(['guitar']).guitar;
   const n = Math.ceil((S.d.bars * g.barSec + 2.5) * sr);
@@ -46,7 +46,7 @@ function gRefreshSound() {
   if (GT.auditioning) GT.timer = setTimeout(() => Player.auditionGuitar(), 140); // seçim anında sese yansır
   else if (Player.playing) GT.timer = setTimeout(() => Player.play(), 140);
 }
-function gChanged() { renderGuitar(); gRefreshSound(); }
+function gChanged() { renderGuitar(); gRefreshSound(); queueVersions(); }
 function gEdit(fn) {
   if (guardLinked(GT.target)) return;
   const p = gOwn();

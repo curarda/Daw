@@ -267,3 +267,9 @@ Son nakarat, bölümde elle davul seçimi yoksa paketin alternatif davul loop'un
 Bölümler panelindeki **Bağla:**, bir bölümü aynı ölçü uzunluğundaki başka bir bölüme canlı bağlar. Zincirler kurulabilir; döngülere izin verilmez. **↻** rozeti ve zaman çizelgesindeki işaret bağı gösterir. Akorlar ve kilit/sabit/değişim işaretleri, bölüm düzenlemesi, matris satırı, gitar partisi ve bas ölçüleri/ayarları kaynağı izler. Son nakarat ekstrası hedefin şarkıdaki konumuna göre uygulanır.
 
 Kaynaktan gelen kontroller salt okunurdur. **Kaynağı düzenle** kaynağa götürür; **Bağı kopar** aynı sesi koruyan bağımsız bir kopya oluşturur. Bağlama/koparma ve yapısal değişiklikler ayrı Ctrl+Z / Ctrl+Shift+Z adımlarıdır. Kaynak/hedef silinmeden veya yeniden boyutlandırılmadan ya da şarkının ölçüleri kaydırılmadan önce etkilenen bağlar bağımsız kopyaya dönüşür. Toplu akor/şablon/stil araçları bağlı hedefleri atlar ve bunu bildirir. Bağlar proje dosyasında saklanır.
+
+## Sürümler
+
+**4c → Sürümler**, mevcut paket, matris, bölüm bağları, akorlar/kilitler, katman ayarları ve mikseri A, B, C… (ya da verdiğin adla) saklar. Kayıt sesi, nota düzeltmeleri, zamanlama, tempo ve ölçü ortak kalır. **Geç**, çalarken de aynı konum ve döngüden devam ederek sürüm değiştirir; tek Ctrl+Z önceki aranjeyi ve mikseri geri getirir, Ctrl+Shift+Z geçişi yineler.
+
+**Değiştirildi**, aktif sürümde kaydedilmemiş değişiklik olduğunu gösterir. **Güncelle**, ikinci tıkla kaydın üzerine yazar; **Ad ver** adını değiştirir, **Sil** mevcut aranjeyi koruyarak sürümü kaldırır. Sürümler proje dosyasında saklanır. Ölçü veya sıralı bölüm kimlikleri/uzunlukları değişirse uyumsuzluk açıklanır ve geçiş kapanır; aynı uzunlukları koruyarak bölümleri taşımak uyumludur.

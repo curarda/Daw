@@ -104,3 +104,9 @@ The last chorus uses the pack's alternate drum loop unless a section drum choice
 In the sections panel, **Bağla:** connects a section to another section of the same bar length. Chains are allowed; cycles are rejected. The **↻** badge and timeline label identify live links. Chords and their lock/pin/change marks, section arrangement, matrix row, guitar part and bass bars/settings follow the source. The last-chorus extra still follows the target's position.
 
 Inherited controls are read-only. **Kaynağı düzenle** jumps to the source; **Bağı kopar** creates an independent copy with identical sound. Link/unlink and structural changes are separate Ctrl+Z / Ctrl+Shift+Z steps. Deleting or resizing a source/target, or shifting the song's bars, first materializes affected links. Bulk chord/chart/style tools skip linked targets and report it. Links survive project save/load.
+
+## Named versions
+
+**4c → Sürümler** saves the current pack, matrix, section links, chords/locks, layer settings and mixer as A, B, C… (or your own name). Recorded audio, note corrections, timing, tempo and meter stay shared. **Geç** switches even during playback, preserving the playhead and loop; one Ctrl+Z restores the previous arrangement and mixer, and Ctrl+Shift+Z redoes the switch.
+
+**Değiştirildi** marks unsaved changes to the active version. **Güncelle** replaces a saved version after a second click; **Ad ver** renames it and **Sil** removes it while keeping the current arrangement. Versions persist in project files. Changing meter or the ordered section ids/lengths makes saved versions incompatible and disables switching; moving sections without changing their lengths remains compatible.
