@@ -159,7 +159,7 @@ for (const [id, section, layer, expected] of [['dream-pop', 's1', 'drums', false
   const legacy = project(); delete legacy.pack;
   assert.deepEqual(C.migrateMatrix(clone(legacy)).pack, C.newProject().pack);
   const partial = { pack: { id: 'dream-pop', locks: { bass: true } } }; C.migrateMatrix(partial);
-  assert.deepEqual(partial.pack, { id: 'dream-pop', locks: { piano: false, guitar: false, bass: true, drums: false } });
+  assert.deepEqual(partial.pack, { id: 'dream-pop', selectedId: null, locks: { piano: false, guitar: false, bass: true, drums: false } });
   assert.deepEqual(C.migrateMatrix(clone(partial)), partial);
 }
 console.log('packs: catalog, ranking, atomic apply, locks, availability, matrix, positional chorus, determinism, migration passed');

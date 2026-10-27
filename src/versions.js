@@ -2,8 +2,8 @@
 (function (root) {
 const C = root.Core, B = C.Bass;
 const clone = (v) => v == null ? v : JSON.parse(JSON.stringify(v));
-const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer'];
-const globals = ['pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'chordStartBar'];
+const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer'];
+const globals = ['pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords'];
 const mixerKeys = ['vocal', 'piano', 'guitar', 'bass', 'drums', 'pedal', 'touched'];
 const fail = (reason) => ({ ok: false, warnings: [reason] });
 const object = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
@@ -11,6 +11,10 @@ const validChord = (c) => object(c) && Number.isFinite(c.root) && typeof c.q ===
 function migrateVersions(proj) {
   const v = proj.versions || {};
   proj.versions = { activeId: v.activeId ?? null, items: Array.isArray(v.items) ? v.items : [] };
+  for (const item of proj.versions.items) if (object(item.state)) {
+    if (item.state.preserveChords === undefined) item.state.preserveChords = false;
+    if (object(item.state.pack) && item.state.pack.selectedId === undefined) item.state.pack.selectedId = null;
+  }
   return proj;
 }
 function versionSignature(proj, d) {
@@ -220,7 +224,12 @@ function deleteVersion(proj, id) {
 const normalized = (v) => JSON.stringify(v, (key, value) => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, value[k]])) : value);
 function isVersionDirty(proj, d, id) {
   const item = items(proj).find((v) => v.id === id);
-  return !!item && normalized(captureVersionState(proj, d)) !== normalized(item.state);
+  const compare = (state) => {
+    const saved = clone(state);
+    if (saved.pack) delete saved.pack.selectedId;
+    return normalized(saved);
+  };
+  return !!item && compare(captureVersionState(proj, d)) !== compare(item.state);
 }
 Object.assign(C, { migrateVersions, versionSignature, captureVersionState, applyVersionState, saveVersion, updateVersion, renameVersion, deleteVersion, isVersionDirty, versionCompat });
 })(typeof window !== 'undefined' ? window : globalThis);
