@@ -84,7 +84,8 @@ function scheduleBassPlay(T, rounds, g, ctx) {
   const rc = Tone.getContext().rawContext;
   const voices = makeBassVoices(tr, rc, (n) => Tone.connect(n, Player.bassCh));
   Player.bassVoices = voices;
-  const ev = Bs.bassEvents(tr, g, S.d.bars), au = bassAutomation(tr, ctx, g);
+  const ev = arrangedEventsAll(['bass']).bass, au = bassAutomation(tr, ctx, g);
+  if (window.__dawAPI.onScheduledEvents) window.__dawAPI.onScheduledEvents({ bass: ev });
   // rounds: Player.play'in turları ({lo, hi} zaman çizelgesi aralığı, tau0 = lo'nun Transport zamanı); döngü yoksa tek tur
   for (const r of rounds) {
     const at = (t) => r.tau0 + (Math.max(t, r.lo) - r.lo), from = r.lo;
@@ -110,7 +111,7 @@ async function renderBassOffline(sr, n) {
   const tr = bTrack(), ctx = bCtx(), g = S.d.g;
   const oc = new OfflineAudioContext(1, n, sr);
   const voices = makeBassVoices(tr, oc, (node) => node.connect(oc.destination));
-  for (const e of Bs.bassEvents(tr, g, S.d.bars)) bassHit(voices, e, e.t);
+  for (const e of arrangedEventsAll(['bass']).bass) bassHit(voices, e, e.t);
   for (const p of bassAutomation(tr, ctx, g)) applyAutomationAt(voices, p, p.t, g.barSec);
   if (tr.pump > 0 && tr.instrumentType === 'synth') for (let t = 0; t < S.d.bars * g.barSec; t += g.pulseSec) voices.forEach((x) => x.inst.pumpAt(t, tr.pump, 0.25 * g.pulseSec));
   BS.lastOffline = voices;
@@ -487,7 +488,7 @@ function bsSelectChange(el) {
   else if (k === 'profB') bsDo((t, ctx) => { t.styleMix = v ? { profileB: v, amount: (t.styleMix && t.styleMix.amount) || 0.5 } : null; Bs.bassGenerateAll(t, ctx); });
   else if (k === 'seed') bsDo((t, ctx) => { t.seed = (parseInt(el.value, 10) || 1) | 0; Bs.bassGenerateAll(t, ctx); }, 'Tohum değişti; kilitsiz ölçüler yeniden üretildi.');
   else if (k === 'rlo' || k === 'rhi') bsDo((t, ctx) => { const lo = k === 'rlo' ? +v : t.range.low, hi = k === 'rhi' ? +v : t.range.high; t.range = { low: Math.min(lo, hi - 12), high: Math.max(hi, lo + 12) }; Bs.bassGenerateAll(t, ctx); });
-  else if (k === 'on') { bTrack().enabled = el.checked; drawBass(); renderBass(); if (Player.playing) Player.play(); }
+  else if (k === 'on') { bTrack().enabled = el.checked; renderMatrix(); drawBass(); renderBass(); if (Player.playing) Player.play(); }
   else if (bassTapChange(el)) { /* tap alanı */ }
   else if (typeof bassLearnChange === 'function') bassLearnChange(el);
 }

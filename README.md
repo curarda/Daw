@@ -55,3 +55,46 @@ The piano samples load from a CDN, so the first playback needs a connection. The
 JavaScript, Web Audio API, Tone.js, custom pitch detection (YIN-based), Playwright for UI tests.
 
 The original Turkish documentation is in [README.tr.md](README.tr.md).
+
+## Section × layer matrix
+
+**4b → Otomatik aranje** is off by default. Enabling it keeps manual choices. Rows are sections (or **Tümü** without sections); columns are Akor (piano), Gitar, Bas and Davul. Dashed cells are automatic, solid cells manual. Click once for the opposite of the template, again to return to automatic. **Otomatiğe dön** resets a row; **Hepsini otomatiğe döndür** resets all rows. Every action is a separate Ctrl+Z / Ctrl+Shift+Z step and survives project save/load. Globally disabled layers cannot be enabled here.
+
+| Section type | Piano | Guitar | Bass | Drums |
+|---|---|---|---|---|
+| Intro | On | On | Off | Off |
+| Verse | On | On | On | Off |
+| Prechorus | On | On | On | On |
+| Chorus | On | On | On | On |
+| Bridge | On | On | Off | Off |
+| Outro | On | On | Off | Off |
+| Other / All | On | On | On | On |
+
+Playback, mix WAV and MIDI follow the same matrix. Held notes stop at disabled section boundaries; normal release and effect tails may remain audible. Gaps between sections follow the global arrangement. With the matrix off, the existing arrangement is unchanged.
+
+## Genre packs
+
+**4a → Tür paketi** sets the drum loop, bass sound and generated line, chord sound, guitar part, instrument availability and section dynamics together. It enables the matrix without changing BPM or meter. Packs are ranked by distance from their BPM range; **Tempoya uygun** offers the top three. **Uygula** applies the selection; **⟳ Başka paket** cycles through the ranking and wraps. Playback restarts only if already playing.
+
+| Pack | Character |
+|---|---|
+| Dream pop | Spacious synth chords, ringing arpeggios and warm drone bass; drumless verses. |
+| Indie pop | Piano arpeggios, clean folk guitar and walking bass. |
+| Electro-pop | Synth chords, clap drums and pumping synth bass; chords-only intro. |
+| Alt rock | Driven gallop guitar, fuzz bass and syncopated drums. |
+| Indie rock | Crunch eighths, walking bass and train drums. |
+| Post-punk | Clean skank guitar with delay, driving bass and motorik drums. |
+| Synthwave | Synth arpeggios, Moroder bass and gated drums. |
+| Darkwave | Sub bass and electronic drums with a sparse opening. |
+| Alternative pop | Piano chords, warm drone bass and half-time drums. |
+| Pop rock | Piano chords, crunch guitar and pedal bass. |
+| Akustik | Clean folk guitar, piano arpeggios and sparse bass. |
+| Balad (4/4) | Held piano chords, ringing guitar and gentle drone bass. |
+| Synthpop | Synth arpeggios, pulsing synth bass and four-on-the-floor drums. |
+| Dans / Elektronik | Acid bass and electronic dance drums. |
+| Vals | 3/4 piano arpeggios, waltz guitar and drone bass. |
+| 6/8 Balad | 6/8 piano arpeggios, ringing guitar and dotted-quarter bass pulse. |
+
+The first 14 packs support 4/4; Vals supports 3/4 and 6/8 Balad supports 6/8 (dotted-quarter BPM). There are no 2/4 packs. **Kilitle: Akor / Gitar / Bas / Davul** keeps that layer's settings and effective matrix column when another pack is applied. Existing section guitar parts and locked bass material are preserved; warnings and kept layers appear below the controls and in the status bar. At least one chord instrument stays available.
+
+The last chorus uses the pack's alternate drum loop unless a section drum choice overrides it, and opens all globally available layers unless a manual matrix cell says off. Turning **Otomatik aranje** off disables both the pack template and this extra; the pack's global sounds and settings remain. Applying a pack and each lock toggle are separate Ctrl+Z / Ctrl+Shift+Z steps, including bass settings and notes. Pack selection and locks survive project save/load.

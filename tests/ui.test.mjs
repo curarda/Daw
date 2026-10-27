@@ -74,7 +74,7 @@ try {
     const open = () => page.$$eval('details.step', (ds) => ds.map((d) => [d.dataset.key, d.open]));
     const st = await open();
     assert.deepEqual(st.filter(([, o]) => o).map(([k]) => k), ['s1', 's2'], 'ilk açılışta yalnızca proje ayarı ve kayıt açık');
-    assert.deepEqual(st.map(([k]) => k), ['s1', 's2', 's3', 's3b', 's4', 's5', 's67', 's8', 's8b', 's8c', 's8d', 's8e', 's9']);
+    assert.deepEqual(st.map(([k]) => k), ['s1', 's2', 's3', 's3b', 's4', 's4a', 's4b', 's5', 's67', 's8', 's8b', 's8c', 's8d', 's8e', 's9']);
     assert.equal(await page.isVisible('#bassPanel'), false, 'kapalı bölümün içeriği görünmez');
     assert.equal((await page.textContent('#chipS1')).trim(), '4/4 · 120 BPM');
     assert.equal((await page.textContent('#chipS8b')).trim(), 'kapalı'); assert.equal((await page.textContent('#chipS8c')).trim(), 'kapalı');

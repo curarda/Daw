@@ -218,3 +218,46 @@ Otomatik hiçbir mekanizma senin açıkça verdiğin kararı değiştirmez; puan
 - **Ritim ağırlığı λ_ritim:** "değiş mi kal mı"; akor veride n ölçü sürüyorsa değişme olasılığı h için λ_ritim·ln(h/(1−h)) (h = %70 → +0,85, h = %20 → −1,39).
 - **Sıcaklık:** 0 = hep en iyi; > 0 = en iyi 3 aday arasından puanla orantılı seçim (puanlar 10/9/8: T = 1 → %66/%24/%9; T = 3 → %45/%32/%23).
 - **Veri yeterliliği:** uygulamada hazır veri seti yoktur; model yalnızca senin eklediğin şarkılardan kurulur (testlerdeki 6 sentetik şarkı gerçek değil). Bir modda 20'den az şarkı = "az veri" uyarısı. Parametreleri veriye bakıp ayarlamak için kabaca modda 20+, toplamda 30+ gerçek akor şemalı şarkı gerekir; öncesinde varsayılanlar (λ = 1, λ_ritim = 1, T = 0).
+
+## Bölüm × katman
+
+**4b → Otomatik aranje** varsayılan olarak kapalıdır; açmak mevcut elle seçimleri korur. Bölümler satır, Akor / Gitar / Bas / Davul sütundur; bölüm yoksa **Tümü** görünür. Kesik kenar otomatik, düz kenar elle seçimdir. İlk tık otomatiğin tersini, sonraki tık otomatiği seçer. Satırdaki **Otomatiğe dön** veya **Hepsini otomatiğe döndür** elle seçimleri temizler. Her işlem ayrı Ctrl+Z / Ctrl+Shift+Z adımıdır; proje dosyasında saklanır. Genel olarak kapalı katman açılamaz.
+
+| Bölüm türü | Akor | Gitar | Bas | Davul |
+|---|---|---|---|---|
+| Intro | Açık | Açık | Kapalı | Kapalı |
+| Verse | Açık | Açık | Açık | Kapalı |
+| Pre-nakarat | Açık | Açık | Açık | Açık |
+| Nakarat | Açık | Açık | Açık | Açık |
+| Köprü | Açık | Açık | Kapalı | Kapalı |
+| Outro | Açık | Açık | Kapalı | Kapalı |
+| Diğer / Tümü | Açık | Açık | Açık | Açık |
+
+Çalma, mix WAV ve MIDI aynı matrisi izler. Kapalı bölüm sınırında uzayan notalar kesilir; doğal ses bırakma ve efekt kuyrukları duyulabilir. Bölümler arasındaki boşluklar genel düzeni izler. Matris kapalıyken mevcut düzen değişmez.
+
+## Tür paketleri
+
+**4a → Tür paketi**, davul loop'unu, bas sesini ve üretilen hattı, akor sesini, gitar partisini, çalgı seçimini ve bölüm dinamiklerini birlikte kurar. Tempo ve ölçü değişmez; matris açılır. Paketler BPM aralığına uzaklığa göre sıralanır; **Tempoya uygun** en iyi üç seçeneği gösterir. **Uygula** seçileni uygular; **⟳ Başka paket** sıralamadaki sonraki pakete geçer ve başa döner. Yalnızca zaten çalıyorsa çalma yeniden zamanlanır.
+
+| Paket | Karakter |
+|---|---|
+| Dream pop | Geniş synth akorları, uzun çınlayan arpej ve sıcak drone bas; kıtada davul yok. |
+| Indie pop | Piyano arpeji, temiz folk gitar ve yürüyen bas. |
+| Electro-pop | Synth akorları, clap davul ve pompalı synth bas; giriş yalnız akor. |
+| Alt rock | Drive gallop gitar, fuzz bas ve senkoplu davul. |
+| Indie rock | Crunch sekizlik gitar, yürüyen bas ve train davul. |
+| Post-punk | Delay'li temiz skank gitar, sürükleyici bas ve motorik davul. |
+| Synthwave | Synth arpeji, Moroder bas ve gated davul. |
+| Darkwave | Seyrek giriş, sub bas ve elektronik davul. |
+| Alternative pop | Piyano akorları, sıcak drone bas ve half-time davul. |
+| Pop rock | Piyano akorları, crunch gitar ve pedal bas. |
+| Akustik | Temiz folk gitar, piyano arpeji ve seyrek bas. |
+| Balad (4/4) | Uzayan piyano akorları, çınlayan gitar ve sakin drone bas. |
+| Synthpop | Synth arpeji, nabızlı synth bas ve dört vuruş kick. |
+| Dans / Elektronik | Acid bas ve elektronik dans davulu. |
+| Vals | 3/4 piyano arpeji, vals gitar ve drone bas. |
+| 6/8 Balad | 6/8 piyano arpeji, çınlayan gitar ve noktalı çeyrek bas nabzı. |
+
+İlk 14 paket 4/4 içindir; Vals 3/4, 6/8 Balad ise 6/8 içindir (BPM noktalı çeyrek sayılır). 2/4 için paket yoktur. **Kilitle: Akor / Gitar / Bas / Davul**, başka paket uygulanırken o katmanın ayarlarını ve matris sütunundaki duyulan seçimleri korur. Mevcut bölüm gitar partileri ve kilitli bas içeriği korunur; uyarılar ve korunan katmanlar panelin altında ve durum çubuğunda gösterilir. En az bir akor çalgısı açık kalır.
+
+Son nakarat, bölümde elle davul seçimi yoksa paketin alternatif davul loop'unu kullanır; elle kapatılmış hücreler dışında genel olarak açık tüm katmanları çalar. **Otomatik aranje** kapatılınca paket şablonu ve son nakarat ekstrası devreden çıkar; paketin genel sesleri ve ayarları kalır. Paket uygulama ve her kilit düğmesi, bas ayarları ve notaları dahil ayrı birer Ctrl+Z / Ctrl+Shift+Z adımıdır. Paket ve kilitler proje dosyasında saklanır.

@@ -16,12 +16,11 @@ const gSections = () => (S.d ? S.d.sections.filter((s) => !s.implicit) : []);
 const jclone = (x) => JSON.parse(JSON.stringify(x));
 
 // ---- parti → ses (çalma, ön dinleme ve mix WAV aynı yolu kullanır; render önbellekli)
-const guitarPartOf = (sl) => C.guitarPartFor(S.proj.guitar, sl.section);
 function guitarTrack(sr) {
   const g = S.d.g, slots = C.guitarSlotsFrom(S.d);
-  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts);
+  const key = sr + '|' + g.bpm + '|' + g.meter + '|' + JSON.stringify(slots) + JSON.stringify(S.proj.guitar.parts) + JSON.stringify(S.d.sections.map((s) => [s.id, s.startBar, s.endBar, C.effectiveLayers(S.proj, S.d, s.id)]));
   if (GT.cache && GT.cache.key === key) return GT.cache;
-  const events = C.guitarEvents(slots, g, guitarPartOf);
+  const events = arrangedEventsAll(['guitar']).guitar;
   const n = Math.ceil((S.d.bars * g.barSec + 2.5) * sr);
   return (GT.cache = { key, events, data: C.renderGuitar(events, sr, n, g.spq, 1) });
 }
@@ -249,7 +248,7 @@ $('#guitarPanel').addEventListener('input', (e) => {
   gRefreshSound();
 });
 $('#guitarPanel').addEventListener('change', (e) => { if (e.target.dataset && e.target.dataset.s) renderGuitar(); });
-$$('input[name=gInstr]').forEach((r) => r.addEventListener('change', (e) => { S.proj.guitar.instrument = e.target.value; if (Player.playing) Player.play(); }));
+$$('input[name=gInstr]').forEach((r) => r.addEventListener('change', (e) => { S.proj.guitar.instrument = e.target.value; renderMatrix(); renderPacks(); if (Player.playing) Player.play(); }));
 $('#gTarget').addEventListener('change', (e) => { GT.target = e.target.value; GT.sel = null; renderGuitar(); if (GT.auditioning) gRefreshSound(); });
 $('#gSecInfo').addEventListener('click', (e) => {
   if (e.target.closest('#gSecOwn')) { gState().parts[GT.target] = jclone(gState().parts._all); gChanged(); }

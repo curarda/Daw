@@ -162,6 +162,32 @@
       <div id="sectionList"></div>
     </details>
 
+    <details class="step" data-key="s4a">
+      <summary><b>4a</b> Tür paketi <span class="chip" id="chipPack">yok</span></summary>
+      <p class="hint">Tempon ve ölçün aynı kalır; paket davul, bas, akor sesi, gitar ve bölüm dinamiklerini birlikte kurar.</p>
+      <p class="hint" id="packUnavailable" hidden>Bu ölçü için paket yok (4/4, 3/4 ve 6/8 desteklenir)</p>
+      <div>Tempoya uygun</div>
+      <div class="row" id="packSuggestions"></div>
+      <label>Paket<select id="inPack" aria-label="Tür paketi"></select></label>
+      <div class="row"><button id="btnPackApply">Uygula</button><button id="btnPackNext">⟳ Başka paket</button></div>
+      <div class="row" id="packLocks"><span>Kilitle:</span>
+        <button data-pack-lock="piano" aria-pressed="false" title="Kilitli katmana paket dokunmaz">Akor</button>
+        <button data-pack-lock="guitar" aria-pressed="false" title="Kilitli katmana paket dokunmaz">Gitar</button>
+        <button data-pack-lock="bass" aria-pressed="false" title="Kilitli katmana paket dokunmaz">Bas</button>
+        <button data-pack-lock="drums" aria-pressed="false" title="Kilitli katmana paket dokunmaz">Davul</button>
+      </div>
+      <ul class="hint" id="packWarnings" aria-live="polite"></ul>
+    </details>
+
+    <details class="step" data-key="s4b">
+      <summary><b>4b</b> Bölüm × katman <span class="chip" id="chipMatrix"></span></summary>
+      <label class="chk"><input type="checkbox" id="inMatrixEnabled"> Otomatik aranje</label>
+      <p class="hint">Bölüm adından (intro, verse, nakarat…) hangi katmanın çalacağı otomatik doldurulur; hücreye tıklayarak elle bozabilirsin. İlk tık otomatiğin tersini seçer, sonraki tık otomatiğe döner.</p>
+      <p class="hint" id="matrixOff">Otomatik aranje kapalı: tüm katmanlar her bölümde çalar</p>
+      <div id="matrixTable"></div>
+      <button id="btnMatrixReset">Hepsini otomatiğe döndür</button>
+    </details>
+
     <details class="step" data-key="s5">
       <summary><b>5</b> Ses düzeltme (elle ve autotune) <span class="chip" id="chipS5"></span></summary>
       <p class="hint"><b>Elle:</b> piano-roll'da notayı tut ve yukarı/aşağı sürükle. Sürüklerken ne olacağı notanın üstünde yazar. Hiçbiri orijinal kaydı değiştirmez; her biri notaya tıklayınca en üstteki <b>✕</b> ile geri alınır.</p>

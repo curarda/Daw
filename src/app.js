@@ -42,7 +42,8 @@ window.__dawAPI = {
     };
   },
   stop: () => Player.stop(),
-  arrangement: () => ({ drums: drumEventsAll(), bass: S.d && S.proj.bass.enabled ? Bs.bassEvents(S.proj.bass, S.d.g, S.d.bars) : [], piano: pianoEventsAll() }), // bölüm düzenlemeli olaylar (testler)
+  arrangement: () => ({ drums: drumEventsAll(), bass: arrangedEventsAll(['bass']).bass, piano: pianoEventsAll() }), // bölüm düzenlemeli olaylar (testler)
+  renderStems: (sr, lenSec) => renderStems(sr, lenSec),
   hist: () => HIST,
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir
   // progresyonu zaman çizelgesine akor şablonu (kilitli akorlar) olarak yerleştir; durs: ölçü cinsinden süreler
@@ -202,6 +203,8 @@ function refresh() {
     S.sel = ids.length > 1 ? { type: 'notes', ids } : ids.length ? { type: 'note', id: ids[0] } : null;
   }
   renderSections();
+  renderMatrix();
+  renderPacks();
   renderInspector();
   renderInfo();
   renderDrums();
@@ -236,6 +239,7 @@ function importMidiBytes(bytes, name, trackIdx, keep) {
   S.proj = C.newProject(); S.audio = null; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.sel = null; S.pos = 0;
   const p = S.proj;
   p.settings.bpm = r.settings.bpm; p.settings.meter = r.settings.meter;
+  p.matrix = { enabled: false, rows: {} };
   p.audio = { offsetSec: 0, alignMode: 'none', leadBars: 0, source: 'midi' };
   p.pitch.tuning = 'a440'; // MIDI notaları tam yarım sestir
   p.sections = r.sections.map((x) => ({ id: uid(), name: x.name, startBar: x.startBar, endBar: x.endBar, tonic: x.tonic, mode: x.mode }));
@@ -375,23 +379,11 @@ const swingMode = (r = swingR()) => (Math.abs(r - 0.5) < 0.005 ? 'straight' : Ma
 const secArr = (secId) => { const s = S.proj.sections.find((x) => x.id === secId); return (s && s.arr) || {}; };
 const sectionOfBar = (bar) => (S.d ? S.d.sections.find((s) => !s.implicit && bar >= s.startBar && bar <= s.endBar) || null : null);
 const loopById = (id) => C.DRUM_LOOPS.find((l) => l.id === id && l.meter === S.proj.settings.meter) || null;
-function drumLoopForBar(bar) {
-  if (PREVIEW.drums) return loopById(PREVIEW.drums);
-  const sec = sectionOfBar(bar), a = sec ? secArr(sec.id).drums : null;
-  if (a === 'off') return null;
-  const own = a ? loopById(a) : null;
-  return own || (S.proj.drums.on ? currentLoop() : null);
-}
 const anySectionArr = (k) => S.proj.sections.some((s) => s.arr && s.arr[k] && s.arr[k] !== 'off');
 const anyDrums = () => !!PREVIEW.drums || S.proj.drums.on || anySectionArr('drums');
-function fillAt(b) {
-  if (!S.proj.drums.fills || PREVIEW.drums || !S.d || b >= S.d.bars) return false;
-  const a = sectionOfBar(b), n = sectionOfBar(b + 1);
-  return !!a && !!n && a.id !== n.id && !!drumLoopForBar(b) && !!drumLoopForBar(b + 1);
-}
-const drumEventsAll = () => (S.d && anyDrums() ? C.arrangeDrums(S.d.g, S.d.bars, S.proj.drums.startBar || 1, drumLoopForBar, fillAt, swingR()) : []);
-const pianoOptsFor = (secId) => { const a = secArr(secId).piano; return C.pianoOpts(a ? Object.assign({}, S.proj.piano, { style: a }) : S.proj.piano, swingR()); };
-const pianoEventsAll = () => (anySectionArr('piano') ? C.arrangePiano(S.d.chords, S.d.g, pianoOptsFor) : C.pianoEvents(S.d.chords, S.d.g, C.pianoOpts(S.proj.piano, swingR())));
+const arrangedEventsAll = (layers) => C.arrangedEvents(S.d, S.proj, { layers, drumLoop: currentLoop(), previewDrums: PREVIEW.drums });
+const drumEventsAll = () => arrangedEventsAll(['drums']).drums;
+const pianoEventsAll = () => arrangedEventsAll(['piano']).piano;
 
 // ---------------------------------------------------------------- düzeltilmiş vokal render (TD-PSOLA)
 let renderTimer = null;
@@ -816,7 +808,7 @@ $('#drumInfo').addEventListener('click', async (e) => {
   if (!e.target.closest('#btnDrumCopy')) return;
   try { await navigator.clipboard.writeText($('#drumRequest').value); status('Tarif kopyalandı — Claude\'a yapıştır.'); } catch (err) { $('#drumRequest').select(); status('Kopyalanamadı; metin seçildi, Ctrl+C ile kopyala.', 'err'); }
 });
-$('#inDrumsOn').addEventListener('change', (e) => { S.proj.drums.on = e.target.checked; if (Player.playing) Player.play(); });
+$('#inDrumsOn').addEventListener('change', (e) => { S.proj.drums.on = e.target.checked; renderMatrix(); if (Player.playing) Player.play(); });
 $('#inDrumLoop').addEventListener('change', (e) => { S.proj.drums.loop = e.target.value; renderDrums(); if (Player.playing) Player.play(); });
 $('#btnDrumPreview').onclick = () => Player.previewDrums(currentLoop());
 $('#btnDrumStop').onclick = () => Player.stop();
@@ -1081,6 +1073,7 @@ const Player = {
     const rounds = [{ lo: from, hi: region ? region.to : Infinity, tau0: from }];
     if (region && !pv) for (let k = 0; k < Math.min(200, Math.ceil(600 / len)); k++) rounds.push({ lo: region.from, hi: region.to, tau0: from + (region.to - from) + k * len });
     const pev = ins === 'guitar' ? [] : pianoEventsAll(), dev = drumEventsAll(), mev = melodyEvents();
+    if (window.__dawAPI.onScheduledEvents) window.__dawAPI.onScheduledEvents({ piano: pev, drums: dev, guitar: gtr ? gtr.events : [] });
     if (S.proj.bass.enabled && !opts.noBass && S.proj.bass.bars.some((b) => b.notes.length)) scheduleBassPlay(T, rounds, g, bCtx());
     const poInst = C.pianoOpts(S.proj.piano).inst;
     // ses saati ağır hazırlıktan SONRA alınır: tap kaydı (onStart) sayımı bu ana göre ölçer
@@ -2462,6 +2455,96 @@ function deleteSection(id) {
   refresh();
   status(`“${s.name}” bölümü silindi (ölçü ${s.startBar}–${s.endBar}).`);
 }
+// Paket paneli; uyarılar yalnızca son uygulama için gösterilir.
+const PACK_UI = { project: null, warnings: [], kept: [] };
+const PACK_LAYER_NAMES = { piano: 'Akor', guitar: 'Gitar', bass: 'Bas', drums: 'Davul' };
+function renderPacks() {
+  const p = S.proj;
+  C.migratePack(p);
+  if (PACK_UI.project !== p) { PACK_UI.project = p; PACK_UI.warnings = []; PACK_UI.kept = []; }
+  const ranked = C.rankPacks(p), select = $('#inPack'), selected = select.value;
+  const record = (id) => C.PACKS.find((pack) => pack.id === id);
+  const fit = (r) => r.fits ? 'BPM aralığına uyuyor' : `±${r.distance} BPM dışında`;
+  $('#chipPack').textContent = record(p.pack.id)?.name || 'yok';
+  select.innerHTML = ranked.map((r) => `<option value="${r.id}">${esc(record(r.id).name)} — ${fit(r)}</option>`).join('');
+  select.value = ranked.some((r) => r.id === selected) ? selected : ranked.some((r) => r.id === p.pack.id) ? p.pack.id : ranked[0]?.id || '';
+  $('#packSuggestions').innerHTML = C.topSuggestions(p).map((r) => `<button data-pack="${r.id}">${esc(record(r.id).name)}<small>${fit(r)}</small></button>`).join('');
+  $('#packUnavailable').hidden = !!ranked.length;
+  for (const el of [select, $('#btnPackApply'), $('#btnPackNext'), ...$$('[data-pack-lock]')]) el.disabled = !ranked.length;
+  for (const el of $$('[data-pack-lock]')) { const locked = p.pack.locks[el.dataset.packLock]; el.setAttribute('aria-pressed', String(locked)); el.classList.toggle('on', locked); }
+  const messages = [...PACK_UI.warnings, ...(PACK_UI.kept.length ? ['Kilitli katmanlar korundu: ' + PACK_UI.kept.map((l) => PACK_LAYER_NAMES[l]).join(', ')] : [])];
+  $('#packWarnings').innerHTML = messages.map((msg) => `<li>${esc(msg)}</li>`).join('');
+}
+function applyPackUI(id) {
+  if (!id || !S.d) return;
+  try {
+    const restarting = matrixEdit(() => {
+      const result = C.applyPack(S.proj, S.d, id);
+      PACK_UI.project = S.proj; PACK_UI.warnings = result.warnings; PACK_UI.kept = result.kept;
+      $('#inPack').value = id;
+    });
+    clearTimeout(BS.timer);
+    const name = C.PACKS.find((p) => p.id === id).name;
+    const message = [`Tür paketi: ${name}`, ...PACK_UI.warnings, ...(PACK_UI.kept.length ? ['Kilitli katmanlar korundu: ' + PACK_UI.kept.map((l) => PACK_LAYER_NAMES[l]).join(', ')] : [])].join(' · ');
+    status(message);
+    if (restarting) restarting.then(() => status(message));
+  } catch (e) { status(e.message, 'err'); }
+}
+$('#packSuggestions').onclick = (e) => { const b = e.target.closest('[data-pack]'); if (b) applyPackUI(b.dataset.pack); };
+$('#btnPackApply').onclick = () => applyPackUI($('#inPack').value);
+$('#btnPackNext').onclick = () => applyPackUI(C.nextPack(S.proj, S.proj.pack.id || $('#inPack').value));
+$('#packLocks').onclick = (e) => {
+  const b = e.target.closest('[data-pack-lock]'); if (!b || b.disabled) return;
+  matrixEdit(() => { const l = b.dataset.packLock; S.proj.pack.locks[l] = !S.proj.pack.locks[l]; });
+};
+
+// Matris ve paket eylemleri komşu düzenlemelerle birleşmeyen ayrı geri alma adımlarıdır.
+function matrixEdit(fn) {
+  histCommit(); HIST.t = -Infinity;
+  fn(); GT.cache = null;
+  refresh(); HIST.t = -Infinity;
+  if (Player.playing) return Player.play();
+}
+function renderMatrix() {
+  const p = S.proj, d = S.d, matrix = p.matrix || { enabled: false, rows: {} };
+  $('#inMatrixEnabled').checked = !!matrix.enabled;
+  $('#matrixOff').hidden = !!matrix.enabled;
+  $('#chipMatrix').textContent = matrix.enabled ? 'açık' : 'kapalı';
+  const box = $('#matrixTable');
+  box.classList.toggle('matrix-dim', !matrix.enabled);
+  const layers = { piano: 'Akor', guitar: 'Gitar', bass: 'Bas', drums: 'Davul' };
+  const ins = p.guitar.instrument;
+  const reasons = {
+    piano: ins === 'guitar' ? 'Akor katmanı kapalı: piyano çalgısını aç' : '',
+    guitar: ins === 'piano' ? 'Gitar katmanı kapalı: gitar çalgısını aç' : '',
+    bass: !p.bass.enabled ? 'Bas katmanı kapalı: bası aç' : '',
+    drums: !p.drums.on && !anySectionArr('drums') ? 'Davul katmanı kapalı: davulu aç' : ''
+  };
+  box.innerHTML = '<table class="matrix"><thead><tr><th scope="col">Bölüm</th>' + Object.values(layers).map((name) => `<th scope="col">${name}</th>`).join('') + '<th scope="col">Sıfırla</th></tr></thead><tbody>' + (d ? d.sections : []).map((sec) => {
+    const name = sec.implicit ? 'Tümü' : sec.name;
+    return `<tr><th scope="row">${esc(name)}</th>` + Object.entries(layers).map(([layer, label]) => {
+      const manual = typeof matrix.rows?.[sec.id]?.[layer] === 'boolean';
+      const on = C.effectiveCell(p, d, sec.id, layer);
+      const state = `${manual ? 'elle' : 'otomatik'} ${on ? 'açık' : 'kapalı'}`;
+      return `<td><button data-section="${esc(sec.id)}" data-layer="${layer}" class="matrix-cell ${manual ? 'manual' : 'automatic'} ${on ? 'on' : 'off'}" aria-pressed="${on}" aria-label="${esc(name)}, ${label}: ${state}" title="${esc(reasons[layer] || 'İlk tık: otomatiğin tersi; sonraki tık: otomatiğe dön')}"${reasons[layer] ? ' disabled' : ''}>${manual ? 'Elle' : 'Oto'} ${on ? '●' : '○'}</button></td>`;
+    }).join('') + `<td><button data-reset="${esc(sec.id)}">Otomatiğe dön</button></td></tr>`;
+  }).join('') + '</tbody></table>';
+}
+$('#inMatrixEnabled').onchange = (e) => matrixEdit(() => { S.proj.matrix = C.setMatrixEnabled(S.proj, e.target.checked).matrix; });
+$('#btnMatrixReset').onclick = () => matrixEdit(() => { S.proj.matrix.rows = {}; });
+$('#matrixTable').onclick = (e) => {
+  const button = e.target.closest('button');
+  if (!button || button.disabled) return;
+  matrixEdit(() => {
+    const rows = S.proj.matrix.rows;
+    if (button.dataset.reset) { delete rows[button.dataset.reset]; return; }
+    const { section: id, layer } = button.dataset;
+    const sec = S.d.sections.find((s) => s.id === id);
+    const row = rows[id] || (rows[id] = {});
+    row[layer] = typeof row[layer] === 'boolean' ? null : !C.matrixTemplate(sec.implicit ? '_all' : sec.typeNorm, S.proj)[layer];
+  });
+};
+
 function renderSections() {
   const box = $('#sectionList');
   if (!S.d) { box.innerHTML = ''; return; }
@@ -3397,7 +3480,7 @@ async function openProject(file) {
   Player.stop(true); HIST.reset = true;
   const audioData = p.audioData, midiData = p.midiData;
   delete p.audioData; delete p.midiData; delete p.savedAt;
-  S.proj = mergeDefaults(C.newProject(), p);
+  S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(p));
   BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; BS.lsMerged = false;
   S.audio = null; S.comps = []; S.midi = null; S.track = null; S.rawNotes = null; S.corrected = null; S.correctedShift = null; S.sel = null; S.pos = 0;
   if (midiData) S.midi = { name: midiData.name, bytes: null, notes: midiData.notes, endQ: midiData.endQ, tracks: [], trackIndex: null, warnings: [] };
