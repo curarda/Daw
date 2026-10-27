@@ -5,6 +5,7 @@ const length = (s) => s.endBar - s.startBar + 1;
 function migrateLinks(proj) {
   for (const s of proj.sections || []) if (s.link === undefined) s.link = null;
   if (!Array.isArray(proj.chordChoices)) proj.chordChoices = [];
+  if (C.migrateVersions) C.migrateVersions(proj);
   return proj;
 }
 function validateLink(proj, d, targetId, sourceId) {
@@ -56,7 +57,8 @@ function applyChordChoices(proj, d) {
       const bar = s.startBar + c.relBar, q0 = (bar - 1 + c.half / 2) * d.g.barQ;
       const next = all[i + 1], q1 = next ? (s.startBar - 1 + next.relBar + next.half / 2) * d.g.barQ : s.endBar * d.g.barQ;
       const sl = clone(old.find((x) => x.bar === bar && (x.half || 0) === c.half) || old[0] || {});
-      return Object.assign(sl, { section: s.id, bar, half: c.half || (next?.relBar === c.relBar ? 0 : null), q0, q1, chord: clone(c.chord), locked: c.state === 'lock', pinned: c.state === 'pin', lockSrc: c.state === 'lock' ? 'user' : null });
+      const lock = (proj.chordLocks || []).find((l) => l.bar === bar && (l.half == null || l.half === c.half));
+      return Object.assign(sl, { section: s.id, bar, half: c.half || (next?.relBar === c.relBar ? 0 : null), q0, q1, chord: clone(c.chord), locked: c.state === 'lock', pinned: c.state === 'pin', lockSrc: c.state === 'lock' ? lock?.src || 'user' : null });
     });
     d.chords = d.chords.filter((c) => c.section !== s.id).concat(slots).sort((a, b) => a.q0 - b.q0);
   }
@@ -81,7 +83,7 @@ function resolvedBass(proj, d, track = proj.bass) {
   const t = clone(track); t.sections ||= {};
   const linkedBar = (i) => d.sections.some((s) => links[s.id] && i >= s.startBar - 1 && i < s.endBar);
   t.loops = (t.loops || []).filter((l) => {
-    const hit = Array.from({ length: l.sourceLength }, (_, k) => l.sourceStart + k).concat(Array.from({ length: l.targetEnd - l.targetStart + 1 }, (_, k) => l.targetStart + k)).some(linkedBar);
+    const hit = [...C.Bass.loopSourceBars(l), ...C.Bass.loopTargetBars(l)].some(linkedBar);
     if (hit) links.warnings.push('Bağlı bölüm ölçülerine başvuran bas döngüsü yok sayıldı.');
     return !hit;
   });
@@ -111,7 +113,10 @@ function unlinkSection(proj, d, targetId) {
     s.arr = clone(source.arr || {});
     q.matrix ||= { enabled: false, rows: {} }; q.matrix.rows ||= {};
     q.matrix.rows[targetId] = Object.fromEntries(['piano', 'guitar', 'bass', 'drums'].map((layer) => [layer, C.effectiveCell(proj, d, targetId, layer)]));
-    if (q.guitar) q.guitar.parts[targetId] = clone(C.guitarPartFor(q.guitar, l.rootId));
+    if (q.guitar) {
+      q.guitar.parts[targetId] = clone(C.guitarPartFor(q.guitar, l.rootId));
+      if (q.guitar.voiceGroups) q.guitar.voiceGroups[targetId] = q.guitar.voiceGroups[l.rootId];
+    }
     if (q.bass) {
       const bass = resolvedBass(proj, d);
       if (bass.sections[targetId]) q.bass.sections[targetId] = clone(bass.sections[targetId]);

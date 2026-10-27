@@ -54,6 +54,12 @@ function gateEvents(events, proj, d, layer) {
   if (events.fxTable) gated.fxTable = events.fxTable;
   return gated;
 }
+function guitarGroupKey(proj, d, id, part) {
+  const links = C.resolveLinks?.(proj, d) || {}, sourceId = links[id]?.rootId || id;
+  const group = proj.guitar.voiceGroups?.[sourceId];
+  if (group != null) return group + '|' + JSON.stringify(part);
+  return Object.keys(links).length || proj.chordChoices?.length ? JSON.stringify(part) : part;
+}
 function arrangedEvents(d, proj, opts = {}) {
   const out = { piano: [], guitar: [], bass: [], drums: [] };
   if (!d) return out;
@@ -68,11 +74,10 @@ function arrangedEvents(d, proj, opts = {}) {
       : C.pianoEvents(d.chords, g, C.pianoOpts(proj.piano, sw));
   }
   if (wants('guitar') && proj.guitar && (!opts.midi || (proj.guitar.instrument || 'piano') !== 'piano')) {
-    const parts = new Map(), canonical = Object.keys(C.resolveLinks?.(proj, d) || {}).length || proj.chordChoices?.length;
+    const parts = new Map();
     out.guitar = C.guitarEvents(C.guitarSlotsFrom(d), g, (sl) => {
       const part = C.guitarPartFor(proj.guitar, sl.section, proj, d);
-      if (!canonical) return part;
-      const key = JSON.stringify(part);
+      const key = guitarGroupKey(proj, d, sl.section, part);
       if (!parts.has(key)) parts.set(key, part);
       return parts.get(key);
     });
@@ -98,5 +103,5 @@ function arrangedEvents(d, proj, opts = {}) {
   if (proj.matrix && proj.matrix.enabled !== false) for (const layer of layers) out[layer] = gateEvents(out[layer], proj, d, layer);
   return out;
 }
-Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers });
+Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers, guitarGroupKey });
 })(typeof window !== 'undefined' ? window : globalThis);

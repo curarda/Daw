@@ -677,13 +677,31 @@ function seedBarRange(track, ctx, from, to, o = {}) {
   }
   applyTies(track, ctx, from - 1, to + 1);
 }
+const loopSourceBars = (loop) => loop.sourceBars || Array.from({ length: loop.sourceLength }, (_, k) => loop.sourceStart + k);
+const loopTargetBars = (loop) => loop.targetBars || Array.from({ length: loop.targetEnd - loop.targetStart + 1 }, (_, k) => loop.targetStart + k);
+function loopSyncSig(track, ctx, loop) {
+  const { bars, sections } = track;
+  const settings = [track.seed, track.instrumentType, track.range, activeProfile(track), track.customTemplates, track.synthGuitarTemplates];
+  const source = loopSourceBars(loop).map((i) => { const b = bars[i]; return [b.notes, b.recipe, b.pedal, b.energy, b.templateId]; });
+  const target = [];
+  for (const i of loopTargetBars(loop)) {
+    const sec = ctx.secOf(i);
+    const s = sections[sec ? sec.id : '_none'] || defaultBassSection('other', track.instrumentType);
+    target.push([ctx.segs(i), ctx.lastChord(i - 1), ctx.firstChord(i + 1), sec && [sec.id, sec.tonic, sec.mode], s.energyStart, s.energyEnd, s.registerOffset, s.pedal]);
+  }
+  return JSON.stringify([settings, source, target, loop.mode, loop.sourceLength]);
+}
 function applyLoops(track, ctx) {
   for (const L of track.loops || []) {
+    // Sürümden gelen ölçüler, kaynak/girdiler değişene kadar birebir korunur.
+    const syncSig = L.syncSig == null ? null : loopSyncSig(track, ctx, L);
+    if (syncSig != null && syncSig === L.syncSig) continue;
     const src = [];
-    for (let k = 0; k < L.sourceLength; k++) src.push(track.bars[L.sourceStart + k]);
+    for (const i of loopSourceBars(L)) src.push(track.bars[i]);
     if (src.some((b) => !b)) continue;
-    for (let i = L.targetStart; i <= L.targetEnd && i < track.bars.length; i++) {
-      const s = src[(i - L.targetStart) % L.sourceLength], b = track.bars[i];
+    for (const [k, i] of loopTargetBars(L).entries()) {
+      if (i >= track.bars.length) break;
+      const s = src[k % L.sourceLength], b = track.bars[i];
       b.source = 'loop'; b.locked = false; b.loopId = L.id;
       if (L.mode === 'exact') { b.notes = s.notes.map((n) => Object.assign({}, n)); b.templateId = s.templateId; b.recipe = s.recipe; b.pedal = s.pedal; b.energy = s.energy; b.warnings = s.warnings || []; b.sig = barSig(ctx, track, i); }
       else {
@@ -694,9 +712,10 @@ function applyLoops(track, ctx) {
         b.source = 'loop'; b.loopId = L.id; void secSet;
       }
     }
+    if (syncSig != null) L.syncSig = syncSig;
   }
 }
-function invalidateLoopsFor(track, i) { return (track.loops || []).filter((L) => (i >= L.sourceStart && i < L.sourceStart + L.sourceLength) || (i >= L.targetStart && i <= L.targetEnd)); }
+function invalidateLoopsFor(track, i) { return (track.loops || []).filter((L) => loopSourceBars(L).includes(i) || loopTargetBars(L).includes(i)); }
 
 // bas izini projenin akor izine uydurur: yeni ölçüler eklenir, kirli kilitsiz ölçüler yeniden üretilir, kilitliler işaretlenir
 function bassSync(track, ctx, o = {}) {
@@ -811,8 +830,8 @@ function bassSetPedal(track, ctx, a, z, pedal) {
 }
 // ---- döngüler
 function overlapsLoop(L, other) {
-  const r = (x) => [[x.sourceStart, x.sourceStart + x.sourceLength - 1], [x.targetStart, x.targetEnd]];
-  return r(L).some(([a, b]) => r(other).some(([c, d]) => a <= d && c <= b));
+  const occupied = new Set([...loopSourceBars(L), ...loopTargetBars(L)]);
+  return [...loopSourceBars(other), ...loopTargetBars(other)].some((i) => occupied.has(i));
 }
 function bassMakeLoop(track, ctx, L) {
   L = Object.assign({ id: 'loop' + Math.random().toString(36).slice(2, 7), mode: 'follow-chords' }, L);
@@ -827,11 +846,11 @@ function bassMakeLoop(track, ctx, L) {
 }
 function bassBreakLoop(track, ctx, id) {
   const L = (track.loops || []).find((x) => x.id === id); if (!L) return false;
-  for (let i = L.targetStart; i <= L.targetEnd; i++) { const b = track.bars[i]; if (b && b.source === 'loop') { b.source = 'generated'; b.locked = true; delete b.loopId; } }
+  for (const i of loopTargetBars(L)) { const b = track.bars[i]; if (b && b.source === 'loop') { b.source = 'generated'; b.locked = true; delete b.loopId; } }
   track.loops = track.loops.filter((x) => x.id !== id);
   return true;
 }
-const loopCopyOf = (track, i) => { const b = track.bars[i]; return b && b.source === 'loop' ? (track.loops || []).find((L) => L.id === b.loopId) || null : null; };
+const loopCopyOf = (track, i) => { const b = track.bars[i]; return b && b.source === 'loop' ? (track.loops || []).find((L) => L.id === b.loopId && loopTargetBars(L).includes(i)) || null : null; };
 // ---- elle düzenleme: nota ekle / sil / taşı / boyutlandır; ölçü 'manual' ve kilitli olur
 function manualTouch(track, ctx, i) { const b = track.bars[i]; b.source = 'manual'; b.locked = true; b.recipe = null; b.sig = barSig(ctx, track, i); delete b.dirtyLocked; b.notes.sort((a, c) => a.startBeat - c.startBeat); applyLoops(track, ctx); }
 function bassAddNote(track, ctx, i, n) { const b = track.bars[i]; if (!b || b.source === 'loop') return null; const note = Object.assign({ durationBeats: 0.5, velocity: 90, role: 'root' }, n); b.notes.push(note); manualTouch(track, ctx, i); return note; }
@@ -1008,7 +1027,7 @@ const Bass = {
   STEP_Q, stepsOf, RANGE_DEFAULT, CENTER, BASS_TYPES, BASS_TEMPLATES, templatesFor, tplIndex, fallbackTemplate, siblingUp, siblingDown, slotRoles, strongSteps,
   BUILTIN_PROFILES, profileList, profileById, blendProfiles, activeProfile, roleWeights, DEFAULT_ROLES, SYNTH_ROLES,
   ENERGY_DEFAULTS, defaultBassSection, defaultBassTrack, emptyBar, bassContext, sectionScale, scaleFor, chordInfo, sameChord,
-  rngFor, hash32, pickW, barEnergy, PHRASE_SHAPE, planMotifs, generateBar, barSig, recipeOf, applyTies, applyLoops, ensureBars,
+  rngFor, hash32, pickW, barEnergy, PHRASE_SHAPE, planMotifs, generateBar, barSig, recipeOf, applyTies, applyLoops, loopSourceBars, loopTargetBars, loopSyncSig, ensureBars,
   bassSync, bassGenerateAll, bassNewSeed, bassReroll, bassDensity, bassCopyForward, bassRefit, bassClear, bassLock, bassLockRange, bassLockSection, bassSetPedal,
   BASS_PRESET_NAMES, bassSwitchType, bassRegenSection, bassRegenRange, bassMakeLoop, bassBreakLoop, loopCopyOf, bassAddNote, bassDeleteNote, bassUpdateNote, resolvePedalPc, pedalFor,
   tapQuantize, tapTemplate, tapOffset, bassApplyTaps, bassSaveTemplate,

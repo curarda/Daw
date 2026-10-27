@@ -2641,6 +2641,7 @@ function newProject() {
     sections: [],
     matrix: { enabled: false, rows: {} },
     pack: { id: null, locks: { piano: false, guitar: false, bass: false, drums: false } },
+    versions: { activeId: null, items: [] },
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
@@ -5482,13 +5483,31 @@ function seedBarRange(track, ctx, from, to, o = {}) {
   }
   applyTies(track, ctx, from - 1, to + 1);
 }
+const loopSourceBars = (loop) => loop.sourceBars || Array.from({ length: loop.sourceLength }, (_, k) => loop.sourceStart + k);
+const loopTargetBars = (loop) => loop.targetBars || Array.from({ length: loop.targetEnd - loop.targetStart + 1 }, (_, k) => loop.targetStart + k);
+function loopSyncSig(track, ctx, loop) {
+  const { bars, sections } = track;
+  const settings = [track.seed, track.instrumentType, track.range, activeProfile(track), track.customTemplates, track.synthGuitarTemplates];
+  const source = loopSourceBars(loop).map((i) => { const b = bars[i]; return [b.notes, b.recipe, b.pedal, b.energy, b.templateId]; });
+  const target = [];
+  for (const i of loopTargetBars(loop)) {
+    const sec = ctx.secOf(i);
+    const s = sections[sec ? sec.id : '_none'] || defaultBassSection('other', track.instrumentType);
+    target.push([ctx.segs(i), ctx.lastChord(i - 1), ctx.firstChord(i + 1), sec && [sec.id, sec.tonic, sec.mode], s.energyStart, s.energyEnd, s.registerOffset, s.pedal]);
+  }
+  return JSON.stringify([settings, source, target, loop.mode, loop.sourceLength]);
+}
 function applyLoops(track, ctx) {
   for (const L of track.loops || []) {
+    // Sürümden gelen ölçüler, kaynak/girdiler değişene kadar birebir korunur.
+    const syncSig = L.syncSig == null ? null : loopSyncSig(track, ctx, L);
+    if (syncSig != null && syncSig === L.syncSig) continue;
     const src = [];
-    for (let k = 0; k < L.sourceLength; k++) src.push(track.bars[L.sourceStart + k]);
+    for (const i of loopSourceBars(L)) src.push(track.bars[i]);
     if (src.some((b) => !b)) continue;
-    for (let i = L.targetStart; i <= L.targetEnd && i < track.bars.length; i++) {
-      const s = src[(i - L.targetStart) % L.sourceLength], b = track.bars[i];
+    for (const [k, i] of loopTargetBars(L).entries()) {
+      if (i >= track.bars.length) break;
+      const s = src[k % L.sourceLength], b = track.bars[i];
       b.source = 'loop'; b.locked = false; b.loopId = L.id;
       if (L.mode === 'exact') { b.notes = s.notes.map((n) => Object.assign({}, n)); b.templateId = s.templateId; b.recipe = s.recipe; b.pedal = s.pedal; b.energy = s.energy; b.warnings = s.warnings || []; b.sig = barSig(ctx, track, i); }
       else {
@@ -5499,9 +5518,10 @@ function applyLoops(track, ctx) {
         b.source = 'loop'; b.loopId = L.id; void secSet;
       }
     }
+    if (syncSig != null) L.syncSig = syncSig;
   }
 }
-function invalidateLoopsFor(track, i) { return (track.loops || []).filter((L) => (i >= L.sourceStart && i < L.sourceStart + L.sourceLength) || (i >= L.targetStart && i <= L.targetEnd)); }
+function invalidateLoopsFor(track, i) { return (track.loops || []).filter((L) => loopSourceBars(L).includes(i) || loopTargetBars(L).includes(i)); }
 
 // bas izini projenin akor izine uydurur: yeni ölçüler eklenir, kirli kilitsiz ölçüler yeniden üretilir, kilitliler işaretlenir
 function bassSync(track, ctx, o = {}) {
@@ -5616,8 +5636,8 @@ function bassSetPedal(track, ctx, a, z, pedal) {
 }
 // ---- döngüler
 function overlapsLoop(L, other) {
-  const r = (x) => [[x.sourceStart, x.sourceStart + x.sourceLength - 1], [x.targetStart, x.targetEnd]];
-  return r(L).some(([a, b]) => r(other).some(([c, d]) => a <= d && c <= b));
+  const occupied = new Set([...loopSourceBars(L), ...loopTargetBars(L)]);
+  return [...loopSourceBars(other), ...loopTargetBars(other)].some((i) => occupied.has(i));
 }
 function bassMakeLoop(track, ctx, L) {
   L = Object.assign({ id: 'loop' + Math.random().toString(36).slice(2, 7), mode: 'follow-chords' }, L);
@@ -5632,11 +5652,11 @@ function bassMakeLoop(track, ctx, L) {
 }
 function bassBreakLoop(track, ctx, id) {
   const L = (track.loops || []).find((x) => x.id === id); if (!L) return false;
-  for (let i = L.targetStart; i <= L.targetEnd; i++) { const b = track.bars[i]; if (b && b.source === 'loop') { b.source = 'generated'; b.locked = true; delete b.loopId; } }
+  for (const i of loopTargetBars(L)) { const b = track.bars[i]; if (b && b.source === 'loop') { b.source = 'generated'; b.locked = true; delete b.loopId; } }
   track.loops = track.loops.filter((x) => x.id !== id);
   return true;
 }
-const loopCopyOf = (track, i) => { const b = track.bars[i]; return b && b.source === 'loop' ? (track.loops || []).find((L) => L.id === b.loopId) || null : null; };
+const loopCopyOf = (track, i) => { const b = track.bars[i]; return b && b.source === 'loop' ? (track.loops || []).find((L) => L.id === b.loopId && loopTargetBars(L).includes(i)) || null : null; };
 // ---- elle düzenleme: nota ekle / sil / taşı / boyutlandır; ölçü 'manual' ve kilitli olur
 function manualTouch(track, ctx, i) { const b = track.bars[i]; b.source = 'manual'; b.locked = true; b.recipe = null; b.sig = barSig(ctx, track, i); delete b.dirtyLocked; b.notes.sort((a, c) => a.startBeat - c.startBeat); applyLoops(track, ctx); }
 function bassAddNote(track, ctx, i, n) { const b = track.bars[i]; if (!b || b.source === 'loop') return null; const note = Object.assign({ durationBeats: 0.5, velocity: 90, role: 'root' }, n); b.notes.push(note); manualTouch(track, ctx, i); return note; }
@@ -5813,7 +5833,7 @@ const Bass = {
   STEP_Q, stepsOf, RANGE_DEFAULT, CENTER, BASS_TYPES, BASS_TEMPLATES, templatesFor, tplIndex, fallbackTemplate, siblingUp, siblingDown, slotRoles, strongSteps,
   BUILTIN_PROFILES, profileList, profileById, blendProfiles, activeProfile, roleWeights, DEFAULT_ROLES, SYNTH_ROLES,
   ENERGY_DEFAULTS, defaultBassSection, defaultBassTrack, emptyBar, bassContext, sectionScale, scaleFor, chordInfo, sameChord,
-  rngFor, hash32, pickW, barEnergy, PHRASE_SHAPE, planMotifs, generateBar, barSig, recipeOf, applyTies, applyLoops, ensureBars,
+  rngFor, hash32, pickW, barEnergy, PHRASE_SHAPE, planMotifs, generateBar, barSig, recipeOf, applyTies, applyLoops, loopSourceBars, loopTargetBars, loopSyncSig, ensureBars,
   bassSync, bassGenerateAll, bassNewSeed, bassReroll, bassDensity, bassCopyForward, bassRefit, bassClear, bassLock, bassLockRange, bassLockSection, bassSetPedal,
   BASS_PRESET_NAMES, bassSwitchType, bassRegenSection, bassRegenRange, bassMakeLoop, bassBreakLoop, loopCopyOf, bassAddNote, bassDeleteNote, bassUpdateNote, resolvePedalPc, pedalFor,
   tapQuantize, tapTemplate, tapOffset, bassApplyTaps, bassSaveTemplate,
@@ -6543,6 +6563,12 @@ function gateEvents(events, proj, d, layer) {
   if (events.fxTable) gated.fxTable = events.fxTable;
   return gated;
 }
+function guitarGroupKey(proj, d, id, part) {
+  const links = C.resolveLinks?.(proj, d) || {}, sourceId = links[id]?.rootId || id;
+  const group = proj.guitar.voiceGroups?.[sourceId];
+  if (group != null) return group + '|' + JSON.stringify(part);
+  return Object.keys(links).length || proj.chordChoices?.length ? JSON.stringify(part) : part;
+}
 function arrangedEvents(d, proj, opts = {}) {
   const out = { piano: [], guitar: [], bass: [], drums: [] };
   if (!d) return out;
@@ -6557,11 +6583,10 @@ function arrangedEvents(d, proj, opts = {}) {
       : C.pianoEvents(d.chords, g, C.pianoOpts(proj.piano, sw));
   }
   if (wants('guitar') && proj.guitar && (!opts.midi || (proj.guitar.instrument || 'piano') !== 'piano')) {
-    const parts = new Map(), canonical = Object.keys(C.resolveLinks?.(proj, d) || {}).length || proj.chordChoices?.length;
+    const parts = new Map();
     out.guitar = C.guitarEvents(C.guitarSlotsFrom(d), g, (sl) => {
       const part = C.guitarPartFor(proj.guitar, sl.section, proj, d);
-      if (!canonical) return part;
-      const key = JSON.stringify(part);
+      const key = guitarGroupKey(proj, d, sl.section, part);
       if (!parts.has(key)) parts.set(key, part);
       return parts.get(key);
     });
@@ -6587,7 +6612,7 @@ function arrangedEvents(d, proj, opts = {}) {
   if (proj.matrix && proj.matrix.enabled !== false) for (const layer of layers) out[layer] = gateEvents(out[layer], proj, d, layer);
   return out;
 }
-Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers });
+Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers, guitarGroupKey });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // Tür paketleri: yalnızca mevcut motor ayarları; tempo ve ölçü projeye aittir.
@@ -6713,6 +6738,7 @@ const length = (s) => s.endBar - s.startBar + 1;
 function migrateLinks(proj) {
   for (const s of proj.sections || []) if (s.link === undefined) s.link = null;
   if (!Array.isArray(proj.chordChoices)) proj.chordChoices = [];
+  if (C.migrateVersions) C.migrateVersions(proj);
   return proj;
 }
 function validateLink(proj, d, targetId, sourceId) {
@@ -6764,7 +6790,8 @@ function applyChordChoices(proj, d) {
       const bar = s.startBar + c.relBar, q0 = (bar - 1 + c.half / 2) * d.g.barQ;
       const next = all[i + 1], q1 = next ? (s.startBar - 1 + next.relBar + next.half / 2) * d.g.barQ : s.endBar * d.g.barQ;
       const sl = clone(old.find((x) => x.bar === bar && (x.half || 0) === c.half) || old[0] || {});
-      return Object.assign(sl, { section: s.id, bar, half: c.half || (next?.relBar === c.relBar ? 0 : null), q0, q1, chord: clone(c.chord), locked: c.state === 'lock', pinned: c.state === 'pin', lockSrc: c.state === 'lock' ? 'user' : null });
+      const lock = (proj.chordLocks || []).find((l) => l.bar === bar && (l.half == null || l.half === c.half));
+      return Object.assign(sl, { section: s.id, bar, half: c.half || (next?.relBar === c.relBar ? 0 : null), q0, q1, chord: clone(c.chord), locked: c.state === 'lock', pinned: c.state === 'pin', lockSrc: c.state === 'lock' ? lock?.src || 'user' : null });
     });
     d.chords = d.chords.filter((c) => c.section !== s.id).concat(slots).sort((a, b) => a.q0 - b.q0);
   }
@@ -6789,7 +6816,7 @@ function resolvedBass(proj, d, track = proj.bass) {
   const t = clone(track); t.sections ||= {};
   const linkedBar = (i) => d.sections.some((s) => links[s.id] && i >= s.startBar - 1 && i < s.endBar);
   t.loops = (t.loops || []).filter((l) => {
-    const hit = Array.from({ length: l.sourceLength }, (_, k) => l.sourceStart + k).concat(Array.from({ length: l.targetEnd - l.targetStart + 1 }, (_, k) => l.targetStart + k)).some(linkedBar);
+    const hit = [...C.Bass.loopSourceBars(l), ...C.Bass.loopTargetBars(l)].some(linkedBar);
     if (hit) links.warnings.push('Bağlı bölüm ölçülerine başvuran bas döngüsü yok sayıldı.');
     return !hit;
   });
@@ -6819,7 +6846,10 @@ function unlinkSection(proj, d, targetId) {
     s.arr = clone(source.arr || {});
     q.matrix ||= { enabled: false, rows: {} }; q.matrix.rows ||= {};
     q.matrix.rows[targetId] = Object.fromEntries(['piano', 'guitar', 'bass', 'drums'].map((layer) => [layer, C.effectiveCell(proj, d, targetId, layer)]));
-    if (q.guitar) q.guitar.parts[targetId] = clone(C.guitarPartFor(q.guitar, l.rootId));
+    if (q.guitar) {
+      q.guitar.parts[targetId] = clone(C.guitarPartFor(q.guitar, l.rootId));
+      if (q.guitar.voiceGroups) q.guitar.voiceGroups[targetId] = q.guitar.voiceGroups[l.rootId];
+    }
     if (q.bass) {
       const bass = resolvedBass(proj, d);
       if (bass.sections[targetId]) q.bass.sections[targetId] = clone(bass.sections[targetId]);
@@ -6847,6 +6877,233 @@ function materializeLinksBeforeStructuralChange(proj, d, sectionIds) {
   return { ok: true, warnings };
 }
 Object.assign(C, { migrateLinks, validateLink, resolveLinks, linkedRoot, captureChordChoices, applyChordChoices, resolveLinkedChords, resolvedBass, linkSection, unlinkSection, materializeLinksBeforeStructuralChange });
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// Sürüm arşivi yalnızca düzenlemeyi saklar; kayıt, tonlar ve bölüm sınırları ortaktır.
+(function (root) {
+const C = root.Core, B = C.Bass;
+const clone = (v) => v == null ? v : JSON.parse(JSON.stringify(v));
+const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer'];
+const globals = ['pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'chordStartBar'];
+const mixerKeys = ['vocal', 'piano', 'guitar', 'bass', 'drums', 'pedal', 'touched'];
+const fail = (reason) => ({ ok: false, warnings: [reason] });
+const object = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+const validChord = (c) => object(c) && Number.isFinite(c.root) && typeof c.q === 'string' && Object.prototype.hasOwnProperty.call(C.CHORD_Q, c.q);
+function migrateVersions(proj) {
+  const v = proj.versions || {};
+  proj.versions = { activeId: v.activeId ?? null, items: Array.isArray(v.items) ? v.items : [] };
+  return proj;
+}
+function versionSignature(proj, d) {
+  return [proj.settings.meter, ...d.sections.map((s) => `${s.id}:${s.endBar - s.startBar + 1}`)];
+}
+function anchor(d, bar) {
+  const s = d.sections.find((s) => bar >= s.startBar && bar <= s.endBar);
+  return s ? { sectionId: s.id, relBar: bar - s.startBar } : null;
+}
+function atAnchor(d, a) {
+  const s = a && d.sections.find((s) => s.id === a.sectionId);
+  if (!s || !Number.isInteger(a.relBar) || a.relBar < 0 || a.relBar > s.endBar - s.startBar) throw new Error('Sürümde geçersiz bölüm ölçüsü var.');
+  return s.startBar + a.relBar;
+}
+const selectMap = (map, ids) => Object.fromEntries(Object.entries(map || {}).filter(([id]) => ids.has(id)).map(([id, value]) => [id, clone(value)]));
+function relativeRecords(proj, d, key, links) {
+  return (proj[key] || []).flatMap((record) => {
+    const a = anchor(d, record.bar);
+    if (!a || links[a.sectionId]) return [];
+    const { bar, ...rest } = record;
+    return [{ ...clone(rest), ...a }];
+  });
+}
+function captureBass(proj, d, links) {
+  if (!proj.bass) return null;
+  const track = clone(proj.bass);
+  B.ensureBars(track, B.bassContext(d, proj));
+  const { bars = [], loops = [], sections = {}, ...settings } = track;
+  const independent = new Set(d.sections.filter((s) => !links[s.id]).map((s) => s.id));
+  return { ...clone(settings), sections: selectMap(sections, independent),
+    bars: bars.flatMap((bar, i) => {
+      const a = anchor(d, i + 1);
+      if (!a || links[a.sectionId]) return [];
+      // İmza ve kirli bayrağı türetilir; mutlak ölçü/ton bilgisi sürüme taşınmaz.
+      const { index, sectionId, sig, dirtyLocked, ...content } = bar;
+      return [{ ...clone(content), ...a }];
+    }),
+    loops: loops.flatMap((loop) => {
+      const sources = B.loopSourceBars(loop).map((i) => anchor(d, i + 1)), targets = B.loopTargetBars(loop).map((i) => anchor(d, i + 1));
+      if ([...sources, ...targets].some((a) => !a || links[a.sectionId])) return [];
+      const { sourceStart, targetStart, targetEnd, sourceBars, targetBars, syncSig, ...rest } = loop;
+      return [{ ...clone(rest), sourceStart: sources[0], targetStart: targets[0], targetEnd: targets.at(-1), sourceBars: sources, targetBars: targets }];
+    }) };
+}
+function captureVersionState(proj, d) {
+  const links = C.resolveLinks(proj, d), ids = new Set(d.sections.map((s) => s.id));
+  const state = { signature: versionSignature(proj, d), sections: Object.fromEntries(d.sections.map((s) => {
+    const own = proj.sections.find((x) => x.id === s.id);
+    return [s.id, { arr: clone(own?.arr || {}), link: links[s.id] ? clone(own.link) : null }];
+  })) };
+  for (const key of globals) state[key] = clone(proj[key]);
+  state.matrix.rows = selectMap(state.matrix.rows, ids);
+  state.guitar.parts = selectMap(state.guitar.parts, new Set(['_all', ...ids]));
+  // Aynı ayarlı ayrı partiler, akor seçimleri geri gelince aynı seslendirme grubu olmaz.
+  const groups = new Map();
+  state.guitar.voiceGroups = Object.fromEntries(d.sections.map((s) => {
+    const key = C.guitarGroupKey(proj, d, s.id, C.guitarPartFor(proj.guitar, s.id, proj, d));
+    if (!groups.has(key)) groups.set(key, groups.size);
+    return [s.id, groups.get(key)];
+  }));
+  state.bass = captureBass(proj, d, links);
+  for (const key of ['chordLocks', 'chordPins', 'changeMarks']) state[key] = relativeRecords(proj, d, key, links);
+  state.chordChoices = d.sections.filter((s) => !links[s.id]).flatMap((s) => C.captureChordChoices(proj, d, s.id));
+  state.mixer = Object.fromEntries(mixerKeys.filter((key) => Object.prototype.hasOwnProperty.call(proj.mixer, key)).map((key) => [key, clone(proj.mixer[key])]));
+  return state;
+}
+function captureWarnings(proj, d) {
+  const outside = ['chordLocks', 'chordPins', 'changeMarks'].some((key) => (proj[key] || []).some((r) => !anchor(d, r.bar)))
+    || (proj.bass?.bars || []).some((bar, i) => !anchor(d, i + 1))
+    || (proj.bass?.loops || []).some((loop) => [...B.loopSourceBars(loop), ...B.loopTargetBars(loop)].some((i) => !anchor(d, i + 1)));
+  return [...C.resolveLinks(proj, d).warnings, ...(outside ? ['Bölüm dışındaki ölçü içeriği sürümlere alınmaz; boşluklardaki içerik hariç bırakıldı.'] : [])];
+}
+function signatureCompat(proj, d, state) {
+  if (!state || JSON.stringify(versionSignature(proj, d)) !== JSON.stringify(state.signature)) return fail('Sürüm uygulanamadı: ölçü türü, bölüm sırası, kimlikleri veya ölçü uzunlukları değişmiş.');
+  return { ok: true, warnings: [] };
+}
+function restoreBass(saved, d) {
+  if (!saved) return null;
+  if (!Array.isArray(saved.bars) || !Array.isArray(saved.loops)) throw new Error('Sürümde geçersiz bas izi var.');
+  if (!object(saved.sections) || !object(saved.range)) throw new Error('Sürümde geçersiz bas ayarları var.');
+  const track = clone(saved), occupied = new Set();
+  track.bars = Array.from({ length: d.bars }, (_, i) => B.emptyBar(i, anchor(d, i + 1)?.sectionId));
+  for (const bar of saved.bars) {
+    const { relBar, sectionId, ...content } = bar, index = atAnchor(d, bar) - 1;
+    if (!Array.isArray(bar.notes) || occupied.has(index)) throw new Error('Sürümde geçersiz bas ölçüsü var.');
+    occupied.add(index);
+    track.bars[index] = { ...clone(content), index, sectionId, sig: '' };
+  }
+  track.loops = saved.loops.map((loop) => {
+    if (!Array.isArray(loop.sourceBars) || !Array.isArray(loop.targetBars) || loop.sourceLength !== loop.sourceBars.length || ![1, 2, 3, 4, 5, 6, 7, 8].includes(loop.sourceLength) || !loop.targetBars.length || !['exact', 'follow-chords'].includes(loop.mode)) throw new Error('Sürümde geçersiz bas döngüsü var.');
+    const sources = loop.sourceBars.map((a) => atAnchor(d, a) - 1), targets = loop.targetBars.map((a) => atAnchor(d, a) - 1);
+    const ordered = (values) => values.every((v, i) => !i || v > values[i - 1]);
+    if (!ordered(sources) || !ordered(targets) || targets[0] <= sources.at(-1)) throw new Error('Sürümde çakışan bas döngüsü var.');
+    if (atAnchor(d, loop.sourceStart) - 1 !== sources[0] || atAnchor(d, loop.targetStart) - 1 !== targets[0] || atAnchor(d, loop.targetEnd) - 1 !== targets.at(-1)) throw new Error('Sürümde tutarsız bas döngüsü var.');
+    const { sourceBars, targetBars, ...rest } = clone(loop);
+    const restored = { ...rest, sourceStart: sources[0], targetStart: targets[0], targetEnd: targets.at(-1) };
+    // Araya boşluk girmişse döngü yalnızca özgün bölüm ölçülerini izler.
+    if (sources.some((v, i) => v !== sources[0] + i)) restored.sourceBars = sources;
+    if (targets.some((v, i) => v !== targets[0] + i)) restored.targetBars = targets;
+    return restored;
+  });
+  return track;
+}
+function applyVersionState(proj, d, state) {
+  const compat = signatureCompat(proj, d, state);
+  if (!compat.ok) return compat;
+  try {
+    if (fields.some((key) => !Object.prototype.hasOwnProperty.call(state, key)) || Object.keys(state).some((key) => !fields.includes(key))) throw new Error('Sürümde geçersiz düzenleme alanları var.');
+    const saved = clone(state), q = clone(proj), warnings = captureWarnings(proj, d);
+    if (['sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'mixer'].some((key) => !object(saved[key])) || !object(saved.matrix.rows) || !object(saved.guitar.parts) || !object(saved.guitar.parts._all) || !Number.isInteger(saved.chordStartBar) || saved.chordStartBar < 1) throw new Error('Sürümde geçersiz katman ayarları var.');
+    if (Object.keys(saved.mixer).some((key) => !mixerKeys.includes(key))) throw new Error('Sürümde geçersiz mikser alanı var.');
+    if (Object.keys(saved.sections).length !== d.sections.length) throw new Error('Sürümün bölüm listesi eksik veya fazla.');
+    for (const s of d.sections) {
+      const content = saved.sections[s.id];
+      if (!object(content) || !object(content.arr) || !Object.prototype.hasOwnProperty.call(content, 'link') || Object.keys(content).some((key) => !['arr', 'link'].includes(key)) || content.link != null && (!object(content.link) || typeof content.link.sourceId !== 'string' || Object.keys(content.link).length !== 1)) throw new Error('Sürümde geçersiz bölüm ayarları var.');
+    }
+    for (const s of q.sections) {
+      const content = saved.sections[s.id];
+      if (!content || Object.keys(content).some((key) => !['arr', 'link'].includes(key))) throw new Error('Sürümde geçersiz bölüm ayarları var.');
+      s.arr = clone(content.arr); s.link = clone(content.link);
+    }
+    for (const key of globals) q[key] = clone(saved[key]);
+    for (const key of ['chordLocks', 'chordPins', 'changeMarks']) {
+      if (!Array.isArray(saved[key])) throw new Error('Sürümde geçersiz akor verisi var.');
+      q[key] = saved[key].map((record) => {
+        const { sectionId, relBar, ...rest } = record;
+        if (key !== 'changeMarks' && !validChord(record.chord)) throw new Error('Sürümde geçersiz akor var.');
+        return { ...rest, bar: atAnchor(d, record) };
+      });
+    }
+    if (!Array.isArray(saved.chordChoices)) throw new Error('Sürümde geçersiz akor seçimleri var.');
+    for (const choice of saved.chordChoices) {
+      atAnchor(d, choice);
+      if (![0, 1].includes(choice.half) || !['auto', 'lock', 'pin'].includes(choice.state) || !validChord(choice.chord)) throw new Error('Sürümde geçersiz akor seçimi var.');
+    }
+    q.chordChoices = clone(saved.chordChoices);
+    for (const key of mixerKeys) {
+      if (Object.prototype.hasOwnProperty.call(saved.mixer, key)) q.mixer[key] = clone(saved.mixer[key]);
+      else if (key === 'touched') delete q.mixer.touched;
+    }
+    const links = C.resolveLinks(q, d);
+    if (links.warnings.length) throw new Error(links.warnings.join(' '));
+    q.bass = restoreBass(saved.bass, d);
+    if (q.bass) {
+      const resolved = { ...d, chords: clone(d.chords) };
+      C.resolveLinkedChords(q, resolved);
+      const ctx = B.bassContext(resolved, q);
+      B.ensureBars(q.bass, ctx);
+      for (const bar of q.bass.bars) bar.sig = B.barSig(ctx, q.bass, bar.index);
+      q.bass = C.resolvedBass(q, resolved);
+      for (const loop of q.bass.loops) loop.syncSig = B.loopSyncSig(q.bass, ctx, loop);
+    }
+    // pinSig uygulamaya aittir; 4b refresh'ten önce yeni imzayı yazmalıdır.
+    Object.assign(proj, q);
+    return { ok: true, warnings, needsPinSigRefresh: true };
+  } catch (e) { return fail('Sürüm uygulanamadı: ' + e.message); }
+}
+const items = (proj) => proj.versions?.items || [];
+function versionCompat(proj, d, id) {
+  const item = items(proj).find((v) => v.id === id);
+  return item ? signatureCompat(proj, d, item.state) : fail('Sürüm bulunamadı.');
+}
+function validName(proj, name, id) {
+  if (typeof name !== 'string' || !name.trim()) return fail('Sürüm adı boş olamaz.');
+  if (items(proj).some((v) => v.id !== id && v.name === name.trim())) return fail('Bu sürüm adı zaten kullanılıyor.');
+  return { ok: true, warnings: [] };
+}
+function autoName(proj) {
+  for (let round = 1; ; round++) for (let i = 0; i < 26; i++) {
+    const name = String.fromCharCode(65 + i) + (round === 1 ? '' : round);
+    if (!items(proj).some((v) => v.name === name)) return name;
+  }
+}
+function saveVersion(proj, d, name) {
+  name = name == null ? autoName(proj) : name;
+  const check = validName(proj, name);
+  if (!check.ok) return check;
+  try {
+    const state = captureVersionState(proj, d), warnings = captureWarnings(proj, d);
+    let n = 1; while (items(proj).some((v) => v.id === 'ver-' + n)) n++;
+    const id = 'ver-' + n;
+    proj.versions = { activeId: id, items: [...items(proj), { id, name: name.trim(), state }] };
+    return { ok: true, id, warnings };
+  } catch (e) { return fail('Sürüm kaydedilemedi: ' + e.message); }
+}
+function updateVersion(proj, d, id) {
+  if (!items(proj).some((v) => v.id === id)) return fail('Sürüm bulunamadı.');
+  try {
+    const state = captureVersionState(proj, d), warnings = captureWarnings(proj, d);
+    proj.versions.items = items(proj).map((v) => v.id === id ? { ...v, state } : v);
+    return { ok: true, id, warnings };
+  } catch (e) { return fail('Sürüm güncellenemedi: ' + e.message); }
+}
+function renameVersion(proj, id, name) {
+  if (!items(proj).some((v) => v.id === id)) return fail('Sürüm bulunamadı.');
+  const check = validName(proj, name, id);
+  if (!check.ok) return check;
+  proj.versions.items = items(proj).map((v) => v.id === id ? { ...v, name: name.trim() } : v);
+  return { ok: true, warnings: [] };
+}
+function deleteVersion(proj, id) {
+  if (!items(proj).some((v) => v.id === id)) return fail('Sürüm bulunamadı.');
+  proj.versions.items = items(proj).filter((v) => v.id !== id);
+  if (proj.versions.activeId === id) proj.versions.activeId = null;
+  return { ok: true, warnings: [] };
+}
+const normalized = (v) => JSON.stringify(v, (key, value) => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.keys(value).sort().map((k) => [k, value[k]])) : value);
+function isVersionDirty(proj, d, id) {
+  const item = items(proj).find((v) => v.id === id);
+  return !!item && normalized(captureVersionState(proj, d)) !== normalized(item.state);
+}
+Object.assign(C, { migrateVersions, versionSignature, captureVersionState, applyVersionState, saveVersion, updateVersion, renameVersion, deleteVersion, isVersionDirty, versionCompat });
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script id="stylecore">/* =====================================================================
