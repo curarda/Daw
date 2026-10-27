@@ -33,12 +33,15 @@ function bassSyncUI() {
 function bsDo(fn, msg) {
   if (!S.d) { status('Önce bir akor izi gerekli (analiz ya da demo şarkı).', 'err'); return; }
   Bs.historyPush(BS.hist, bTrack()); HIST.last = 'bass';
-  fn(bTrack(), bCtx());
+  const linked = S.d.sections.filter((s) => linkSource(s.id)), t = bTrack();
+  const saved = linked.map((s) => ({ id: s.id, settings: JSON.parse(JSON.stringify(t.sections[s.id] || {})) }));
+  fn(t, bCtx());
+  for (const s of saved) t.sections[s.id] = s.settings;
   bsAfter(msg);
 }
 function bsAfter(msg) {
   const t = bTrack(), ctx = bCtx();
-  if (ctx) Bs.applyTies(t, ctx);
+  if (ctx) { Bs.applyTies(t, ctx); if (Object.keys(C.resolveLinks(S.proj, S.d)).length) Bs.bassSync(t, ctx); }
   renderBass(); drawBass();
   if (msg) status(msg);
   if (Player.playing) { clearTimeout(BS.timer); BS.timer = setTimeout(() => Player.play(), 250); }
@@ -255,7 +258,7 @@ $('#bsCv').addEventListener('mousedown', (e) => {
     const b = t.bars[h.bar];
     BS.note = { bar: h.bar, k: h.k };
     if (!BS.sel || h.bar < BS.sel[0] || h.bar > BS.sel[1]) { BS.sel = [h.bar, h.bar]; BS.anchor = h.bar; }
-    if (b.source !== 'loop') {
+    if (b.source !== 'loop' && !linkedAtBar(h.bar + 1)) {
       const n = b.notes[h.k], resize = x > h.x + h.w - Math.min(6, h.w * 0.3); // dar notada sağ kenar payı küçülür
       BS.drag = { bar: h.bar, k: h.k, mode: resize ? 'resize' : 'move', x0: x, y0: y, orig: Object.assign({}, n), cur: Object.assign({}, n), moved: false };
     }
@@ -288,6 +291,7 @@ $('#bsCv').addEventListener('dblclick', (e) => {
   if (x < TL.KW || !S.d || bassNoteAt(x, y)) return;
   const i = barAtX(x), t = bTrack(), g = grid();
   if (i < 0 || i >= S.d.bars || !t.bars[i] || t.bars[i].source === 'loop' || y < BS_TOP) return;
+  if (linkedAtBar(i + 1)) { guardLinked(linkedAtBar(i + 1).id); return; }
   const start = Math.max(0, Math.min(g.barQ - 0.5, Math.round((xToQ(x) - i * g.barQ) / Bs.STEP_Q) * Bs.STEP_Q));
   const midi = Math.max(0, Math.min(127, Math.round(BS.rows.hi - (y - BS_TOP) / BS.rowH + 0.0)));
   bsDo((tr, ctx) => { Bs.bassAddNote(tr, ctx, i, { startBeat: start, durationBeats: 0.5, midi, velocity: 92, role: 'root' }); }, `Nota eklendi (${i + 1}. ölçü kilitlendi, kaynak: elle).`);
@@ -298,7 +302,7 @@ document.addEventListener('keydown', (e) => {
   const mod = e.ctrlKey || e.metaKey;
   if (mod && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y') && bassUndoFirst()) { e.preventDefault(); bsUndo(e.key === 'y' || e.key === 'Y' || e.shiftKey); return; }
   if (!BS.sel && !BS.note) return;
-  if (e.key === 'Delete' || e.key === 'Backspace') { if (BS.note) { e.preventDefault(); const nn = BS.note; BS.note = null; bsDo((t, ctx) => Bs.bassDeleteNote(t, ctx, nn.bar, nn.k), 'Nota silindi.'); } return; }
+  if (e.key === 'Delete' || e.key === 'Backspace') { if (BS.note) { e.preventDefault(); if (linkedAtBar(BS.note.bar + 1)) { guardLinked(linkedAtBar(BS.note.bar + 1).id); return; } const nn = BS.note; BS.note = null; bsDo((t, ctx) => Bs.bassDeleteNote(t, ctx, nn.bar, nn.k), 'Nota silindi.'); } return; }
   if (mod || e.altKey) return;
   if (e.key === 'l' || e.key === 'L') { e.preventDefault(); bassBarAction('lock'); }
   if (e.key === 'r' || e.key === 'R') { e.preventDefault(); bassBarAction('reroll'); }
@@ -307,6 +311,8 @@ document.addEventListener('keydown', (e) => {
 // ---- ölçü menüsü eylemleri
 function bassBarAction(act, arg) {
   const bars = selBars(); if (!bars.length) return;
+  const linked = bars.map((i) => linkedAtBar(i + 1)).find(Boolean);
+  if (linked) { guardLinked(linked.id); return; }
   const a = bars[0], z = bars[bars.length - 1];
   const fix = (t) => bars.filter((i) => t.bars[i] && t.bars[i].source !== 'loop');
   if (act === 'lock') bsDo((t) => { const all = bars.every((i) => t.bars[i].locked); Bs.bassLockRange(t, a, z, !all); }, 'Kilit değişti.');
@@ -357,13 +363,14 @@ function barMenuHtml() {
 function sectionPanelHtml() {
   const t = bTrack(), sec = curSection();
   if (!sec) return '<span class="hint">Bölüm yok — önce akor izi ya da bölüm ekle.</span>';
-  const set = t.sections[sec.id]; if (!set) return '';
+  const linked = !!linkSource(sec.id);
+  const set = (linked ? C.resolvedBass(S.proj, S.d) : t).sections[sec.id]; if (!set) return '';
   const synth = t.instrumentType === 'synth';
   const fams = [['auto', 'Otomatik'], ['drone', 'Drone'], ['walk', 'Yürüyüş'], ['drive', 'Sürüş'], ['roll', 'Yuvarlanma']];
   if ((t.customTemplates || []).some((x) => x.saved)) fams.push(['custom', 'Özel']);
   const opts = (S.d.sections || []).map((s) => `<option value="${esc(s.id)}"${s.id === sec.id ? ' selected' : ''}>${esc(s.name)} (${s.startBar}–${s.endBar})</option>`).join('');
   const ped = set.pedal ? `⚓ ${set.pedal.kind === 'pitch' ? set.pedal.pitchClass : set.pedal.degree}. derece` : 'yok';
-  return `<label>Bölüm<select data-bs="sec">${opts}</select></label>
+  return `<label>Bölüm<select data-bs="sec">${opts}</select></label>${linked ? linkActions(sec.id) + '<fieldset class="link-readonly" disabled>' : ''}
     ${bsl('eS', 'Enerji başı', 0, 100, Math.round(set.energyStart * 100), (x) => x + '%')}${bsl('eE', 'Enerji sonu', 0, 100, Math.round(set.energyEnd * 100), (x) => x + '%')}
     <div class="gsub"><span>Şablon ailesi</span>${fams.map(([v, l]) => bchip('fam', v, l, set.templateFamily === v)).join('')}</div>
     ${bsl('den', 'Yoğunluk', 0, 100, Math.round(set.density * 100), (x) => x + '%')}
@@ -371,7 +378,7 @@ function sectionPanelHtml() {
     <div class="gsub"><span>Dolgu</span>${bchip('fills', 'f', set.fills ? 'Açık' : 'Kapalı', set.fills)}<span>Bölüm kilidi</span>${bchip('seclock', 'l', set.locked ? '🔒 Kilitli' : 'Kilitsiz', set.locked)}<span>Pedal</span>${bchip('secpedal', 'p', ped, !!set.pedal)}</div>
     ${synth ? `<div class="gsub"><span>Hipnotik</span>${bchip('hyp', 'h', set.hypnotic ? 'Açık' : 'Kapalı', set.hypnotic)}</div>
     ${bsl('fS', 'Süzgeç başı', 0, 100, Math.round((set.filterStart ?? set.energyStart) * 100), (x) => x + '%')}${bsl('fE', 'Süzgeç sonu', 0, 100, Math.round((set.filterEnd ?? set.energyEnd) * 100), (x) => x + '%')}
-    <div class="gsub"><span>Süpürme</span>${[[0, 'Yok'], [4, '4 ölçü'], [8, '8 ölçü']].map(([v, l]) => bchip('sweep', v, l, set.sweepBars === v)).join('')}${set.filterStart != null ? bchip('filterAuto', 'a', 'Süzgeç: enerjiyi izle', false) : ''}</div>` : ''}`;
+    <div class="gsub"><span>Süpürme</span>${[[0, 'Yok'], [4, '4 ölçü'], [8, '8 ölçü']].map(([v, l]) => bchip('sweep', v, l, set.sweepBars === v)).join('')}${set.filterStart != null ? bchip('filterAuto', 'a', 'Süzgeç: enerjiyi izle', false) : ''}</div>` : ''}${linked ? '</fieldset>' : ''}`;
 }
 function bassPanelHtml() {
   const t = bTrack(), synth = t.instrumentType === 'synth', presets = Bs.BASS_PRESET_NAMES[t.instrumentType];
@@ -405,13 +412,16 @@ function renderBass() {
   if (!$('#bassPanel') || !S.proj.bass) return;
   const html = bassPanelHtml();
   if ($('#bassPanel').dataset.h !== html) { $('#bassPanel').innerHTML = html; $('#bassPanel').dataset.h = html; }
-  const menu = barMenuHtml();
+  const linked = selBars().map((i) => linkedAtBar(i + 1)).find(Boolean);
+  const menu = linked ? linkActions(linked.id) + '<fieldset class="link-readonly" disabled>' + barMenuHtml() + '</fieldset>' : barMenuHtml();
   if ($('#bsBarMenu').dataset.h !== menu) { $('#bsBarMenu').innerHTML = menu; $('#bsBarMenu').dataset.h = menu; }
   const info = !S.d ? '' : BS.lastSync && BS.lastSync.flagged.length ? `⚠ ${BS.lastSync.flagged.length} kilitli ölçüde akor değişti — ölçüyü seçip "Yeniden uydur".` : '';
   const hint = $('#bsHint'); if (hint) hint.textContent = info;
 }
 // ---- panel olayları
 function bsCommon(k, v) {
+  if (['fam', 'reg', 'fills', 'hyp', 'sweep', 'filterAuto', 'seclock', 'secpedal'].includes(k) && guardLinked(curSection()?.id)) return;
+  if (['bar', 'pedalApply', 'loopMake'].includes(k)) { const linked = selBars().map((i) => linkedAtBar(i + 1)).find(Boolean); if (linked) { guardLinked(linked.id); return; } }
   const t = bTrack();
   switch (k) {
     case 'generate': bsDo((tr, ctx) => { Bs.bassGenerateAll(tr, ctx); }, 'Bas hattı üretildi (kilitli ölçüler korundu).'); break;
@@ -499,7 +509,7 @@ $('#bassPanel').addEventListener('input', (e) => {
   const el = e.target, k = el.dataset.bs;
   if (!k || el.type !== 'range') return;
   const t = bTrack(), x = +el.value, sec = curSection();
-  if (['eS', 'eE', 'den', 'fS', 'fE'].includes(k) && !sec) return;
+  if (['eS', 'eE', 'den', 'fS', 'fE'].includes(k) && (!sec || guardLinked(sec.id))) return;
   if (!bsSliderSnap) bsSliderSnap = Bs.historyPush(BS.hist, t) || true;
   const fmt = { fS: '%', fE: '%' };
   const set = {
@@ -518,6 +528,7 @@ $('#bassPanel').addEventListener('change', (e) => {
   if (!k || el.type !== 'range') return;
   bsSliderSnap = null;
   const sec = curSection();
+  if (['eS', 'eE', 'den', 'fS', 'fE'].includes(k) && guardLinked(sec?.id)) return;
   if (['eS', 'eE', 'den'].includes(k) && sec) { const t = bTrack(), ctx = bCtx(); Bs.bassRegenSection(t, ctx, sec.id); }
   if (k === 'mix') { const t = bTrack(), ctx = bCtx(); if (t.styleMix && !t.styleMix.profileB) t.styleMix = null; Bs.bassGenerateAll(t, ctx); }
   bsAfter();
@@ -549,6 +560,8 @@ async function tapStart(opts = {}) {
   if (T.phase !== 'idle') return;
   if (!S.d) { status('Önce bir akor izi gerekli.', 'err'); return; }
   if (!BS.sel) { status('Önce bas şeridinde kaydedilecek ölçüleri seç (Shift: aralık).', 'err'); return; }
+  const linked = selBars().map((i) => linkedAtBar(i + 1)).find(Boolean);
+  if (linked) { guardLinked(linked.id); return; }
   const { a, z, recZ, g } = tapRange();
   T.a = a; T.z = z; T.recBars = [a, recZ]; T.taps = []; T.down = null; T.last = null; T.armed = false;
   T.phase = 'count'; renderBass();
@@ -659,7 +672,7 @@ function bassTapHtml() {
   const body = `<div class="hint">Bas şeridinde ölçü(ler) seç → Kaydet → 1 ölçü sayım + metronom, sonra ritmi <b>B</b> tuşuyla (ya da ped) vur. Esc iptal.</div>
     <div class="gsub"><span>Izgara</span>${bchip('tgrid', '16n', '16\'lık', t.grid === '16n')}${bchip('tgrid', '8n', '8\'lik', t.grid === '8n')}<span>Mod</span>${bchip('tmode', 'asPlayed', 'Çaldığım gibi', t.mode === 'asPlayed')}${bchip('tmode', 'loop', 'Bir kalıbı döngüle', t.mode === 'loop')}${t.mode === 'loop' ? `${bchip('tbars', 1, '1 ölçü', t.loopBars !== 2)}${bchip('tbars', 2, '2 ölçü', t.loopBars === 2)}` : ''}</div>
     <div class="gsub"><span>Gecikme</span><input type="number" data-bs="tlat" min="-300" max="500" step="5" value="${t.latencyMs}" style="width:64px"> <span class="hint">ms</span>${bchip('tcalib', 'c', T.calib ? 'Dinleniyor…' : 'Kalibre et', !!T.calib, rec ? ' disabled' : '')}</div>
-    <div class="row">${rec ? `<button class="accent small" data-bk="tapStop">${T.phase === 'count' ? 'Sayım… (iptal)' : 'Bitir'}</button>` : `<button class="accent small" data-bk="tapStart">⏺ Kaydet (${sel})</button>`}<button id="bsTapPad" class="small" type="button" title="B tuşu ile aynı">🥁 Vuruş (B)</button></div>
+    <div class="row">${rec ? `<button class="accent small" data-bk="tapStop">${T.phase === 'count' ? 'Sayım… (iptal)' : 'Bitir'}</button>` : `<button class="accent small" data-bk="tapStart"${bars.some((i) => linkedAtBar(i + 1)) ? ' disabled' : ''}>⏺ Kaydet (${sel})</button>`}<button id="bsTapPad" class="small" type="button" title="B tuşu ile aynı">🥁 Vuruş (B)</button></div>
     ${T.phase === 'count' ? '<div class="hint">Sayım… hazır ol.</div>' : T.phase === 'rec' ? '<div class="st-warn">● Kayıt — vur!</div>' : ''}${lastMsg}
     <div class="gsub"><span>Şablon</span><input type="text" data-bs="tname" placeholder="Şablon adı" value="${esc(T.saveName)}" style="width:130px">${bchip('tsave', 's', 'Seçili ölçüyü şablon olarak sakla', false, sb ? '' : ' disabled')}</div>`;
   return bgrow('Ritim kaydı (tap)', body);

@@ -261,3 +261,9 @@ Otomatik hiçbir mekanizma senin açıkça verdiğin kararı değiştirmez; puan
 İlk 14 paket 4/4 içindir; Vals 3/4, 6/8 Balad ise 6/8 içindir (BPM noktalı çeyrek sayılır). 2/4 için paket yoktur. **Kilitle: Akor / Gitar / Bas / Davul**, başka paket uygulanırken o katmanın ayarlarını ve matris sütunundaki duyulan seçimleri korur. Mevcut bölüm gitar partileri ve kilitli bas içeriği korunur; uyarılar ve korunan katmanlar panelin altında ve durum çubuğunda gösterilir. En az bir akor çalgısı açık kalır.
 
 Son nakarat, bölümde elle davul seçimi yoksa paketin alternatif davul loop'unu kullanır; elle kapatılmış hücreler dışında genel olarak açık tüm katmanları çalar. **Otomatik aranje** kapatılınca paket şablonu ve son nakarat ekstrası devreden çıkar; paketin genel sesleri ve ayarları kalır. Paket uygulama ve her kilit düğmesi, bas ayarları ve notaları dahil ayrı birer Ctrl+Z / Ctrl+Shift+Z adımıdır. Paket ve kilitler proje dosyasında saklanır.
+
+## Bağlı bölümler
+
+Bölümler panelindeki **Bağla:**, bir bölümü aynı ölçü uzunluğundaki başka bir bölüme canlı bağlar. Zincirler kurulabilir; döngülere izin verilmez. **↻** rozeti ve zaman çizelgesindeki işaret bağı gösterir. Akorlar ve kilit/sabit/değişim işaretleri, bölüm düzenlemesi, matris satırı, gitar partisi ve bas ölçüleri/ayarları kaynağı izler. Son nakarat ekstrası hedefin şarkıdaki konumuna göre uygulanır.
+
+Kaynaktan gelen kontroller salt okunurdur. **Kaynağı düzenle** kaynağa götürür; **Bağı kopar** aynı sesi koruyan bağımsız bir kopya oluşturur. Bağlama/koparma ve yapısal değişiklikler ayrı Ctrl+Z / Ctrl+Shift+Z adımlarıdır. Kaynak/hedef silinmeden veya yeniden boyutlandırılmadan ya da şarkının ölçüleri kaydırılmadan önce etkilenen bağlar bağımsız kopyaya dönüşür. Toplu akor/şablon/stil araçları bağlı hedefleri atlar ve bunu bildirir. Bağlar proje dosyasında saklanır.

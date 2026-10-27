@@ -98,3 +98,9 @@ Playback, mix WAV and MIDI follow the same matrix. Held notes stop at disabled s
 The first 14 packs support 4/4; Vals supports 3/4 and 6/8 Balad supports 6/8 (dotted-quarter BPM). There are no 2/4 packs. **Kilitle: Akor / Gitar / Bas / Davul** keeps that layer's settings and effective matrix column when another pack is applied. Existing section guitar parts and locked bass material are preserved; warnings and kept layers appear below the controls and in the status bar. At least one chord instrument stays available.
 
 The last chorus uses the pack's alternate drum loop unless a section drum choice overrides it, and opens all globally available layers unless a manual matrix cell says off. Turning **Otomatik aranje** off disables both the pack template and this extra; the pack's global sounds and settings remain. Applying a pack and each lock toggle are separate Ctrl+Z / Ctrl+Shift+Z steps, including bass settings and notes. Pack selection and locks survive project save/load.
+
+## Linked sections
+
+In the sections panel, **Bağla:** connects a section to another section of the same bar length. Chains are allowed; cycles are rejected. The **↻** badge and timeline label identify live links. Chords and their lock/pin/change marks, section arrangement, matrix row, guitar part and bass bars/settings follow the source. The last-chorus extra still follows the target's position.
+
+Inherited controls are read-only. **Kaynağı düzenle** jumps to the source; **Bağı kopar** creates an independent copy with identical sound. Link/unlink and structural changes are separate Ctrl+Z / Ctrl+Shift+Z steps. Deleting or resizing a source/target, or shifting the song's bars, first materializes affected links. Bulk chord/chart/style tools skip linked targets and report it. Links survive project save/load.

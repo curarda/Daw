@@ -11,7 +11,7 @@ const STEP_NEXT = { rest: 'D', D: 'U', U: 'dead', dead: 'rest' };
 const STEP_NAME = { rest: 'es', D: 'aşağı vuruş', U: 'yukarı vuruş', dead: 'ölü vuruş' };
 const gState = () => S.proj.guitar;
 const gOwn = (target = GT.target) => (target === '_all' ? gState().parts._all : gState().parts[target] || null);
-const gEff = (target = GT.target) => gOwn(target) || gState().parts._all;
+const gEff = (target = GT.target) => S.d ? C.guitarPartFor(gState(), target, S.proj, S.d) : gOwn(target) || gState().parts._all;
 const gSections = () => (S.d ? S.d.sections.filter((s) => !s.implicit) : []);
 const jclone = (x) => JSON.parse(JSON.stringify(x));
 
@@ -48,6 +48,7 @@ function gRefreshSound() {
 }
 function gChanged() { renderGuitar(); gRefreshSound(); }
 function gEdit(fn) {
+  if (guardLinked(GT.target)) return;
   const p = gOwn();
   if (!p) return;
   fn(p);
@@ -198,21 +199,22 @@ function renderGuitar() {
   const sel = $('#gTarget');
   if (sel.dataset.h !== opts) { sel.innerHTML = opts; sel.dataset.h = opts; }
   sel.value = GT.target;
-  const own = gOwn(), part = own || st.parts._all;
+  const own = gOwn(), part = gEff(), linked = !!linkSource(GT.target);
   if (GT.sel != null && !part.pattern.steps[GT.sel]) GT.sel = null;
   let info = '';
   if (GT.target === '_all') info = secs.length ? `<div class="hint">Bölümlerin ayrı partisi yoksa hepsi bu partiyi çalar${secs.some((s) => st.parts[s.id]) ? ` (ayrı partisi olanlar: ${esc(secs.filter((s) => st.parts[s.id]).map((s) => s.name).join(', '))})` : ''}.</div>` : '';
   else info = own ? '<div class="row"><span class="hint grow">Bu bölümün kendi partisi var (●).</span><button id="gSecReset" class="small">Varsayılana dön</button></div>'
     : '<div class="adv-opt">Bu bölüm tüm şarkının partisini çalıyor. <button id="gSecOwn" class="accent small">Bu bölüm için ayrı parti oluştur</button></div>';
+  if (linked) info = linkActions(GT.target);
   if ($('#gSecInfo').dataset.h !== info) { $('#gSecInfo').innerHTML = info; $('#gSecInfo').dataset.h = info; }
-  const html = `<div class="${GT.target !== '_all' && !own ? 'gdis' : ''}">${panelHtml(part, meter)}</div>`;
+  const html = linked ? `<fieldset class="link-readonly" disabled>${panelHtml(part, meter)}</fieldset>` : `<div class="${GT.target !== '_all' && !own ? 'gdis' : ''}">${panelHtml(part, meter)}</div>`;
   if ($('#guitarPanel').dataset.h !== html) { $('#guitarPanel').innerHTML = html; $('#guitarPanel').dataset.h = html; }
   renderGuitarPresets();
   syncGuitarButtons();
 }
 function renderGuitarPresets() {
   const st = gState();
-  const h = `<div class="gtitle">Kayıtlı kombinasyonlar</div><div class="gchips">${st.presets.map((p, i) => `<span class="gpre"><button type="button" class="gchip" data-pl="${i}" title="Seçili bölüme yükle">${esc(p.name)}</button><button type="button" class="gchip gx" data-pd="${i}" title="Sil" aria-label="${esc(p.name)} presetini sil">✕</button></span>`).join('') || '<span class="hint">Henüz yok.</span>'}</div>`
+  const h = `<div class="gtitle">Kayıtlı kombinasyonlar</div><div class="gchips">${st.presets.map((p, i) => `<span class="gpre"><button type="button" class="gchip" data-pl="${i}"${linkSource(GT.target) ? ' disabled' : ''} title="Seçili bölüme yükle">${esc(p.name)}</button><button type="button" class="gchip gx" data-pd="${i}" title="Sil" aria-label="${esc(p.name)} presetini sil">✕</button></span>`).join('') || '<span class="hint">Henüz yok.</span>'}</div>`
     + `<div class="row"><input type="text" id="gPresetName" placeholder="Kombinasyona isim ver" value="${esc(GT.presetName)}"><button id="gPresetSave" class="small">Kaydet</button></div>`;
   const box = $('#gPresets');
   if (box.dataset.h !== h) { box.innerHTML = h; box.dataset.h = h; }
@@ -233,7 +235,7 @@ $('#guitarPanel').addEventListener('pointerdown', (e) => {
 for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) $('#guitarPanel').addEventListener(ev, () => clearTimeout(GT.lpTimer));
 $('#guitarPanel').addEventListener('input', (e) => {
   const el = e.target;
-  if (!el.dataset.s) return;
+  if (!el.dataset.s || guardLinked(GT.target)) return;
   const p = gOwn();
   if (!p) return;
   const x = +el.value;
@@ -251,6 +253,7 @@ $('#guitarPanel').addEventListener('change', (e) => { if (e.target.dataset && e.
 $$('input[name=gInstr]').forEach((r) => r.addEventListener('change', (e) => { S.proj.guitar.instrument = e.target.value; renderMatrix(); renderPacks(); if (Player.playing) Player.play(); }));
 $('#gTarget').addEventListener('change', (e) => { GT.target = e.target.value; GT.sel = null; renderGuitar(); if (GT.auditioning) gRefreshSound(); });
 $('#gSecInfo').addEventListener('click', (e) => {
+  if (e.target.closest('#gSecOwn,#gSecReset') && guardLinked(GT.target)) return;
   if (e.target.closest('#gSecOwn')) { gState().parts[GT.target] = jclone(gState().parts._all); gChanged(); }
   if (e.target.closest('#gSecReset')) { delete gState().parts[GT.target]; GT.sel = null; gChanged(); }
 });
@@ -271,6 +274,7 @@ $('#gPresets').addEventListener('click', (e) => {
   if (d) { st.presets.splice(+d.dataset.pd, 1); renderGuitar(); return; }
   const l = e.target.closest('[data-pl]');
   if (l) {
+    if (guardLinked(GT.target)) return;
     const pr = st.presets[+l.dataset.pl];
     if (GT.target !== '_all' && !st.parts[GT.target]) st.parts[GT.target] = jclone(st.parts._all);
     const loaded = jclone(pr.part);
