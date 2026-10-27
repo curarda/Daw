@@ -33,7 +33,63 @@ let soundNetwork = C.createNetwork({ settings: soundSettings });
 
 const REAL = { generation: 0, decoded: {}, sampleRates: {}, signature: '', source: null, injected: null };
 const soundCache = C.createSoundCache();
+const DRUM_NATIVE = new WeakMap();
+const DRUM_REAL = { generation: 0, signature: '', project: null, states: {}, messages: {}, injected: null };
+const realSoundDeps = () => DRUM_REAL.injected || REAL.injected || {};
+const realSoundRuntime = C.createRealSoundsRuntime({
+  network: { freesoundPreview: (id) => (realSoundDeps().network || soundNetwork).freesoundPreview(id) },
+  cache: { get: (...args) => (realSoundDeps().cache || soundCache).get(...args), put: (...args) => (realSoundDeps().cache || soundCache).put(...args) },
+  decode: (bytes) => (realSoundDeps().decode || decodeSoundPreview)(bytes),
+  hasKey: () => realSoundDeps().hasKey ? realSoundDeps().hasKey() : !!soundSettings.get().freesoundKey,
+  onStatus({ lane, state, message }) {
+    DRUM_REAL.states[lane] = state; DRUM_REAL.messages[lane] = message;
+    renderSoundSelection();
+  }
+});
+function cancelRealSoundPreparation() {
+  DRUM_REAL.generation++; realSoundRuntime.invalidate(DRUM_REAL.generation);
+  DRUM_REAL.states = {}; DRUM_REAL.messages = {};
+}
+function syncRealSoundGeneration() {
+  const signature = C.realDrumSignature(S.proj);
+  if (DRUM_REAL.project !== S.proj || DRUM_REAL.signature !== signature) {
+    cancelRealSoundPreparation(); DRUM_REAL.project = S.proj; DRUM_REAL.signature = signature;
+  }
+  return DRUM_REAL.generation;
+}
+async function prepareRealSounds(project, generation) {
+  return realSoundRuntime.prepareRealSounds(project, generation);
+}
+async function prepareCurrentRealSounds() {
+  const generation = syncRealSoundGeneration(), project = S.proj;
+  const snapshot = await prepareRealSounds(project, generation);
+  return snapshot;
+}
+function liveDrumBank(snapshot, rate) {
+  const bank = { ...Player.synthDrumBufs }, leases = new Map();
+  for (const [lane, pcm] of Object.entries(snapshot.bank(rate))) {
+    const release = realSoundRuntime.reserve(pcm.byteLength);
+    if (!release) { DRUM_REAL.states[lane] = 'hata'; DRUM_REAL.messages[lane] = lane + ': Bellek sınırı; sentetik davul kullanılıyor.'; continue; }
+    try { bank[lane] = toAudioBuffer(pcm, rate); leases.set(lane, { refs: 1, release }); }
+    catch (_) { release(); DRUM_REAL.states[lane] = 'hata'; DRUM_REAL.messages[lane] = lane + ': Ses tamponu hazırlanamadı; sentetik davul kullanılıyor.'; }
+  }
+  DRUM_NATIVE.set(bank, leases); renderSoundSelection(); return bank;
+}
+function releaseLiveDrumBank(bank) {
+  const leases = DRUM_NATIVE.get(bank);
+  if (!leases) return;
+  for (const lease of leases.values()) if (--lease.refs === 0) lease.release();
+  DRUM_NATIVE.delete(bank);
+}
+async function applyRealSoundsNow() {
+  REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = '';
+  const project = S.proj, generation = syncRealSoundGeneration();
+  const snapshot = await prepareRealSounds(project, generation); snapshot.release();
+  if (project === S.proj && generation === DRUM_REAL.generation && Player.playing) void Player.play({ from: S.pos });
+}
+
 function invalidateSoundSelection(keepDecoded = false) {
+  cancelRealSoundPreparation();
   REAL.generation++;
   if (!keepDecoded) { REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = ''; }
   if (!keepDecoded && REAL.source) { try { REAL.source.stop(); } catch (_) {} REAL.source = null; }
@@ -45,6 +101,7 @@ async function decodeSoundPreview(bytes) {
   return { channels: Array.from({ length: buffer.numberOfChannels }, (_, i) => buffer.getChannelData(i)), sampleRate: buffer.sampleRate };
 }
 function renderSoundSelection() {
+  syncRealSoundGeneration();
   const rs = C.normalizeRealSounds(S.proj.realSounds), hasKey = !!soundSettings.get().freesoundKey;
   $('#btnSoundSelect').disabled = !hasKey;
   $('#soundSelectHint').textContent = hasKey ? 'CC0 tek vuruşlar sırayla aranır ve doğrulanır.' : 'Önce Freesound API anahtarını kaydet.';
@@ -52,8 +109,13 @@ function renderSoundSelection() {
   $('#chipRealSounds').textContent = rs.enabled ? 'açık' : 'kapalı';
   const signature = JSON.stringify(rs.drums);
   if (REAL.signature && REAL.signature !== signature) { REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = ''; }
-  $('#soundKitList').innerHTML = Object.entries(rs.drums).map(([lane, r]) => `<div data-sound-lane="${lane}"><b>${lane}</b> <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a> — ${esc(r.author)} — CC0 <button data-sound-preview="${lane}" ${REAL.decoded[lane] ? '' : 'disabled'} aria-label="${lane} önizle">▶</button></div>`).join('');
+  $('#soundKitList').innerHTML = Object.keys(rs.drums).length ? C.DRUM_KINDS.map((lane) => {
+    const r = rs.drums[lane];
+    if (!r) return `<div data-sound-lane="${lane}"><b>${lane}</b> <span data-sound-state="${lane}">sentetik</span></div>`;
+    return `<div data-sound-lane="${lane}"><b>${lane}</b> <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a> — ${esc(r.author)} — CC0 <span data-sound-state="${lane}">${rs.enabled ? (DRUM_REAL.states[lane] || 'sentetik') : 'sentetik'}</span> <button data-sound-preview="${lane}" ${REAL.decoded[lane] ? '' : 'disabled'} aria-label="${lane} önizle">▶</button></div>`;
+  }).join('') : '';
   $('#soundCredits').textContent = C.soundCredits(S.proj).join('\n');
+  $('#soundAudioStatus').textContent = Object.values(DRUM_REAL.messages).filter(Boolean).join(' ');
 }
 function editRealSounds(fn) {
   histCommit(); HIST.t = -Infinity;
@@ -73,10 +135,11 @@ $('#btnSoundSelect').onclick = async () => {
   editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds({ ...S.proj.realSounds, enabled: true, drums: result.kit }); });
   REAL.decoded = result.decoded; REAL.sampleRates = result.sampleRates; REAL.signature = JSON.stringify(S.proj.realSounds.drums);
   renderSoundSelection();
-  $('#soundSelectStatus').textContent = 'Davul seti seçildi. Ses entegrasyonu bir sonraki adımda.';
+  $('#soundSelectStatus').textContent = 'Davul seti seçildi.';
+  if (Player.playing) void applyRealSoundsNow();
 };
-$('#inRealSounds').onchange = (e) => { invalidateSoundSelection(true); editRealSounds(() => { S.proj.realSounds.enabled = e.target.checked; }); };
-$('#btnSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds(null); }); };
+$('#inRealSounds').onchange = (e) => { invalidateSoundSelection(true); editRealSounds(() => { S.proj.realSounds.enabled = e.target.checked; }); void applyRealSoundsNow(); };
+$('#btnSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds(null); }); void applyRealSoundsNow(); };
 $('#soundKitList').onclick = async (e) => {
   const lane = e.target.closest('[data-sound-preview]')?.dataset.soundPreview, mono = REAL.decoded[lane];
   if (!mono) return;
@@ -118,6 +181,7 @@ renderSoundSettings();
 // stil modülünün (styleui.js) kullandığı arayüz
 window.__dawAPI = {
   soundSettings,
+  realSounds: { prepare: () => prepareCurrentRealSounds(), inject(deps) { cancelRealSoundPreparation(); DRUM_REAL.injected = deps; }, stats: () => realSoundRuntime.stats() },
   soundSelection: { inject(deps) { invalidateSoundSelection(); REAL.injected = deps; }, preview: () => REAL.source },
   network: { setFetch(fetch, options = {}) { soundNetwork = C.createNetwork({ ...options, fetch, settings: soundSettings }); }, probe: () => soundNetwork.probe() },
   S, C, status, esc, getCtx, notePreview: () => NotePreview, player: () => Player,
@@ -492,7 +556,9 @@ async function histRestore(entry, was) {
   } finally { HIST.hold--; }
   HIST.base = snapProj(); HIST.t = 0;
   histButtons();
-  if (was) Player.play();
+  const soundGeneration = syncRealSoundGeneration();
+  const restoredSounds = await prepareCurrentRealSounds(); restoredSounds.release();
+  if (was && soundGeneration === DRUM_REAL.generation) Player.play();
 }
 async function histUndo() {
   if (!HIST.undo.length) { status('Geri alınacak bir şey yok.'); return; }
@@ -624,29 +690,36 @@ function vfxChanged() {
 
 // ---------------------------------------------------------------- KANAL RENDER (dışa aktarım + otomatik miks): her iz fader'sız, aynı yolla
 async function renderStems(sr, lenSec) {
-  const n = Math.round(lenSec * sr), ins = S.proj.guitar.instrument;
-  let vocal = null;
-  if (S.audio) {
-    await vfxEnsure();
-    const src = vfxData(S.proj.mixer.ab === 'original' ? 'A' : 'B');
-    vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec);
-  } else if (S.midi) vocal = C.renderSynth(melodyEvents(), sr, n, 1); // MIDI projesi: melodi synth ile
-  let piano = null;
-  if (ins !== 'guitar') {
-    const samples = await loadPianoSamples(), ev = pianoEventsAll();
-    piano = C.renderPiano(ev.filter((e) => e.inst !== 'synth'), samples.samples, sr, n, 0.35);
-    const syn = C.renderSynth(ev.filter((e) => e.inst === 'synth'), sr, n, 1);
-    for (let i = 0; i < n; i++) piano[i] += syn[i];
-  }
-  return {
-    vocal, piano,
-    guitar: ins === 'piano' ? null : guitarTrack(sr).data,
-    bass: S.proj.bass.enabled ? await renderBassOffline(sr, n) : null,
-    drums: anyDrums() ? C.renderDrums(drumEventsAll(), sr, n, 1) : null,
-  };
+  REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = '';
+  const snapshot = await prepareCurrentRealSounds(), drumBank = snapshot.bank(sr);
+  const drumEvents = anyDrums() ? drumEventsAll() : null;
+  try {
+    const n = Math.round(lenSec * sr), ins = S.proj.guitar.instrument;
+    let vocal = null;
+    if (S.audio) {
+      await vfxEnsure();
+      const src = vfxData(S.proj.mixer.ab === 'original' ? 'A' : 'B');
+      vocal = alignedVocal(S.audio.sr === sr ? src : C.resample(src, S.audio.sr, sr), sr, lenSec);
+    } else if (S.midi) vocal = C.renderSynth(melodyEvents(), sr, n, 1); // MIDI projesi: melodi synth ile
+    let piano = null;
+    if (ins !== 'guitar') {
+      const samples = await loadPianoSamples(), ev = pianoEventsAll();
+      piano = C.renderPiano(ev.filter((e) => e.inst !== 'synth'), samples.samples, sr, n, 0.35);
+      const syn = C.renderSynth(ev.filter((e) => e.inst === 'synth'), sr, n, 1);
+      for (let i = 0; i < n; i++) piano[i] += syn[i];
+    }
+    return {
+      vocal, piano,
+      guitar: ins === 'piano' ? null : guitarTrack(sr).data,
+      bass: S.proj.bass.enabled ? await renderBassOffline(sr, n) : null,
+      drums: drumEvents ? C.renderDrums(drumEvents, sr, n, 1, drumBank) : null,
+    };
+  } finally { snapshot.release(); }
 }
 // 🎚 otomatik miks: izler fader'sız render edilip vokalin kapılı RMS'ine göre dengelenir (akor −7, gitar −6, bas −5, davul −6 dB); vokal 0 dB
 async function autoMix(quiet, current = () => true) {
+  const project = S.proj, soundGeneration = syncRealSoundGeneration(), callerCurrent = current;
+  current = () => callerCurrent() && project === S.proj && soundGeneration === DRUM_REAL.generation;
   if (!S.d) { status('Önce bir akor izi gerekli.', 'err'); return false; }
   let res;
   await busy('Ses dengesi ölçülüyor…', async () => {
@@ -1185,6 +1258,7 @@ const Player = {
     const rsr = T.getContext().sampleRate;
     this.drumBufs = {};
     for (const k of C.DRUM_KINDS) this.drumBufs[k] = toAudioBuffer(C.synthDrum(k, rsr), rsr);
+    this.synthDrumBufs = this.drumBufs;
     const piano = await loadPianoSamples();
     const urls = {};
     for (const s of piano.samples) urls[s.name] = new T.ToneAudioBuffer(s.buffer);
@@ -1242,17 +1316,30 @@ const Player = {
     if (!S.d) return;
     try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
     if (generation !== this.generation) return;
-    this.stop(true, true);
+    const deferDrumStop = S.proj.realSounds.enabled && Object.keys(S.proj.realSounds.drums).length;
+    if (!deferDrumStop) this.stop(true, true);
+    REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = '';
+    const soundGeneration = syncRealSoundGeneration();
+    const drumSnapshot = await prepareRealSounds(S.proj, soundGeneration);
+    if (generation !== this.generation || soundGeneration !== DRUM_REAL.generation) { drumSnapshot.release(); return; }
+    if (deferDrumStop) this.stop(true, true);
+    this.realDrumSnapshot = drumSnapshot;
+    const drumRate = Tone.getContext().sampleRate, drumBufs = liveDrumBank(drumSnapshot, drumRate);
+    this.drumBufs = drumBufs;
+    const discardDrums = () => {
+      releaseLiveDrumBank(drumBufs); drumSnapshot.release();
+      if (this.realDrumSnapshot === drumSnapshot) { this.realDrumSnapshot = null; this.drumBufs = this.synthDrumBufs; }
+    };
     const pv = opts.preview || null; // tek seferlik önizleme: bölge bir kez çalar, seçili ayarlar değişmez
     PREVIEW.drums = pv ? pv.drums : null;
     await vfxEnsure();
-    if (generation !== this.generation) return;
+    if (generation !== this.generation || soundGeneration !== DRUM_REAL.generation) { discardDrums(); return; }
     this.updateBuffers();
     this.freshPlayers();
     this.applyMixer();
     const ins = S.proj.guitar.instrument; // 'piano' | 'guitar' | 'both'
     let gtr = null;
-    if (ins !== 'piano') { status('Gitar partisi hazırlanıyor…', 'busy'); await tick(); if (generation !== this.generation) return; gtr = guitarTrack(Tone.getContext().rawContext.sampleRate); }
+    if (ins !== 'piano') { status('Gitar partisi hazırlanıyor…', 'busy'); await tick(); if (generation !== this.generation || soundGeneration !== DRUM_REAL.generation) { discardDrums(); return; } gtr = guitarTrack(Tone.getContext().rawContext.sampleRate); }
     const T = this.transport();
     T.cancel(0);
     const g = S.d.g, off = S.d.off;
@@ -1293,7 +1380,7 @@ const Player = {
         const st = Math.max(e.t, r.lo);
         T.schedule((time) => this.hitSynth(e, time, Math.max(0.05, e.t + e.dur - st)), at(st));
       }
-      for (const e of dev) if (e.t >= r.lo - 0.01 && e.t < r.hi) T.schedule((time) => this.hitDrum(e, time), at(e.t));
+      for (const e of dev) if (e.t >= r.lo - 0.01 && e.t < r.hi) T.schedule((time) => this.hitDrum(e, time, drumBufs), at(e.t));
       if (opts.click ?? S.proj.mixer.click) {
         const endQ = Math.min(S.d.bars * g.barQ, r.hi / g.spq);
         for (let q = Math.ceil(r.lo / g.spq / g.clickQ - 1e-6) * g.clickQ; q < endQ - 1e-9; q += g.clickQ) {
@@ -1408,25 +1495,35 @@ const Player = {
     status(`▶ Gitar önizleme · ${a.real ? 'projenin akorları' : 'Am–F–C–G'} · ${S.proj.settings.meter} · ${S.proj.settings.bpm} BPM (2 ölçü döngü)`);
   },
   // tek davul vuruşu: önceden sentezlenmiş örnek, hıza göre kazanç
-  hitDrum(e, time) {
+  hitDrum(e, time, bank = this.drumBufs) {
     const ctx = Tone.getContext().rawContext;
     const src = ctx.createBufferSource(), gn = ctx.createGain();
-    src.buffer = this.drumBufs[e.kind]; gn.gain.value = e.vel;
+    src.buffer = bank[e.kind]; gn.gain.value = e.vel;
     src.connect(gn); Tone.connect(gn, this.drumCh);
-    src.start(time);
+    const lease = DRUM_NATIVE.get(bank)?.get(e.kind);
+    if (lease) lease.refs++;
+    src.onended = () => { src.disconnect(); gn.disconnect(); if (lease && --lease.refs === 0) lease.release(); };
+    try { src.start(time); } catch (e) { if (lease && --lease.refs === 0) lease.release(); throw e; }
     this.drumHits = (this.drumHits || 0) + 1;
   },
   async previewDrums(L, bars = L && L.fill ? L.fill.every : 2) { // fill'li kalıpta fill'i de duyur
     if (!L) return;
+    const generation = this.generation = (this.generation || 0) + 1;
     try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
-    this.stop(true);
+    if (generation !== this.generation) return;
+    REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = '';
+    const soundGeneration = syncRealSoundGeneration(), snapshot = await prepareCurrentRealSounds();
+    if (generation !== this.generation || soundGeneration !== DRUM_REAL.generation) { snapshot.release(); return; }
+    this.stop(true, true); VERS.resume = null; this.realDrumSnapshot = snapshot;
+    const sr = Tone.getContext().sampleRate, bank = liveDrumBank(snapshot, sr);
+    this.drumBufs = bank;
     this.applyMixer();
     const g = C.makeGrid(S.proj.settings), T = this.transport();
     T.cancel(0);
-    for (const e of C.drumEvents(L, g, bars)) T.schedule((time) => this.hitDrum(e, time), e.t);
+    for (const e of C.drumEvents(L, g, bars)) T.schedule((time) => this.hitDrum(e, time, bank), e.t);
     T.start(Tone.now() + 0.1, 0);
     clearTimeout(this.previewTimer);
-    this.previewTimer = setTimeout(() => { T.stop(); T.cancel(0); }, (bars * g.barSec + 1) * 1000);
+    this.previewTimer = setTimeout(() => { if (generation === this.generation) { T.stop(); T.cancel(0); } releaseLiveDrumBank(bank); snapshot.release(); if (this.drumBufs === bank) this.drumBufs = this.synthDrumBufs; if (this.realDrumSnapshot === snapshot) this.realDrumSnapshot = null; }, (bars * g.barSec + 1) * 1000);
     status(`▶ ${C.loopLabel(L)} · ${S.proj.settings.meter} · ${S.proj.settings.bpm} BPM`);
   },
   async previewChords(chords, tonic, mode, durs) {
@@ -1447,6 +1544,7 @@ const Player = {
     status(`Önizleme: ${chords.map((c, i) => `${C.chordName(c)} (${durs ? durs[i] : 1})`).join(' → ')} · ${S.proj.settings.bpm} BPM`);
   },
   stop(silent, preparing) {
+    if (this.realDrumSnapshot) { releaseLiveDrumBank(this.drumBufs); this.realDrumSnapshot.release(); this.realDrumSnapshot = null; this.drumBufs = this.synthDrumBufs; }
     if (!preparing) { this.generation = (this.generation || 0) + 1; VERS.resume = null; }
     if (!this.ready) return;
     const T = this.transport();
@@ -2750,6 +2848,8 @@ async function switchVersion(id) {
   HIST.undo.push(before); if (HIST.undo.length > 100) HIST.undo.shift();
   HIST.redo = []; HIST.base = snapProj(); HIST.t = -Infinity; HIST.last = 'proj'; histButtons();
   VERS.confirm = null; VERS.rename = null; renderVersions();
+  const versionSounds = await prepareCurrentRealSounds(); versionSounds.release();
+  if (generation !== VERS.generation) return;
   if (resume) { S.pos = resume.from; await Player.play({ from: resume.from, region: resume.region }); }
   if (generation !== VERS.generation) return;
   VERS.resume = null;
@@ -3942,6 +4042,7 @@ async function openProject(file) {
   }
   syncInputs();
   await analyze();
+  const loadedSounds = await prepareCurrentRealSounds(); loadedSounds.release();
   status(`Proje açıldı${audioData || midiData ? '' : ' (ses gömülü değildi — kaydı yeniden yükleyin)'}.`);
 }
 
