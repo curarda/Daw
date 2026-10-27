@@ -28,3 +28,19 @@ VERDICT: NOT YET (reasons above)
 7. **Accept.** Native checkboxes (or `aria-pressed` buttons) inside a labeled group with a labeled section selector, associated hints, full keyboard operation; the picker updates in place (or restores focus) after toggle, fill, copy and undo. Browser assertions for focus retention.
 
 No finding rejected.
+
+## Round 2 — Codex verification (verbatim)
+
+1. ADDRESSED
+2. ADDRESSED
+3. ADDRESSED
+4. ADDRESSED
+5. ADDRESSED
+6. ADDRESSED
+7. ADDRESSED
+
+VERDICT: SAME PAGE
+
+## Outcome
+
+`VERDICT: SAME PAGE` after 2 rounds; no new blockers. Build may start (9a core, then 9b UI).
