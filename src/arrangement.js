@@ -27,8 +27,10 @@ function effectiveCell(proj, d, sectionId, layer) {
   const section = d.sections.find((s) => s.id === sectionId);
   // Bölümler arasındaki boşluklar genel düzeni izler.
   if (!section) return true;
-  const cell = proj.matrix.rows?.[sectionId]?.[layer];
-  return typeof cell === 'boolean' ? cell : isLastChorus(proj, d, sectionId) || matrixTemplate(section.implicit ? '_all' : section.typeNorm, proj)[layer];
+  const sourceId = C.linkedRoot ? C.linkedRoot(proj, d, sectionId) : sectionId;
+  const source = d.sections.find((s) => s.id === sourceId) || section;
+  const cell = proj.matrix.rows?.[sourceId]?.[layer];
+  return typeof cell === 'boolean' ? cell : isLastChorus(proj, d, sectionId) || matrixTemplate(source.implicit ? '_all' : source.typeNorm, proj)[layer];
 }
 function effectiveLayers(proj, d, sectionId) {
   return Object.fromEntries(layers.map((layer) => [layer, effectiveCell(proj, d, sectionId, layer)]));
@@ -58,15 +60,24 @@ function arrangedEvents(d, proj, opts = {}) {
   const wants = (k) => !opts.layers || opts.layers.includes(k);
   const g = d.g, sections = proj.sections || [], ds = proj.drums || {};
   const sw = opts.midi ? proj.swing && proj.swing.ratio : (proj.swing && proj.swing.ratio) || 0.5;
-  const arr = (id) => sections.find((s) => s.id === id)?.arr || {};
+  const arr = (id) => sections.find((s) => s.id === (C.linkedRoot ? C.linkedRoot(proj, d, id) : id))?.arr || {};
   if (wants('piano')) {
-    const separate = sections.some((s) => s.arr && s.arr.piano && (opts.midi || s.arr.piano !== 'off'));
+    const separate = sections.some((s) => arr(s.id).piano && (opts.midi || arr(s.id).piano !== 'off'));
     out.piano = separate
       ? C.arrangePiano(d.chords, g, (id) => C.pianoOpts(Object.assign({}, proj.piano, arr(id).piano ? { style: arr(id).piano } : {}), sw))
       : C.pianoEvents(d.chords, g, C.pianoOpts(proj.piano, sw));
   }
-  if (wants('guitar') && proj.guitar && (!opts.midi || (proj.guitar.instrument || 'piano') !== 'piano')) out.guitar = C.guitarEvents(C.guitarSlotsFrom(d), g, (sl) => C.guitarPartFor(proj.guitar, sl.section));
-  if (wants('bass') && proj.bass && proj.bass.enabled) out.bass = C.Bass.bassEvents(proj.bass, g, d.bars);
+  if (wants('guitar') && proj.guitar && (!opts.midi || (proj.guitar.instrument || 'piano') !== 'piano')) {
+    const parts = new Map(), canonical = Object.keys(C.resolveLinks?.(proj, d) || {}).length || proj.chordChoices?.length;
+    out.guitar = C.guitarEvents(C.guitarSlotsFrom(d), g, (sl) => {
+      const part = C.guitarPartFor(proj.guitar, sl.section, proj, d);
+      if (!canonical) return part;
+      const key = JSON.stringify(part);
+      if (!parts.has(key)) parts.set(key, part);
+      return parts.get(key);
+    });
+  }
+  if (wants('bass') && proj.bass && proj.bass.enabled) out.bass = C.Bass.bassEvents(C.resolvedBass ? C.resolvedBass(proj, d) : proj.bass, g, d.bars);
   if (wants('drums')) {
     if (Object.prototype.hasOwnProperty.call(opts, 'drums')) {
       const dr = opts.drums;

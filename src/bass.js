@@ -195,7 +195,7 @@ function bassContext(d, proj) {
   const secs = d.sections.slice().sort((a, b) => a.startBar - b.startBar);
   const byBar = [];
   for (const c of d.chords) (byBar[c.bar - 1] = byBar[c.bar - 1] || []).push(c);
-  const ctx = { d, g, meter, steps, barQ: g.barQ, bars: d.bars, secs };
+  const ctx = { d, proj, g, meter, steps, barQ: g.barQ, bars: d.bars, secs };
   ctx.secOf = (i) => secs.find((s) => i + 1 >= s.startBar && i + 1 <= s.endBar) || null;
   // bir ölçünün akor dilimleri: [{s0, s1, chord}] adım aralıkları; akorsuz boşluklar komşudan doldurulur
   ctx.segs = (i) => {
@@ -700,6 +700,18 @@ function invalidateLoopsFor(track, i) { return (track.loops || []).filter((L) =>
 
 // bas izini projenin akor izine uydurur: yeni ölçüler eklenir, kirli kilitsiz ölçüler yeniden üretilir, kilitliler işaretlenir
 function bassSync(track, ctx, o = {}) {
+  const C = root.Core;
+  const links = C.resolveLinks && ctx.proj?.sections ? C.resolveLinks(ctx.proj, ctx.d) : {};
+  if (!o.independent && Object.keys(links).length) {
+    const work = C.resolvedBass(ctx.proj, ctx.d, track);
+    const held = [];
+    for (const b of work.bars) if (links[b.sectionId]) { held.push([b, b.locked]); b.locked = true; }
+    const result = bassSync(work, ctx, { ...o, independent: true });
+    for (const [b, locked] of held) b.locked = locked;
+    const resolved = C.resolvedBass(ctx.proj, ctx.d, work);
+    track.bars = resolved.bars;
+    return { ...result, warnings: ctx.d.linkWarnings || [] };
+  }
   ensureBars(track, ctx);
   if (!track.generated) return { regenerated: [], flagged: [] }; // henüz Generate'e basılmadı
   const regenerated = [], flagged = [];
@@ -959,6 +971,7 @@ function bassEvents(track, g, bars) {
 // süzgeç: bölüm başına start/end (varsayılan: enerjiyi izler); süpürme (sweepBars) cümle başında sıfırlanır. değer → kesim frekansı
 const cutoffHz = (v) => 120 * Math.pow(8000 / 120, clamp(v, 0, 1));
 function filterAutomation(track, ctx, g) {
+  if (C.resolvedBass && ctx.proj?.sections) track = C.resolvedBass(ctx.proj, ctx.d, track);
   const pts = [];
   for (let i = 0; i < ctx.bars; i++) {
     const sec = ctx.secOf(i), set = track.sections[sec ? sec.id : '_none']; if (!set) continue;

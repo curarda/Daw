@@ -322,7 +322,7 @@ function normalizeGuitarState(st, meter) {
   st.presets = st.presets || [];
   return st;
 }
-const guitarPartFor = (st, sectionId) => (st.parts[sectionId] || st.parts._all);
+const guitarPartFor = (st, sectionId, proj, d) => (st.parts[proj && d && root.Core.linkedRoot ? root.Core.linkedRoot(proj, d, sectionId) : sectionId] || st.parts._all);
 // Adıma uygulanan nota süresi: adım ezmesi > global (normal dışındaysa) > kalıbın önerisi > normal
 function stepArticulation(part, st, i) {
   const ov = part.stepOverrides && part.stepOverrides[i];

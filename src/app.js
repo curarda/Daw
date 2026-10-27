@@ -59,7 +59,7 @@ window.__dawAPI = {
     const nBars = cells.length / 2, end = startBar + nBars - 1;
     const covering = S.proj.sections.filter((s) => !(end < s.startBar || startBar > s.endBar));
     if (!covering.length) {
-      S.proj.sections.push({ id: uid(), name: 'Öneri', startBar, endBar: end, tonic: key.tonic, mode: key.mode });
+      S.proj.sections.push({ id: uid(), link: null, name: 'Öneri', startBar, endBar: end, tonic: key.tonic, mode: key.mode });
       S.proj.sections.sort((a, b) => a.startBar - b.startBar);
       note = ` "Öneri" bölümü (${C.keyName(key.tonic, key.mode)}) oluşturuldu.` + note;
     } else if (covering.some((s) => s.startBar > startBar || s.endBar < end)) {
@@ -242,7 +242,7 @@ function importMidiBytes(bytes, name, trackIdx, keep) {
   p.matrix = { enabled: false, rows: {} };
   p.audio = { offsetSec: 0, alignMode: 'none', leadBars: 0, source: 'midi' };
   p.pitch.tuning = 'a440'; // MIDI notaları tam yarım sestir
-  p.sections = r.sections.map((x) => ({ id: uid(), name: x.name, startBar: x.startBar, endBar: x.endBar, tonic: x.tonic, mode: x.mode }));
+  p.sections = r.sections.map((x) => ({ id: uid(), link: null, name: x.name, startBar: x.startBar, endBar: x.endBar, tonic: x.tonic, mode: x.mode }));
   p.chordLocks = r.locks; p.chordStartBar = r.chordStartBar;
   if (r.pianoStyle) p.piano.style = r.pianoStyle;
   if (r.bassOn) p.bass.enabled = true;
@@ -339,7 +339,7 @@ async function histRestore(str, was) {
   const old = { det: detSig(S.proj.pitch), seg: segSig(S.proj.pitch, S.proj.noteSplits) };
   HIST.hold++;
   try {
-    S.proj = mergeDefaults(C.newProject(), JSON.parse(str));
+    S.proj = mergeDefaults(C.newProject(), C.migrateMatrix(JSON.parse(str)));
     Object.assign(S.proj.mixer, keep);
     BS.hist = Bs.newHistory(); BS.sel = null; BS.note = null; // bas geçmişi eski izin anlık görüntüleriydi
     S.sel = null;
@@ -910,7 +910,7 @@ function makeDemo() {
       if (sw && sw.confident && Math.abs(sw.ratio - swingR()) > 0.04) did.push(`alt bölme senin ayarın (${swingMode() === 'straight' ? 'düz' : '%' + Math.round(swingR() * 100)}); melodide ≈%${Math.round(sw.ratio * 100)} swing ölçüldü — dokunmadım, 1. adımdan uygulayabilirsin`);
     }
     // 2) bölüm ve ton: bölüm yoksa tek bölüm; onaylanmamış önerilen tonlar onaylanır
-    if (!S.proj.sections.length) { S.proj.sections.push({ id: uid(), name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: null, mode: null }); refresh(); }
+    if (!S.proj.sections.length) { S.proj.sections.push({ id: uid(), link: null, name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: null, mode: null }); refresh(); }
     let keyed = 0;
     for (const s of S.proj.sections) if (s.tonic == null) { const ds = S.d.sections.find((x) => x.id === s.id); if (ds && ds.tonic != null) { s.tonic = ds.tonic; s.mode = ds.mode; keyed++; } }
     refresh();
@@ -2439,7 +2439,7 @@ function addSection(name, a, b) {
     const used = new Set(S.proj.sections.map((s) => s.name));
     name = ['Verse', 'Nakarat', 'Köprü', 'Verse 2', 'Nakarat 2', 'Outro'].find((n) => !used.has(n)) || 'Bölüm ' + (S.proj.sections.length + 1);
   }
-  const s = { id: uid(), name, startBar: a, endBar: b, tonic: null, mode: null };
+  const s = { id: uid(), link: null, name, startBar: a, endBar: b, tonic: null, mode: null };
   S.proj.sections.push(s);
   S.proj.sections.sort((p, q) => p.startBar - q.startBar);
   S.sel = { type: 'section', id: s.id };
@@ -2587,7 +2587,7 @@ $('#sectionList').addEventListener('click', (e) => {
   const s = S.proj.sections.find((x) => x.id === b.dataset.id);
   if (b.dataset.act === 'pickKey') {
     if (!s) { // tek bölüm yokken öneriyi seçmek → tüm şarkıyı bölüm yap
-      S.proj.sections.push({ id: uid(), name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: +b.dataset.t, mode: b.dataset.m });
+      S.proj.sections.push({ id: uid(), link: null, name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: +b.dataset.t, mode: b.dataset.m });
     } else { s.tonic = +b.dataset.t; s.mode = b.dataset.m; }
     refresh();
     status(`Ton seçildi: ${C.keyName(+b.dataset.t, b.dataset.m)}`);
@@ -3192,7 +3192,7 @@ function applyChart(text) {
     const end = Math.min(ps.endBar, S.d.bars);
     if (ps.startBar > S.d.bars) continue;
     const ov = S.proj.sections.filter((x) => !(end < x.startBar || ps.startBar > x.endBar));
-    if (!ov.length) { S.proj.sections.push({ id: uid(), name: ps.name, startBar: ps.startBar, endBar: end, tonic: ps.tonic, mode: ps.mode }); created++; continue; }
+    if (!ov.length) { S.proj.sections.push({ id: uid(), link: null, name: ps.name, startBar: ps.startBar, endBar: end, tonic: ps.tonic, mode: ps.mode }); created++; continue; }
     const ex = ov.find((x) => x.startBar === ps.startBar && x.endBar === end);
     if (ex && ps.tonic != null && ex.tonic == null) { ex.tonic = ps.tonic; ex.mode = ps.mode; }
     else if (ex && ps.tonic != null && (ex.tonic !== ps.tonic || ex.mode !== ps.mode)) notes.push(`"${ex.name}" bölümünün tonu ${C.keyName(ex.tonic, ex.mode)}; şablondaki ${C.keyName(ps.tonic, ps.mode)} uygulanmadı (4. adımdan değiştirebilirsin).`);
@@ -3439,7 +3439,7 @@ async function loadTest() {
   const t = C.synthTestVocal(44100);
   S.proj = C.newProject();
   S.proj.settings.bpm = t.bpm; S.proj.settings.meter = t.meter;
-  S.proj.sections = t.sections.map((s) => ({ id: uid(), name: s.name, startBar: s.startBar, endBar: s.endBar, tonic: null, mode: null }));
+  S.proj.sections = t.sections.map((s) => ({ id: uid(), link: null, name: s.name, startBar: s.startBar, endBar: s.endBar, tonic: null, mode: null }));
   setAudio(t.signal, t.sr, 'Test melodisi (sentetik vokal)', 'test');
   S.proj.audio.offsetSec = t.offsetSec;
   S.sel = null;

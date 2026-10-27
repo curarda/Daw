@@ -52,6 +52,7 @@ const PACKS = freeze([
 function migratePack(proj) {
   const old = proj.pack || {};
   proj.pack = { ...old, id: old.id ?? null, locks: Object.fromEntries(layers.map((l) => [l, old.locks?.[l] === true])) };
+  if (C.migrateLinks) C.migrateLinks(proj);
   return proj;
 }
 const eligiblePacks = (proj) => PACKS.filter((p) => p.meters.includes(proj.settings.meter));

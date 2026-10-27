@@ -1887,7 +1887,7 @@ function newProject() {
     noteEdits: [],
     autotune: Object.assign({}, AUTOTUNE_DEFAULTS),
     chordOpts: Object.assign({}, CHORD_DEFAULTS),
-    chordLocks: [], chordPins: [], changeMarks: [],
+    chordLocks: [], chordPins: [], changeMarks: [], chordChoices: [],
     swing: { ratio: 0.5 }, // alt bölme: 0,5 düz · 0,667 üçleme · arası swing (ölçülen %70 → 0,70); gitar ve bas da aynı ızgaraya oturur
     chordStartBar: 1, noteSplits: [], // akorların girdiği ilk ölçü (bu ölçü akorlar için 1. ölçüdür); çift tıkla bölünen yerler (kayıttaki saniye)
     piano: Object.assign({}, PIANO_DEFAULTS),
@@ -1923,7 +1923,7 @@ function derive(proj, st) {
   g.swing = proj.swing && proj.swing.ratio > 0.5 ? proj.swing.ratio : 0; // genel alt bölme: gitar ve bas olayları da bu ızgaraya oturur
   const off = effectiveOffset(proj);
   const bars = totalBars(proj, st.duration);
-  let sections = proj.sections.map((s) => Object.assign({}, s));
+  let sections = proj.sections.map((s) => Object.assign({ link: null }, s));
   if (!sections.length) sections = [{ id: '_all', name: 'Tümü', startBar: 1, endBar: bars, implicit: true }];
   sections.sort((a, b) => a.startBar - b.startBar);
   const secOfQ = (q) => { const bar = Math.floor(q / g.barQ + 1e-6) + 1; return sections.find((s) => bar >= s.startBar && bar <= s.endBar) || null; };
@@ -2007,7 +2007,7 @@ function derive(proj, st) {
   // öncesinde akor ve piyano yoktur. Bölümler (ton önerisi, görünüm) olduğu gibi kalır.
   const chordStart = Math.max(1, Math.round(proj.chordStartBar || 1));
   const chordSections = chordStart > 1 ? sections.filter((s) => s.endBar >= chordStart).map((s) => (s.startBar < chordStart ? Object.assign({}, s, { startBar: chordStart }) : s)) : sections;
-  const chords = buildChords(notes, chordSections, g, chordOpts, [...userLocks, ...pins]);
+  let chords = buildChords(notes, chordSections, g, chordOpts, [...userLocks, ...pins]);
   for (const sl of chords) {
     const ul = userLocks.find((l) => covers(l, sl.bar, sl.half));
     sl.locked = !!ul;
@@ -2015,6 +2015,8 @@ function derive(proj, st) {
     sl.pinned = !sl.locked && pins.some((p) => covers(p, sl.bar, sl.half));
     if (sl.pinned) sl.reason = 'sabit: bir akoru kilitlediğinde diğerleri değişmez';
   }
+  const linked = { g, sections, chords };
+  if (root.Core.resolveLinkedChords) chords = root.Core.resolveLinkedChords(proj, linked);
   // 8) voicing
   voiceChords(chords, notes, sections, { pedal: proj.mixer.pedal });
   // motorun kilitler varken (pin olmadan) ne seçeceği → sabit akorlar için öneri + neden
@@ -2034,7 +2036,7 @@ function derive(proj, st) {
   }
   // kilitli akor için uyarı/öneriler: sürtünme (önemli), renk ve çevrim (isteğe bağlı)
   chords.forEach((sl) => { if (sl.locked) { sl.lockAdvice = lockAdvice(sl, slotNotes(notes, sl.q0, sl.q1, g), chordOpts.colorPenalty || 0); sl.suggest = null; } });
-  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning, timeMap, chordStart };
+  return { g, off, bars, sections, notes, keyInfo, correction, chords, tuning, timeMap, chordStart, linkWarnings: linked.linkWarnings || [] };
 }
 
 // ---------------------------------------------------------------- AKOR SESİ: piyano / synth klavye × akor / arpej

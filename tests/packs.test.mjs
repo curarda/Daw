@@ -112,9 +112,8 @@ for (const [id, section, layer, expected] of [['dream-pop', 's1', 'drums', false
 }
 {
   const p = project(); let d = derive(p); C.applyPack(p, d, 'dream-pop'); p.drums.fills = false;
-  // Simulate a resolved linked chorus with a different inherited template type.
-  // Positional detection uses the target's chorus type, never link metadata.
-  p.sections[4].link = { sourceId: 's2' };
+  // A real linked chorus inherits settings; the extra follows the target's position.
+  assert.equal(C.linkSection(p, d, 's4', 's2').ok, true); d = derive(p);
   const original = C.arrangeDrums, plans = [];
   C.arrangeDrums = (g, bars, start, plan) => { plans.push(Array.from({ length: bars }, (_, i) => plan(i + 1)?.id)); return []; };
   try {
@@ -123,20 +122,23 @@ for (const [id, section, layer, expected] of [['dream-pop', 's1', 'drums', false
     p.sections.push({ ...p.sections[4], id: 'last', startBar: 13, endBar: 14 }); d = derive(p);
     C.arrangedEvents(d, p, { layers: ['drums'] }); assert.equal(plans.at(-1)[8], 'ht-flat'); assert.equal(plans.at(-1)[12], 'ballad16');
     p.sections.pop(); d = derive(p); C.arrangedEvents(d, p, { layers: ['drums'] }); assert.equal(plans.at(-1)[8], 'ballad16');
-    p.sections[4].arr.drums = 'backbeat'; C.arrangedEvents(d, p, { layers: ['drums'] }); assert.equal(plans.at(-1)[8], 'backbeat');
-    p.sections[4].arr.drums = 'off'; C.arrangedEvents(d, p, { layers: ['drums'] }); assert.equal(plans.at(-1)[8], undefined);
+    p.sections[2].arr.drums = 'backbeat'; C.arrangedEvents(d, p, { layers: ['drums'] }); assert.equal(plans.at(-1)[8], 'backbeat');
+    p.sections[2].arr.drums = 'off'; C.arrangedEvents(d, p, { layers: ['drums'] }); assert.equal(plans.at(-1)[8], undefined);
+    p.sections[4].link = null; p.sections[4].arr.drums = 'backbeat'; d = derive(p);
+    C.arrangedEvents(d, p, { layers: ['drums'] }); assert.equal(plans.at(-1)[8], 'backbeat');
+    assert.equal(C.linkSection(p, d, 's4', 's2').ok, true); d = derive(p);
   } finally { C.arrangeDrums = original; }
-  p.matrix.rows.s4.drums = false; assert.equal(C.effectiveCell(p, d, 's4', 'drums'), false);
+  p.matrix.rows.s2.drums = false; assert.equal(C.effectiveCell(p, d, 's4', 'drums'), false);
   assert.equal(C.arrangedEvents(d, p, { layers: ['drums'] }).drums.some((e) => e.t >= 8 * d.g.barSec && e.t < 10 * d.g.barSec), false);
   // A light inherited chorus proves the positional extra independently of catalog density.
   const old = C.PACKS;
   C.PACKS = old.map((pack) => pack.id === 'dream-pop' ? { ...pack, template: { ...pack.template, chorus: Object.fromEntries(layers.map((l) => [l, false])) } } : pack);
   try {
-    for (const l of layers) { p.pack.locks[l] = true; p.matrix.rows.s4[l] = null; }
+    for (const l of layers) { p.pack.locks[l] = true; p.matrix.rows.s2[l] = null; p.matrix.rows.s4[l] = null; }
     for (const l of layers) { assert.equal(C.effectiveCell(p, d, 's4', l), true); assert.equal(C.effectiveCell(p, d, 's2', l), false); }
-    p.matrix.rows.s4.bass = false; assert.equal(C.effectiveCell(p, d, 's4', 'bass'), false);
+    p.matrix.rows.s2.bass = false; assert.equal(C.effectiveCell(p, d, 's4', 'bass'), false);
     p.guitar.instrument = 'piano'; assert.equal(C.effectiveCell(p, d, 's4', 'guitar'), false);
-    p.bass.enabled = false; p.matrix.rows.s4.bass = null; assert.equal(C.effectiveCell(p, d, 's4', 'bass'), false);
+    p.bass.enabled = false; p.matrix.rows.s2.bass = null; assert.equal(C.effectiveCell(p, d, 's4', 'bass'), false);
     p.bass.enabled = true;
     d.sections = d.sections.filter((s) => s.id !== 's4'); assert.equal(C.effectiveCell(p, d, 's2', 'bass'), true);
   } finally { C.PACKS = old; }

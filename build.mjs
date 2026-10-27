@@ -4,7 +4,7 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8');
 const tpl = read('./src/template.html');
 const out = tpl
   .replace('/*__STYLE__*/', () => read('./src/style.css'))
-  .replace('/*__CORE__*/', () => read('./src/core.js') + '\n' + read('./src/drums.js') + '\n' + read('./src/guitar.js') + '\n' + read('./src/vocalfx.js') + '\n' + read('./src/punch.js') + '\n' + read('./src/bass.js') + '\n' + read('./src/basssynth.js') + '\n' + read('./src/basslearn.js') + '\n' + read('./src/flex.js') + '\n' + read('./src/arrangement.js') + '\n' + read('./src/packs.js'))
+  .replace('/*__CORE__*/', () => read('./src/core.js') + '\n' + read('./src/drums.js') + '\n' + read('./src/guitar.js') + '\n' + read('./src/vocalfx.js') + '\n' + read('./src/punch.js') + '\n' + read('./src/bass.js') + '\n' + read('./src/basssynth.js') + '\n' + read('./src/basslearn.js') + '\n' + read('./src/flex.js') + '\n' + read('./src/arrangement.js') + '\n' + read('./src/packs.js') + '\n' + read('./src/links.js'))
   .replace('/*__STYLECORE__*/', () => read('./src/styledata.js'))
   .replace('/*__APP__*/', () => read('./src/app.js').replace('/*__GUITARUI__*/', () => read('./src/guitarui.js') + '\n' + read('./src/bassui.js')))
   .replace('/*__STYLEAPP__*/', () => read('./src/styleui.js')
