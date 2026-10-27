@@ -28,8 +28,34 @@ const S = {
 };
 window.__daw = S; // hata ayıklama / testler için
 window.__dawCal = () => Cal.last;
+const soundSettings = C.createSoundSettings();
+let soundNetwork = C.createNetwork({ settings: soundSettings });
+function renderSoundSettings() {
+  const v = soundSettings.get();
+  $('#inFreesoundKey').value = C.maskKey(v.freesoundKey);
+  $('#inGeminiKey').value = C.maskKey(v.geminiKey);
+  $('#inGeminiModel').value = v.geminiModel;
+  const st = soundSettings.status();
+  $('#soundStorageStatus').textContent = (st.storageFailed ? 'Tarayıcı depolaması kapalı: ayarlar yalnızca bu oturumda tutulur' : 'Ayarlar yalnızca bu tarayıcıda saklanır.') + ' ' + st.message;
+}
+$('#btnSoundSave').onclick = () => {
+  const old = soundSettings.get(), key = (id, previous) => $(id).value === C.maskKey(previous) ? previous : $(id).value;
+  soundSettings.set({ freesoundKey: key('#inFreesoundKey', old.freesoundKey), geminiKey: key('#inGeminiKey', old.geminiKey), geminiModel: $('#inGeminiModel').value });
+  renderSoundSettings();
+};
+$('#btnSoundClear').onclick = () => { soundSettings.clear(); renderSoundSettings(); $('#soundProbeStatus').textContent = 'Anahtarlar silindi.'; };
+$('#btnSoundProbe').onclick = async () => {
+  $('#btnSoundProbe').disabled = true;
+  try { await soundNetwork.probe(); $('#soundProbeStatus').textContent = 'Bağlantı tamam (ok).'; }
+  catch (e) { $('#soundProbeStatus').textContent = e instanceof C.NetError ? e.message : 'Bağlantı kurulamadı; yeniden dene.'; }
+  finally { $('#btnSoundProbe').disabled = false; }
+};
+renderSoundSettings();
+
 // stil modülünün (styleui.js) kullandığı arayüz
 window.__dawAPI = {
+  soundSettings,
+  network: { setFetch(fetch, options = {}) { soundNetwork = C.createNetwork({ ...options, fetch, settings: soundSettings }); }, probe: () => soundNetwork.probe() },
   S, C, status, esc, getCtx, notePreview: () => NotePreview, player: () => Player,
   refresh: () => refresh(),
   preview: (chords, tonic, mode, durs) => Player.previewChords(chords, tonic, mode, durs),

@@ -117,3 +117,7 @@ Inherited controls are read-only. **Kaynağı düzenle** jumps to the source; **
 **4c → Sürümler** saves the current pack, matrix, section links, chords/locks, layer settings and mixer as A, B, C… (or your own name). Recorded audio, note corrections, timing, tempo and meter stay shared. **Geç** switches even during playback, preserving the playhead and loop; one Ctrl+Z restores the previous arrangement and mixer, and Ctrl+Shift+Z redoes the switch.
 
 **Değiştirildi** marks unsaved changes to the active version. **Güncelle** replaces a saved version after a second click; **Ad ver** renames it and **Sil** removes it while keeping the current arrangement. Versions persist in project files. Changing meter or the ordered section ids/lengths makes saved versions incompatible and disables switching; moving sections without changing their lengths remains compatible.
+
+### Gerçek sesler (Freesound) — ayarlar
+
+Bu aşama yalnızca anahtarları saklar ve bağlantıyı dener; henüz ses çalmaz. Anahtarlar yalnızca tarayıcının `miniDaw.soundSettings.v1` localStorage alanında (depolama kapalıysa oturum belleğinde) tutulur; proje ve dışa aktarımlara girmez. Freesound anahtarı yalnızca freesound.org API isteğinin Authorization başlığında gönderilir; CDN önizlemelerine anahtar gönderilmez. Yalnızca CC0 ses kayıtları kabul edilir. Gemini anahtarı saklanır; Gemini isteği yapılmaz.

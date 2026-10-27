@@ -456,6 +456,16 @@
         <button id="btnExpMix">Vokal + piyano / gitar / bas (+ davul) WAV</button>
       </div>
     </details>
+    <details class="step" data-key="s10">
+      <summary><b>10</b> Gerçek sesler <span class="chip">kapalı</span></summary>
+      <p class="hint">Freesound (CC0) sesleri için kendi anahtarını gir; yalnızca bu tarayıcıda saklanır, projeye ve dışa aktarmalara girmez.</p>
+      <label>Freesound API anahtarı <input id="inFreesoundKey" type="password" autocomplete="off"></label>
+      <label>Gemini API anahtarı <input id="inGeminiKey" type="password" autocomplete="off"></label>
+      <label>Gemini modeli <input id="inGeminiModel" type="text" list="geminiModels" autocomplete="off"></label>
+      <datalist id="geminiModels"><option value="gemini-2.5-flash"><option value="gemini-2.5-pro"></datalist>
+      <div class="grid2"><button id="btnSoundSave">Kaydet</button><button id="btnSoundClear">Anahtarları sil</button><button id="btnSoundProbe">Bağlantıyı dene</button></div>
+      <p id="soundStorageStatus" role="status"></p><p id="soundProbeStatus" role="status"></p>
+    </details>
   </aside>
 
   <section id="work">

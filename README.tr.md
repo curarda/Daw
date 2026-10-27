@@ -281,3 +281,7 @@ Kaynaktan gelen kontroller salt okunurdur. **Kaynağı düzenle** kaynağa göt�
 **4c → Sürümler**, mevcut paket, matris, bölüm bağları, akorlar/kilitler, katman ayarları ve mikseri A, B, C… (ya da verdiğin adla) saklar. Kayıt sesi, nota düzeltmeleri, zamanlama, tempo ve ölçü ortak kalır. **Geç**, çalarken de aynı konum ve döngüden devam ederek sürüm değiştirir; tek Ctrl+Z önceki aranjeyi ve mikseri geri getirir, Ctrl+Shift+Z geçişi yineler.
 
 **Değiştirildi**, aktif sürümde kaydedilmemiş değişiklik olduğunu gösterir. **Güncelle**, ikinci tıkla kaydın üzerine yazar; **Ad ver** adını değiştirir, **Sil** mevcut aranjeyi koruyarak sürümü kaldırır. Sürümler proje dosyasında saklanır. Ölçü veya sıralı bölüm kimlikleri/uzunlukları değişirse uyumsuzluk açıklanır ve geçiş kapanır; aynı uzunlukları koruyarak bölümleri taşımak uyumludur.
+
+### Gerçek sesler (Freesound) — ayarlar
+
+Bu aşama yalnızca anahtarları saklar ve bağlantıyı dener; henüz ses çalmaz. Anahtarlar yalnızca tarayıcının `miniDaw.soundSettings.v1` localStorage alanında (depolama kapalıysa oturum belleğinde) tutulur; proje ve dışa aktarımlara girmez. Freesound anahtarı yalnızca freesound.org API isteğinin Authorization başlığında gönderilir; CDN önizlemelerine anahtar gönderilmez. Yalnızca CC0 ses kayıtları kabul edilir. Gemini anahtarı saklanır; Gemini isteği yapılmaz.
