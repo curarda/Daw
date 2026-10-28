@@ -94,6 +94,7 @@ function invalidateSoundSelection(keepDecoded = false) {
   if (!keepDecoded) { REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = ''; }
   if (!keepDecoded && REAL.source) { try { REAL.source.stop(); } catch (_) {} REAL.source = null; }
   $('#soundSelectStatus').textContent = '';
+  $('#bassSoundStatus').textContent = '';
 }
 async function decodeSoundPreview(bytes) {
   const ctx = new OfflineAudioContext(1, 1, 44100);
@@ -106,6 +107,20 @@ function renderSoundSelection() {
   $('#btnSoundSelect').disabled = !hasKey;
   $('#btnSoundReroll').disabled = !hasKey || !Object.keys(rs.drums).length;
   $('#soundSelectHint').textContent = hasKey ? (soundSettings.get().geminiKey ? 'Gemini arama ve seçim önerir; hata olursa deterministik seçim kullanılır.' : 'Gemini anahtarı yok: deterministik CC0 seçimi kullanılır.') : 'Önce Freesound API anahtarını kaydet.';
+  $('#btnBassSoundSelect').disabled = !hasKey;
+  $('#btnBassSoundReroll').disabled = !hasKey || !rs.bass.length;
+  $('#btnBassSoundReset').disabled = !rs.bass.length;
+  $('#bassSoundHint').textContent = $('#soundSelectHint').textContent;
+  $('#bassSoundList').replaceChildren();
+  for (const record of rs.bass) {
+    const row = document.createElement('div'), link = document.createElement('a');
+    row.dataset.bassSoundId = record.id;
+    link.href = record.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = record.name;
+    const note = record.needsAnalysis ? 'perde ölçümü gerekli' : ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][record.rootMidi % 12] + (Math.floor(record.rootMidi / 12) - 1) + ' (' + (record.rootCents >= 0 ? '+' : '') + Math.round(record.rootCents) + ' cent), güven: %' + Math.round(record.pitchConfidence * 100);
+    row.append(link, document.createTextNode(' — ' + record.author + ' — ' + note + ' — CC0'));
+    if (record.selector === 'gemini') { const why = document.createElement('p'); why.className = 'hint'; why.textContent = 'Neden: ' + record.why; row.append(why); }
+    $('#bassSoundList').append(row);
+  }
   $('#inRealSounds').checked = rs.enabled;
   $('#chipRealSounds').textContent = rs.enabled ? 'açık' : 'kapalı';
   const signature = JSON.stringify(rs.drums);
@@ -147,6 +162,27 @@ async function runSoundSelection(reroll = false) {
 }
 $('#btnSoundSelect').onclick = () => runSoundSelection();
 $('#btnSoundReroll').onclick = () => runSoundSelection(true);
+async function runBassSoundSelection(reroll = false) {
+  invalidateSoundSelection();
+  const generation = REAL.generation, project = S.proj;
+  const shouldAbort = () => generation !== REAL.generation || project !== S.proj;
+  const deps = REAL.injected || { network: soundNetwork, decode: decodeSoundPreview, cache: soundCache }, settings = soundSettings.get();
+  let vocalLevel = null;
+  if (settings.geminiKey && S.audio?.data?.length) { let square = 0; for (const sample of S.audio.data) square += sample * sample; vocalLevel = Math.sqrt(square / S.audio.data.length); }
+  const summary = C.buildSongSummary(project, { ...S.d, vocalLevel, hasRecordedVocal: !!S.audio });
+  const gemini = settings.geminiKey ? (deps.gemini || ((request) => (deps.network?.geminiGenerate ? deps.network : soundNetwork).geminiGenerate({ ...request, model: settings.geminiModel }))) : null;
+  let result;
+  $('#bassSoundStatus').textContent = 'CC0 bas sesleri seçiliyor…';
+  try { result = await C.selectBassSamples({ ...deps, gemini, summary, exclude: reroll ? project.realSounds.bass.map((r) => r.id) : [], shouldAbort, onProgress: (text) => { if (!shouldAbort()) $('#bassSoundStatus').textContent = text; } }); }
+  catch (_) { result = { ok: false, reason: 'Bas seçilemedi; bağlantını kontrol edip yeniden dene.' }; }
+  if (shouldAbort()) return;
+  if (!result.ok) { $('#bassSoundStatus').textContent = result.reason; return; }
+  editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds({ ...S.proj.realSounds, bass: result.samples }); });
+  $('#bassSoundStatus').textContent = 'Bas sesleri seçildi. ' + (result.status || '');
+}
+$('#btnBassSoundSelect').onclick = () => runBassSoundSelection();
+$('#btnBassSoundReroll').onclick = () => runBassSoundSelection(true);
+$('#btnBassSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds.bass = []; }); };
 $('#inRealSounds').onchange = (e) => { invalidateSoundSelection(true); editRealSounds(() => { S.proj.realSounds.enabled = e.target.checked; }); void applyRealSoundsNow(); };
 $('#btnSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds(null); }); void applyRealSoundsNow(); };
 $('#soundKitList').onclick = async (e) => {
