@@ -1,0 +1,960 @@
+{
+  "schema_version": 1,
+  "songs": [
+    {
+      "schema_version": 1,
+      "artist": "Pink Floyd",
+      "title": "Another Brick in the Wall (Part II)",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/pink-floyd/another-brick-in-the-wall-(part-2) — ton: D Dorian"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas riffi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Hooktheory'deki \"Solo\" bölümü eklenmedi (uzun, tek akorlu bas/solo çizgisi)."
+      ],
+      "sections": [
+        {
+          "label": "Intro / Verse",
+          "type": "verse",
+          "chords": [
+            "Dm",
+            "G",
+            "Dm",
+            "C",
+            "Dm",
+            "Am7",
+            "G"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "D merkez; IV (G majör) Dorian'ın doğal 6'sını (B) taşıyor, ♭VII = C"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "v",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "F",
+            "C",
+            "Dm",
+            "G9",
+            "F",
+            "C",
+            "Dm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "D merkez; ♭III–♭VII–i, IV9 (G9) majör dördüncü derece"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Imagine Dragons",
+      "title": "Radioactive",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/imagine-dragons/radioactive — ton: B Dorian (ses yüksekliği, kapo dönüşümü yok)"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas riffi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Hooktheory'deki \"Bridge\" bölümünde akor verisi yok; eklenmedi.",
+        "Verse başındaki \"no3\" akorları power chord (5) olarak yazıldı."
+      ],
+      "sections": [
+        {
+          "label": "Intro",
+          "type": "intro",
+          "chords": [
+            "Bm",
+            "D",
+            "A",
+            "Bm",
+            "D",
+            "A",
+            "Bm",
+            "D",
+            "A",
+            "Bm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "B merkez; i–♭III–♭VII döngüsü"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "B5",
+            "D5",
+            "A5",
+            "E5",
+            "B5",
+            "D5",
+            "A5",
+            "Bm7",
+            "D",
+            "A",
+            "E",
+            "Bm7",
+            "D",
+            "A",
+            "E7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "B merkez; IV (E majör) Dorian'ın doğal 6'sını (G#) taşıyor"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": "5",
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": "5",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": "5",
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": "5",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": "5",
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": "5",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": "5",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "Bm",
+            "Dsus2",
+            "A",
+            "E",
+            "Bm",
+            "Dsus2",
+            "A",
+            "E",
+            "Bm",
+            "Dsus2",
+            "F#m7",
+            "E",
+            "Bm",
+            "Dsus2"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "B merkez; i–♭III–♭VII–IV, IV majör"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": "sus2",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": "sus2",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": "sus2",
+              "bass": null
+            },
+            {
+              "core": "v",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": "sus2",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Bee Gees",
+      "title": "Stayin' Alive",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/bee-gees/stayin-alive — ton: F Dorian"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas riffi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Pre-Chorus ve Chorus Hooktheory'de tek bölüm; öyle bırakıldı.",
+        "\"Ebsus2\" Hooktheory'deki VII6sus2 (ters çevrim kaldırıldı) okumasıdır, kulakla doğrulanmadı."
+      ],
+      "sections": [
+        {
+          "label": "Intro",
+          "type": "intro",
+          "chords": [
+            "Fm7",
+            "Bb"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "F",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "F merkez; i7–IV (Bb majör) Dorian işareti"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "Fm7",
+            "Eb",
+            "Fm7",
+            "Eb",
+            "Fm7",
+            "Bb"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "F",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "F merkez; i7–♭VII–IV"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Pre-Chorus / Chorus",
+          "type": "chorus",
+          "chords": [
+            "Fm7",
+            "Ebsus2",
+            "Fm",
+            "Cm7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "F",
+              "mode": "dorian",
+              "confidence": 0.85,
+              "reason": "F merkez; i7–♭VII–i–v7"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": "sus2",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "v",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Macklemore & Ryan Lewis",
+      "title": "Thrift Shop",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/macklemore/thrift-shop — ton: G# Dorian (Wikipedia G# minor der; IV = C# majör Dorian'ı gösterir)"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas riffi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Hooktheory'deki \"Instrumental\" bölümü (tek akor, G#m add11) eklenmedi."
+      ],
+      "sections": [
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "G#m",
+            "A#m11",
+            "B",
+            "C#",
+            "D#m",
+            "F#",
+            "G#m"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "G#",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "G# merkez; IV (C# majör) Dorian'ın doğal 6'sını (E#) taşıyor"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": "11",
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "v",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Bridge",
+          "type": "bridge",
+          "chords": [
+            "G#m",
+            "B",
+            "C#",
+            "B",
+            "C#",
+            "G#m",
+            "B",
+            "C#",
+            "B",
+            "C#"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "G#",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "G# merkez; i–♭III–IV döngüsü"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Van Morrison",
+      "title": "Moondance",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Akorlar iki amatör transkripsiyondan: https://www.fsc.org.uk/glee/moondance ve https://www.chordie.com/chord.pere/www.guitartabs.cc/tabs/v/van_morrison/moondance_crd_ver_3.html — ton: A Dorian"
+      },
+      "warnings": [
+        "Hooktheory'de bu şarkı yok; akorlar iki ayrı chord sayfasından (ikisi de Am7–Bm7 vampını doğruluyor).",
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Köprü ve ikinci yarı farklı kaynaklarda farklı (Dm7–G7–Am ↔ Dm7–G–Am7–G13); fsc.org.uk okuması alındı."
+      ],
+      "sections": [
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "Am7",
+            "Bm7",
+            "Am7",
+            "Bm7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "A",
+              "mode": "dorian",
+              "confidence": 0.9,
+              "reason": "A merkez; Am7–Bm7 vampı (i7–ii7), Dorian'ın klasik örneği"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Bridge",
+          "type": "bridge",
+          "chords": [
+            "Dm7",
+            "G7",
+            "Am",
+            "Dm7",
+            "G7",
+            "Am",
+            "Dm7",
+            "G7",
+            "Am",
+            "Dm",
+            "E7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "A",
+              "mode": "dorian",
+              "confidence": 0.5,
+              "reason": "Kullanıcı tablosuna göre A Dorian; ama Dm7/G7/E7 Dorian dışı (F♮, E7 dominantı)"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "iv",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "V",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": [
+            "Dm7, Dm, G7 ve E7 A Dorian dışı (ödünç) akorlar: Dorian'da IV majördür ve doğal 6 F#'tır."
+          ]
+        },
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "Am7",
+            "Bm7",
+            "Am7",
+            "Bm7",
+            "Am7",
+            "Bm7",
+            "Am7",
+            "E7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "A",
+              "mode": "dorian",
+              "confidence": 0.8,
+              "reason": "A merkez; Am7–Bm7 vampı, sonda E7 dominantı"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "V",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": [
+            "Sondaki E7 Dorian dışı (V7 dominantı); Dorian'da v minördür."
+          ]
+        }
+      ]
+    }
+  ]
+}
