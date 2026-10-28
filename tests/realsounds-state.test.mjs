@@ -1,0 +1,36 @@
+import assert from 'node:assert/strict';
+import { loadCore } from './load-core.mjs';
+const { Core: C } = loadCore();
+const r = { id: 1, name: 'kick', author: 'tester', url: 'https://freesound.org/people/tester/sounds/1/', license: 'https://creativecommons.org/publicdomain/zero/1.0/', previewUrl: 'https://cdn.freesound.org/previews/1/1_test.mp3', selector: 'fallback', why: '' };
+assert.deepEqual(C.normalizeSoundRecord(r), r);
+for (const patch of [{ id: 2 }, { id: -1 }, { url: 'https://evil/people/tester/sounds/1/' }, { url: 'https://user@freesound.org/people/tester/sounds/1/' }, { previewUrl: r.previewUrl + '?x=1' }, { previewUrl: r.previewUrl + '#x' }, { previewUrl: 'https://user@cdn.freesound.org/previews/a.mp3' }, { license: 'https://creativecommons.org/licenses/by/4.0/' }]) assert.equal(C.normalizeSoundRecord({ ...r, ...patch }), null);
+assert.equal(C.normalizeSoundRecord({ ...r, license: r.license.replace('https:', 'http:') }).license, r.license);
+const long = C.normalizeSoundRecord({ ...r, name: '\x00' + 'x'.repeat(300), author: 'x'.repeat(300), why: 'x'.repeat(300), selector: 'hostile' });
+assert.equal(long.name.length, 120); assert.equal(long.author.length, 120); assert.equal(long.why.length, 160); assert.equal(long.selector, 'fallback');
+const poisoned = JSON.parse('{"__proto__":{"polluted":true},"constructor":{},"K":' + JSON.stringify(r) + '}');
+const p = C.newProject(), p2 = C.newProject(); p.realSounds.drums.K = r; assert.deepEqual(p2.realSounds, { enabled: false, drums: {}, bass: [] });
+assert.deepEqual(C.normalizeRealSounds({ drums: poisoned }).drums, { K: r }); assert.equal({}.polluted, undefined);
+assert.equal(C.normalizeRealSounds({ bass: Array(6).fill(r) }).bass.length, 3);
+assert.deepEqual(C.migrateMatrix({}).realSounds, p2.realSounds);
+const restore = JSON.parse(JSON.stringify({ ...p, realSounds: { enabled: true, drums: { K: { ...r, license: 'bad' }, evil: r }, bass: [r] } }));
+assert.deepEqual(C.migrateMatrix(restore).realSounds, { enabled: true, drums: {}, bass: [r] });
+for (const model of ['../../x', 'x?key=y', '<script>', 'a'.repeat(65)]) {
+  const st = C.createSoundSettings(null); st.set({ geminiModel: model }); assert.equal(st.get().geminiModel, 'gemini-2.5-flash'); assert.ok(st.status().message);
+}
+const fail = { getItem() { throw Error('blocked'); }, setItem() { throw Error('blocked'); }, removeItem() { throw Error('blocked'); } };
+const st = C.createSoundSettings(fail); st.set({ freesoundKey: 'FS_FAKE_KEY_SENTINEL_1234' }); assert.ok(st.status().storageFailed); assert.ok(!st.maskKey(st.get().freesoundKey).includes(st.get().freesoundKey)); st.clear(); assert.equal(st.get().freesoundKey, '');
+const c = C.createSoundCache({ indexedDB: null, cap: 1100 });
+const r2 = { ...r, id: 2, url: r.url.replace('/1/', '/2/') }, r3 = { ...r, id: 3, url: r.url.replace('/1/', '/3/') };
+await c.put(r, new Uint8Array(200)); await c.put(r2, new Uint8Array(200)); await c.get(1, r.previewUrl); await c.put(r3, new Uint8Array(200));
+assert.equal(await c.get(2, r2.previewUrl), null); assert.ok(await c.get(1, r.previewUrl)); assert.ok((await c.stats()).bytes <= 1100);
+const bad = C.createSoundCache({ backend: { all: async () => [{ key: '1|' + r.previewUrl, record: { ...r, license: 'bad' }, bytes: new Uint8Array(1) }], delete: async () => {} } });
+assert.equal(await bad.get(1, r.previewUrl), null);
+const broken = C.createSoundCache({ backend: { all: async () => { throw Error('blocked'); } } }); assert.equal(await broken.get(1, r.previewUrl), null); assert.equal((await broken.stats()).storageFailed, true);
+const full = C.createSoundCache({ indexedDB: null });
+for (let id = 1; id <= 28; id++) await full.put({ ...r, id, url: r.url.replace('/1/', '/' + id + '/') }, new Uint8Array(1500000));
+assert.ok((await full.stats()).bytes <= 40000000); assert.equal(await full.get(1, r.previewUrl), null); assert.ok(await full.get(28, r.previewUrl));
+let persisted;
+const storage = { getItem: () => persisted || null, setItem: (_, v) => { persisted = v; }, removeItem: () => { persisted = null; } };
+const saved = C.createSoundSettings(storage); saved.set({ freesoundKey: 'FS_FAKE_KEY_SENTINEL_1234', geminiModel: 'gemini-2.5-pro' });
+assert.equal(C.createSoundSettings(storage).get().geminiModel, 'gemini-2.5-pro'); assert.equal(saved.status().storageFailed, false);
+console.log('realsounds-state: ingress, migration/history chain, isolation, settings fallback, LRU, poisoned cache OK');

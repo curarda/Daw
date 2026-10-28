@@ -524,10 +524,10 @@ function drumEvents(loop, g, bars, fromBar = 1) {
   }
   return ev.sort((a, b) => a.q - b.q); // kararlı sıralama: aynı anda K, S, H … sırası korunur
 }
-function renderDrums(events, sr, length, gain = 1) {
+function renderDrums(events, sr, length, gain = 1, preparedBank = null) {
   const out = new Float32Array(length), bank = {};
   for (const e of events) {
-    const s = bank[e.kind] || (bank[e.kind] = synthDrum(e.kind, sr));
+    const s = preparedBank?.[e.kind] || bank[e.kind] || (bank[e.kind] = synthDrum(e.kind, sr));
     const a = Math.round(e.t * sr);
     for (let i = 0; i < s.length && a + i < length; i++) if (a + i >= 0) out[a + i] += s[i] * e.vel * gain;
   }

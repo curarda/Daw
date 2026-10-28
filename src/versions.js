@@ -2,7 +2,7 @@
 (function (root) {
 const C = root.Core, B = C.Bass;
 const clone = (v) => v == null ? v : JSON.parse(JSON.stringify(v));
-const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer'];
+const fields = ['signature', 'sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'bass', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords', 'chordLocks', 'chordPins', 'changeMarks', 'chordChoices', 'mixer', 'realSounds'];
 const globals = ['pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'chordStartBar', 'preserveChords'];
 const mixerKeys = ['vocal', 'piano', 'guitar', 'bass', 'drums', 'pedal', 'touched'];
 const fail = (reason) => ({ ok: false, warnings: [reason] });
@@ -12,6 +12,7 @@ function migrateVersions(proj) {
   const v = proj.versions || {};
   proj.versions = { activeId: v.activeId ?? null, items: Array.isArray(v.items) ? v.items : [] };
   for (const item of proj.versions.items) if (object(item.state)) {
+    item.state.realSounds = C.normalizeRealSounds(item.state.realSounds);
     if (item.state.preserveChords === undefined) item.state.preserveChords = false;
     if (object(item.state.pack) && item.state.pack.selectedId === undefined) item.state.pack.selectedId = null;
   }
@@ -75,6 +76,7 @@ function captureVersionState(proj, d) {
     if (!groups.has(key)) groups.set(key, groups.size);
     return [s.id, groups.get(key)];
   }));
+  state.realSounds = C.normalizeRealSounds(proj.realSounds);
   state.bass = captureBass(proj, d, links);
   for (const key of ['chordLocks', 'chordPins', 'changeMarks']) state[key] = relativeRecords(proj, d, key, links);
   state.chordChoices = d.sections.filter((s) => !links[s.id]).flatMap((s) => C.captureChordChoices(proj, d, s.id));
@@ -122,8 +124,9 @@ function applyVersionState(proj, d, state) {
   const compat = signatureCompat(proj, d, state);
   if (!compat.ok) return compat;
   try {
-    if (fields.some((key) => !Object.prototype.hasOwnProperty.call(state, key)) || Object.keys(state).some((key) => !fields.includes(key))) throw new Error('Sürümde geçersiz düzenleme alanları var.');
+    if (fields.some((key) => key !== 'realSounds' && !Object.prototype.hasOwnProperty.call(state, key)) || Object.keys(state).some((key) => !fields.includes(key))) throw new Error('Sürümde geçersiz düzenleme alanları var.');
     const saved = clone(state), q = clone(proj), warnings = captureWarnings(proj, d);
+    q.realSounds = C.normalizeRealSounds(saved.realSounds);
     if (['sections', 'pack', 'matrix', 'drums', 'piano', 'guitar', 'swing', 'chordOpts', 'mixer'].some((key) => !object(saved[key])) || !object(saved.matrix.rows) || !object(saved.guitar.parts) || !object(saved.guitar.parts._all) || !Number.isInteger(saved.chordStartBar) || saved.chordStartBar < 1) throw new Error('Sürümde geçersiz katman ayarları var.');
     if (Object.keys(saved.mixer).some((key) => !mixerKeys.includes(key))) throw new Error('Sürümde geçersiz mikser alanı var.');
     if (Object.keys(saved.sections).length !== d.sections.length) throw new Error('Sürümün bölüm listesi eksik veya fazla.');
