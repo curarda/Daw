@@ -34,6 +34,7 @@ let soundNetwork = C.createNetwork({ settings: soundSettings });
 const REAL = { generation: 0, decoded: {}, sampleRates: {}, signature: '', source: null, injected: null };
 const soundCache = C.createSoundCache();
 const DRUM_NATIVE = new WeakMap();
+let userBassSamplerActive = () => false;
 const DRUM_REAL = { generation: 0, signature: '', project: null, states: {}, messages: {}, injected: null };
 const realSoundDeps = () => DRUM_REAL.injected || REAL.injected || {};
 const realSoundRuntime = C.createRealSoundsRuntime({
@@ -51,14 +52,14 @@ function cancelRealSoundPreparation() {
   DRUM_REAL.states = {}; DRUM_REAL.messages = {};
 }
 function syncRealSoundGeneration() {
-  const signature = C.realDrumSignature(S.proj);
+  const signature = C.realSoundsSignature(S.proj) + (userBassSamplerActive() ? '|user' : '');
   if (DRUM_REAL.project !== S.proj || DRUM_REAL.signature !== signature) {
     cancelRealSoundPreparation(); DRUM_REAL.project = S.proj; DRUM_REAL.signature = signature;
   }
   return DRUM_REAL.generation;
 }
 async function prepareRealSounds(project, generation) {
-  return realSoundRuntime.prepareRealSounds(project, generation);
+  return realSoundRuntime.prepareRealSounds(project, generation, { skipBass: userBassSamplerActive() });
 }
 async function prepareCurrentRealSounds() {
   const generation = syncRealSoundGeneration(), project = S.proj;
@@ -118,6 +119,7 @@ function renderSoundSelection() {
     link.href = record.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = record.name;
     const note = record.needsAnalysis ? 'perde ölçümü gerekli' : ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'][record.rootMidi % 12] + (Math.floor(record.rootMidi / 12) - 1) + ' (' + (record.rootCents >= 0 ? '+' : '') + Math.round(record.rootCents) + ' cent), güven: %' + Math.round(record.pitchConfidence * 100);
     row.append(link, document.createTextNode(' — ' + record.author + ' — ' + note + ' — CC0'));
+    const state = document.createElement('span'); state.dataset.bassSoundState = record.id; state.textContent = ' — ' + (rs.enabled && !userBassSamplerActive() ? (DRUM_REAL.states['bass:' + record.id] || 'sentetik') : 'sentetik'); row.append(state);
     if (record.selector === 'gemini') { const why = document.createElement('p'); why.className = 'hint'; why.textContent = 'Neden: ' + record.why; row.append(why); }
     $('#bassSoundList').append(row);
   }
@@ -132,7 +134,8 @@ function renderSoundSelection() {
   }).join('') : '';
   for (const [lane, r] of Object.entries(rs.drums)) { const el = $(`[data-sound-why="${lane}"]`); if (el) el.textContent = 'Neden: ' + r.why; }
   $('#soundCredits').textContent = C.soundCredits(S.proj).join('\n');
-  $('#soundAudioStatus').textContent = Object.values(DRUM_REAL.messages).filter(Boolean).join(' ');
+  $('#soundAudioStatus').textContent = Object.entries(DRUM_REAL.messages).filter(([lane]) => !lane.startsWith('bass:')).map(([, message]) => message).filter(Boolean).join(' ');
+  $('#bassAudioStatus').textContent = userBassSamplerActive() ? 'Kendi bas örneklerin etkin: Freesound bas kullanılmıyor' : Object.entries(DRUM_REAL.messages).filter(([lane]) => lane.startsWith('bass:')).map(([, message]) => message).filter(Boolean).join(' ') || (rs.enabled && !rs.bass.length ? 'Kullanılabilir bas örneği yok; sentetik bas kullanılıyor.' : '');
 }
 function editRealSounds(fn) {
   histCommit(); HIST.t = -Infinity;
@@ -179,10 +182,11 @@ async function runBassSoundSelection(reroll = false) {
   if (!result.ok) { $('#bassSoundStatus').textContent = result.reason; return; }
   editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds({ ...S.proj.realSounds, bass: result.samples }); });
   $('#bassSoundStatus').textContent = 'Bas sesleri seçildi. ' + (result.status || '');
+  void applyRealSoundsNow();
 }
 $('#btnBassSoundSelect').onclick = () => runBassSoundSelection();
 $('#btnBassSoundReroll').onclick = () => runBassSoundSelection(true);
-$('#btnBassSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds.bass = []; }); };
+$('#btnBassSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds.bass = []; }); void applyRealSoundsNow(); };
 $('#inRealSounds').onchange = (e) => { invalidateSoundSelection(true); editRealSounds(() => { S.proj.realSounds.enabled = e.target.checked; }); void applyRealSoundsNow(); };
 $('#btnSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds(null); }); void applyRealSoundsNow(); };
 $('#soundKitList').onclick = async (e) => {
@@ -756,7 +760,7 @@ async function renderStems(sr, lenSec) {
     return {
       vocal, piano,
       guitar: ins === 'piano' ? null : guitarTrack(sr).data,
-      bass: S.proj.bass.enabled ? await renderBassOffline(sr, n) : null,
+      bass: S.proj.bass.enabled ? await renderBassOffline(sr, n, snapshot) : null,
       drums: drumEvents ? C.renderDrums(drumEvents, sr, n, 1, drumBank) : null,
     };
   } finally { snapshot.release(); }
@@ -1361,7 +1365,7 @@ const Player = {
     if (!S.d) return;
     try { await this.ensure(); } catch (e) { status(e.message, 'err'); return; }
     if (generation !== this.generation) return;
-    const deferDrumStop = S.proj.realSounds.enabled && Object.keys(S.proj.realSounds.drums).length;
+    const deferDrumStop = S.proj.realSounds.enabled && (Object.keys(S.proj.realSounds.drums).length || S.proj.realSounds.bass.length);
     if (!deferDrumStop) this.stop(true, true);
     REAL.decoded = {}; REAL.sampleRates = {}; REAL.signature = '';
     const soundGeneration = syncRealSoundGeneration();
@@ -1398,7 +1402,7 @@ const Player = {
     if (region && !pv) for (let k = 0; k < Math.min(200, Math.ceil(600 / len)); k++) rounds.push({ lo: region.from, hi: region.to, tau0: from + (region.to - from) + k * len });
     const pev = ins === 'guitar' ? [] : pianoEventsAll(), dev = drumEventsAll(), mev = melodyEvents();
     if (window.__dawAPI.onScheduledEvents) window.__dawAPI.onScheduledEvents({ piano: pev, drums: dev, guitar: gtr ? gtr.events : [] });
-    if (S.proj.bass.enabled && !opts.noBass && S.proj.bass.bars.some((b) => b.notes.length)) scheduleBassPlay(T, rounds, g, bCtx());
+    if (S.proj.bass.enabled && !opts.noBass && S.proj.bass.bars.some((b) => b.notes.length)) scheduleBassPlay(T, rounds, g, bCtx(), drumSnapshot);
     const poInst = C.pianoOpts(S.proj.piano).inst;
     // ses saati ağır hazırlıktan SONRA alınır: tap kaydı (onStart) sayımı bu ana göre ölçer
     const now = Tone.now() + 0.12 + (opts.countIn || 0);
@@ -1522,7 +1526,7 @@ const Player = {
     if (loop) this.gAud = src; else { (this.gSrcs = this.gSrcs || []).push(src); this.gSrc = src; }
   },
   stopBass() {
-    if (this.bassVoices) { const t = Tone.now(); for (const v of this.bassVoices) v.inst.panic(t); this.bassVoices = null; }
+    if (this.bassVoices) { const t = Tone.now(); for (const v of this.bassVoices) { v.inst.panic(t); if (v.inst.source === 'freesound') { v.inst.samples = []; v.inst.cur = null; v.inst.dispose(); } } this.bassVoices = null; }
   },
   stopGuitar() {
     for (const src of [...(this.gSrcs || []), this.gAud]) if (src) { try { src.stop(); } catch (e) { /* zaten bitti */ } }
