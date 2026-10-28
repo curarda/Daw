@@ -151,6 +151,7 @@ class BassSynth {
 class BassSampler {
   constructor(ctx, o = {}) {
     this.ctx = ctx; this.samples = []; this.releases = []; this.rr = 0; this.cur = null; this.name = 'Sampler';
+    this.retainSample = o.retainSample; this.sampleReleases = new Set();
     this.output = ctx.createGain(); this.output.gain.value = o.volume ?? 0.8;
     this.bus = ctx.createGain(); this.bus.connect(this.output);
   }
@@ -171,7 +172,10 @@ class BassSampler {
     const src = c.createBufferSource(), g = c.createGain();
     src.buffer = s.buffer; src.playbackRate.value = Math.pow(2, (midi - s.midi) / 12);
     g.gain.value = Math.pow(clamp(velocity, 1, 127) / 127, 1.2) * (o.ghost ? 0.3 : 1);
-    src.connect(g); g.connect(this.bus); src.start(time);
+    src.connect(g); g.connect(this.bus);
+    const release = this.retainSample?.();
+    if (release) { this.sampleReleases.add(release); src.onended = () => { src.disconnect(); g.disconnect(); release(); this.sampleReleases.delete(release); }; }
+    try { src.start(time); } catch (e) { release?.(); this.sampleReleases.delete(release); throw e; }
     this.cur = { src, g, endTime: Infinity, midi };
   }
   noteOff(time) {
@@ -181,6 +185,7 @@ class BassSampler {
     v.endTime = time + 0.15;
     if (this.releases.length) { const r = this.releases[this.rr % this.releases.length], rs = this.ctx.createBufferSource(), rg = this.ctx.createGain(); rs.buffer = r.buffer; rs.playbackRate.value = Math.pow(2, (v.midi - r.midi) / 12); rg.gain.value = 0.25; rs.connect(rg); rg.connect(this.bus); rs.start(time); }
   }
+  releaseSamples() { for (const release of this.sampleReleases) release(); this.sampleReleases.clear(); }
   panic(time) { if (this.cur) { try { this.cur.src.stop(time + 0.02); } catch (e) { /* */ } this.cur = null; } }
   dispose() { try { this.output.disconnect(); } catch (e) { /* */ } }
 }

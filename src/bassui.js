@@ -40,6 +40,7 @@ function bsDo(fn, msg) {
   bsAfter(msg);
 }
 function bsAfter(msg) {
+  renderSoundSelection();
   queueVersions();
   const t = bTrack(), ctx = bCtx();
   if (ctx) { Bs.applyTies(t, ctx); if (Object.keys(C.resolveLinks(S.proj, S.d)).length) Bs.bassSync(t, ctx); }
@@ -57,12 +58,16 @@ function clearBassSel() { if (BS.sel || BS.note) { BS.sel = null; BS.anchor = nu
 const selBars = () => { if (!BS.sel) return []; const a = []; for (let i = BS.sel[0]; i <= BS.sel[1]; i++) a.push(i); return a; };
 
 // ---- ses örnekleri ve oynatma
-function makeBassVoices(tr, ctx, connect) {
+function makeBassVoices(tr, ctx, connect, realSamples = [], retainRealSamples) {
   const follow = tr.instrumentType === 'synth';
   const mk = (preset, vol) => { const s = new Bs.BassSynth(ctx, { preset, volume: vol, follow }); connect(s.output); return s; };
   let main;
+  const source = C.bassSampleSource(tr, BS.bank.samples, realSamples);
   if (tr.useSampler && BS.bank.samples.length) { const sm = new Bs.BassSampler(ctx, { volume: tr.volume }); sm.load(BS.bank.samples, BS.bank.releases); connect(sm.output); main = sm; }
-  else main = mk(tr.instrumentPreset, tr.volume);
+  else if (source === 'freesound') {
+    try { const sm = new Bs.BassSampler(ctx, { volume: tr.volume, retainSample: retainRealSamples }); sm.load(realSamples); sm.source = 'freesound'; sm.name = 'Freesound bas'; connect(sm.output); main = sm; }
+    catch (_) { $('#bassAudioStatus').textContent = 'Bas örneği hazırlanamadı; sentetik bas kullanılıyor.'; main = mk(tr.instrumentPreset, tr.volume); }
+  } else main = mk(tr.instrumentPreset, tr.volume);
   const voices = [{ inst: main, octave: 0, below: null }];
   if (tr.layer && tr.layer.preset && tr.layer.preset !== 'none') voices.push({ inst: mk(tr.layer.preset, tr.volume * 0.9), octave: tr.layer.octaveOffset || 0, below: null });
   if (tr.doubleLow) voices.push({ inst: mk(tr.instrumentPreset, tr.volume * 0.3), octave: 12, below: 31 }); // 31'in altı: bir oktav yukarısı %30 seviyede ikilenir
@@ -82,11 +87,11 @@ function applyAutomationAt(voices, p, time, ramp) {
   }
 }
 // gerçek zamanlı: Tone.Transport.schedule ile (diğer katmanlarla aynı ileri bakışlı zamanlayıcı)
-function scheduleBassPlay(T, rounds, g, ctx) {
+function scheduleBassPlay(T, rounds, g, ctx, snapshot) {
   const tr = bTrack();
   Player.stopBass();
   const rc = Tone.getContext().rawContext;
-  const voices = makeBassVoices(tr, rc, (n) => Tone.connect(n, Player.bassCh));
+  const voices = makeBassVoices(tr, rc, (n) => Tone.connect(n, Player.bassCh), snapshot?.bassSamples(rc) || [], snapshot?.retain);
   Player.bassVoices = voices;
   const ev = arrangedEventsAll(['bass']).bass, au = bassAutomation(tr, ctx, g);
   if (window.__dawAPI.onScheduledEvents) window.__dawAPI.onScheduledEvents({ bass: ev });
@@ -111,23 +116,37 @@ function scheduleBassPlay(T, rounds, g, ctx) {
 }
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 // çevrimdışı (mix WAV): aynı sesler OfflineAudioContext içinde, olaylar mutlak zamanda
-async function renderBassOffline(sr, n) {
+async function renderBassOffline(sr, n, suppliedSnapshot) {
   const tr = bTrack(), ctx = bCtx(), g = S.d.g;
-  const oc = new OfflineAudioContext(1, n, sr);
-  const voices = makeBassVoices(tr, oc, (node) => node.connect(oc.destination));
-  for (const e of arrangedEventsAll(['bass']).bass) bassHit(voices, e, e.t);
-  for (const p of bassAutomation(tr, ctx, g)) applyAutomationAt(voices, p, p.t, g.barSec);
-  if (tr.pump > 0 && tr.instrumentType === 'synth') for (let t = 0; t < S.d.bars * g.barSec; t += g.pulseSec) voices.forEach((x) => x.inst.pumpAt(t, tr.pump, 0.25 * g.pulseSec));
-  BS.lastOffline = voices;
-  const buf = await oc.startRendering();
-  return buf.getChannelData(0);
+  const events = arrangedEventsAll(['bass']).bass, automation = bassAutomation(tr, ctx, g);
+  const snapshot = suppliedSnapshot || await prepareCurrentRealSounds();
+  let voices;
+  try {
+    const oc = new OfflineAudioContext(1, n, sr);
+    voices = makeBassVoices(tr, oc, (node) => node.connect(oc.destination), snapshot.bassSamples(oc), snapshot.retain);
+    for (const e of events) bassHit(voices, e, e.t);
+    for (const p of automation) applyAutomationAt(voices, p, p.t, g.barSec);
+    if (tr.pump > 0 && tr.instrumentType === 'synth') for (let t = 0; t < S.d.bars * g.barSec; t += g.pulseSec) voices.forEach((x) => x.inst.pumpAt(t, tr.pump, 0.25 * g.pulseSec));
+    BS.lastOffline = voices;
+    const buf = await oc.startRendering();
+    return buf.getChannelData(0);
+  } finally {
+    for (const v of voices || []) if (v.inst.source === 'freesound') { v.inst.releaseSamples(); v.inst.samples = []; v.inst.cur = null; v.inst.dispose(); }
+    if (!suppliedSnapshot) snapshot.release();
+  }
 }
 async function bassPreviewNote(midi, vel) {
+  const project = S.proj;
   try { await Player.ensure(); } catch (e) { return; }
-  const rc = Tone.getContext().rawContext, tr = bTrack();
-  const v = makeBassVoices(Object.assign({}, tr, { layer: null, doubleLow: false }), rc, (n) => Tone.connect(n, Player.bassCh));
-  const t = Tone.now() + 0.02;
-  v[0].inst.noteOn(midi, vel || 96, t, {}); v[0].inst.noteOff(t + 0.35);
+  if (project !== S.proj) return;
+  const rc = Tone.getContext().rawContext, tr = bTrack(), generation = syncRealSoundGeneration();
+  const snapshot = await prepareRealSounds(project, generation);
+  if (snapshot.stale || project !== S.proj || generation !== DRUM_REAL.generation) { snapshot.release(); return; }
+  try {
+    const v = makeBassVoices(Object.assign({}, tr, { layer: null, doubleLow: false }), rc, (n) => Tone.connect(n, Player.bassCh), snapshot.bassSamples(rc), snapshot.retain);
+    const t = Tone.now() + 0.02;
+    v[0].inst.noteOn(midi, vel || 96, t, {}); v[0].inst.noteOff(t + 0.35);
+  } finally { snapshot.release(); }
 }
 
 // ---- demo şarkı: 16 ölçülük yerleşik ilerleme, ses kaydı gerekmez
@@ -873,6 +892,7 @@ $('#bassPanel').addEventListener('input', (e) => {
 // ---------------------------------------------------------------- ÖRNEKÇİ (kullanıcının kendi örnekleri; bellekte, projeyle kaydedilmez)
 // dosya adından perde: "E1.wav", "bass_A#2_rr1.wav"; adında "rel" geçen = bırakma örneği; aynı perdeden birden çok dosya = dönüşümlü (round-robin)
 BS.bank = { samples: [], releases: [], names: [] };
+userBassSamplerActive = () => !!bTrack()?.useSampler && !!BS.bank.samples.length;
 function parseSampleName(name) {
   const base = name.replace(/\.[^.]+$/, ''), rel = /rel/i.test(base);
   const m = /(?:^|[^A-Za-z])([A-Ga-g])([#b]?)(-?\d)(?!\d)/.exec(base);

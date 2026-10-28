@@ -23,7 +23,7 @@ function rankCandidates(spec, candidates) {
   }).map((candidate) => ({ candidate, score: spec.preferredTags.reduce((n, tag) => n + (candidate.tags.includes(tag) ? 4 : 0) + (candidate.record.name.toLowerCase().split(/[^a-z0-9-]+/).includes(tag) ? 2 : 0), 0) }))
     .sort((a, b) => b.score - a.score || a.candidate.duration - b.candidate.duration || a.candidate.record.id - b.candidate.record.id).map((v) => v.candidate);
 }
-function validateDecoded(pcm, sampleRate) {
+function validateDecoded(pcm, sampleRate, maxSeconds = 2) {
   const fail = (reason) => ({ ok: false, reason, mono: null, sampleRate });
   const channels = Array.isArray(pcm) ? pcm : pcm?.channels;
   if (!Number.isSafeInteger(sampleRate) || sampleRate <= 0 || !Array.isArray(channels) || !channels.length || !channels[0]?.length) return fail('Ses verisi geçersiz.');
@@ -33,7 +33,7 @@ function validateDecoded(pcm, sampleRate) {
   for (const channel of channels) for (let i = 0; i < length; i++) if (!Number.isFinite(channel[i])) return fail('Ses sonlu olmayan örnekler içeriyor.');
   const mixed = (i) => channels.reduce((sum, c) => sum + c[i] / channels.length, 0);
   let start = 0; while (start < length && Math.abs(mixed(start)) < SOUND_TRIM_THRESHOLD) start++;
-  const end = Math.min(length, start + sampleRate * 2);
+  const end = Math.min(length, start + Math.floor(sampleRate * Math.max(.01, Math.min(4, maxSeconds))));
   if (start >= end) return fail('Ses sessiz.');
   let sum = 0, square = 0, min = Infinity, max = -Infinity;
   for (let i = start; i < end; i++) { const v = mixed(i); if (!Number.isFinite(v)) return fail('Ses geçersiz.'); sum += v; square += v * v; min = Math.min(min, v); max = Math.max(max, v); }

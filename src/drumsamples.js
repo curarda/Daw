@@ -27,10 +27,24 @@ function normalizeDrumSample(mono, lane) {
   return out;
 }
 function realDrumSignature(project) { const rs = C.normalizeRealSounds(project?.realSounds); return JSON.stringify([rs.enabled, Object.entries(rs.drums).map(([k, r]) => [k, r.id, r.previewUrl])]); }
+const BASS_SAMPLE_RMS = .12, BASS_SAMPLE_PEAK = .8;
+function normalizeBassSample(mono) {
+  const rms = drumRms(mono); let peak = 0;
+  for (const value of mono) peak = Math.max(peak, Math.abs(value));
+  const gain = Math.min(rms ? BASS_SAMPLE_RMS / rms : 0, peak ? BASS_SAMPLE_PEAK / peak : 0);
+  return Float32Array.from(mono, (v) => Math.max(-BASS_SAMPLE_PEAK, Math.min(BASS_SAMPLE_PEAK, v * gain)));
+}
+function bassSampleSource(track, userSamples, realSamples) {
+  return track?.useSampler && userSamples?.length ? 'user' : realSamples?.length ? 'freesound' : 'synth';
+}
+function realSoundsSignature(project) {
+  const rs = C.normalizeRealSounds(project?.realSounds);
+  return JSON.stringify([realDrumSignature(project), rs.bass.map((r) => [r.id, r.previewUrl, r.rootMidi, r.rootCents, r.pitchConfidence, r.detectorVersion])]);
+}
 function createRealSoundsRuntime({ network, cache, decode, hasKey = () => true, onStatus = () => {}, limit = C.SOUND_MEMORY_LIMIT } = {}) {
   let generation = -1, signature = '', bytes = 0, clock = 0;
   const assets = new Map(), pending = new Map();
-  function remove(key) { const a = assets.get(key); if (a) { bytes -= a.data.byteLength; assets.delete(key); } }
+  function remove(key) { const a = assets.get(key); if (a) { bytes -= a.size; assets.delete(key); } }
   function invalidate(next) {
     generation = next; signature = '';
     for (const [key, a] of assets) { a.obsolete = true; if (!a.refs) remove(key); }
@@ -39,23 +53,26 @@ function createRealSoundsRuntime({ network, cache, decode, hasKey = () => true, 
     for (const [key, a] of [...assets].filter(([, a]) => !a.refs).sort((a, b) => a[1].used - b[1].used)) { if (bytes + n <= limit) break; remove(key); }
     return bytes + n <= limit;
   }
-  function store(key, data) { const a = { key, data, refs: 0, used: ++clock, obsolete: false }; assets.set(key, a); bytes += data.byteLength; return a; }
-  const idle = (stale = false) => Object.freeze({ stale, bank: () => empty, release() {} });
-  async function prepareRealSounds(project, nextGeneration) {
+  function store(key, data, size = data.byteLength) { const a = { key, data, size, refs: 0, used: ++clock, obsolete: false }; assets.set(key, a); bytes += size; return a; }
+  const idle = (stale = false) => Object.freeze({ stale, bank: () => empty, bassBank: () => Object.freeze([]), bassSamples: () => Object.freeze([]), retain: () => () => {}, release() {} });
+  async function prepareRealSounds(project, nextGeneration, { skipBass = false } = {}) {
     if (nextGeneration < generation) return idle(true);
-    const sig = realDrumSignature(project);
+    const sig = realSoundsSignature(project) + (skipBass ? '|user' : '');
     if (generation !== nextGeneration || signature !== sig) { invalidate(nextGeneration); signature = sig; }
     const current = () => generation === nextGeneration && signature === sig;
     const rs = C.normalizeRealSounds(project?.realSounds);
-    if (!rs.enabled || !Object.keys(rs.drums).length) return idle();
-    const held = new Set(), canonical = {}, banks = new Map(); let released = false;
+    if (!rs.enabled || (!Object.keys(rs.drums).length && (!rs.bass.length || skipBass))) return idle();
+    const held = new Set(), canonical = {}, bassCanonical = {}, banks = new Map(), bassBanks = new Map(), nativeBanks = new Map(); let released = false, owners = 1, ownerReleased = false;
     function pin(a) { if (!held.has(a)) { a.refs++; held.add(a); } a.used = ++clock; }
-    function release() { if (released) return; released = true; banks.clear(); for (const a of held) { a.refs--; if (!a.refs && a.obsolete && assets.get(a.key) === a) remove(a.key); } held.clear(); for (const lane of Object.keys(canonical)) delete canonical[lane]; }
+    function drop() { if (released || --owners > 0) return; released = true; banks.clear(); bassBanks.clear(); nativeBanks.clear(); for (const a of held) { a.refs--; if (!a.refs && a.obsolete && assets.get(a.key) === a) remove(a.key); } held.clear(); for (const lane of Object.keys(canonical)) delete canonical[lane]; for (const id of Object.keys(bassCanonical)) delete bassCanonical[id]; }
+    function release() { if (!ownerReleased) { ownerReleased = true; drop(); } }
+    function retain() { if (released) return () => {}; owners++; let done = false; return () => { if (!done) { done = true; drop(); } }; }
     const notify = (lane, state, message = '') => { if (current()) onStatus({ lane, state, message }); };
-    for (const [lane, record] of Object.entries(rs.drums)) {
+    for (const [lane, record] of [...Object.entries(rs.drums), ...(skipBass ? [] : rs.bass.map((r) => ['bass:' + r.id, r]))]) {
+      const isBass = lane.startsWith('bass:');
       if (!current()) { release(); return idle(true); }
       notify(lane, 'hazırlanıyor');
-      const key = 'mono|' + nextGeneration + '|' + sig + '|' + record.id + '|' + record.previewUrl;
+      const key = (isBass ? 'bass-mono|' : 'mono|') + nextGeneration + '|' + sig + '|' + record.id + '|' + record.previewUrl;
       let a = assets.get(key);
       try {
         if (!a || a.obsolete) {
@@ -78,13 +95,24 @@ function createRealSoundsRuntime({ network, cache, decode, hasKey = () => true, 
               if (!current()) return null;
               let pcm = await decode(data);
               if (!current()) return null;
-              const valid = C.validateDecoded(pcm, pcm?.sampleRate); pcm = null;
+              const valid = C.validateDecoded(pcm, pcm?.sampleRate, isBass ? 4 : 2); pcm = null;
               if (!valid.ok) throw new Error('decode');
+              let measured = record;
+              if (isBass && record.needsAnalysis) {
+                const pitch = await C.analyzeBassSample([valid.mono], valid.sampleRate);
+                if (!current()) return null;
+                if (!pitch.ok) throw new Error('analysis');
+                measured = C.normalizeBassSoundRecord({ ...record, ...pitch });
+              }
+              if (isBass && measured.needsAnalysis) throw new Error('analysis');
               const n = Math.max(1, Math.round(valid.mono.length * DRUM_CANONICAL_RATE / valid.sampleRate)) * 4;
               if (!room(n)) throw new Error('memory');
-              const mono = normalizeDrumSample(resampleDrum(valid.mono, valid.sampleRate, DRUM_CANONICAL_RATE), lane);
+              const resampled = resampleDrum(valid.mono, valid.sampleRate, DRUM_CANONICAL_RATE);
+              const mono = isBass ? normalizeBassSample(resampled) : normalizeDrumSample(resampled, lane);
               if (!current()) return null;
-              return store(key, mono);
+              const asset = store(key, mono);
+              if (isBass) asset.midi = measured.rootMidi + measured.rootCents / 100;
+              return asset;
             })().finally(() => pending.delete(pendingKey));
             pending.set(pendingKey, task);
           }
@@ -92,10 +120,11 @@ function createRealSoundsRuntime({ network, cache, decode, hasKey = () => true, 
         }
         if (!current()) { release(); return idle(true); }
         if (!a) continue;
-        pin(a); canonical[lane] = a;
+        pin(a); if (isBass) bassCanonical[record.id] = a; else canonical[lane] = a;
         notify(lane, 'gerçek');
       } catch (e) {
-        const message = e instanceof C.NetError ? (e.code === 'missing' ? 'Ses önbellekte yok. ' : '') + e.message + ' Sentetik davul kullanılıyor.' : 'Ses çözülemedi veya bellek sınırı aşıldı; sentetik davul kullanılıyor.';
+        const fallback = isBass ? 'Sentetik bas kullanılıyor.' : 'Sentetik davul kullanılıyor.';
+        const message = e instanceof C.NetError ? (e.code === 'missing' ? 'Ses önbellekte yok. ' : '') + e.message + ' ' + fallback : (e?.message === 'analysis' ? 'Bas perde analizi başarısız. ' : 'Ses çözülemedi veya bellek sınırı aşıldı. ') + fallback;
         notify(lane, 'hata', lane + ': ' + message);
       }
     }
@@ -117,7 +146,42 @@ function createRealSoundsRuntime({ network, cache, decode, hasKey = () => true, 
           pin(prepared); bank[lane] = prepared.data;
         }
         const frozen = Object.freeze(bank); banks.set(rate, frozen); return frozen;
-      }, release
+      },
+      bassBank(rate) {
+        if (released || !Number.isSafeInteger(rate) || rate <= 0) return Object.freeze([]);
+        if (bassBanks.has(rate)) return bassBanks.get(rate);
+        const samples = [];
+        for (const [id, a] of Object.entries(bassCanonical)) {
+          const key = 'bass-bank|' + nextGeneration + '|' + sig + '|' + rate + '|' + id;
+          let prepared = assets.get(key);
+          if (!prepared) {
+            const n = Math.max(1, Math.round(a.data.length * rate / DRUM_CANONICAL_RATE)) * 4;
+            if (!room(n)) { notify('bass:' + id, 'hata', 'Bas: Bellek sınırı; sentetik bas kullanılıyor.'); continue; }
+            prepared = store(key, resampleDrum(a.data, DRUM_CANONICAL_RATE, rate)); prepared.obsolete = !current();
+          }
+          pin(prepared); samples.push(Object.freeze({ id: Number(id), midi: a.midi, data: prepared.data }));
+        }
+        const frozen = Object.freeze(samples); bassBanks.set(rate, frozen); return frozen;
+      },
+      bassSamples(ctx) {
+        const rate = ctx.sampleRate;
+        if (released) return Object.freeze([]);
+        if (nativeBanks.has(rate)) return nativeBanks.get(rate);
+        const samples = [];
+        for (const sample of this.bassBank(rate)) {
+          const key = 'bass-audio|' + nextGeneration + '|' + sig + '|' + rate + '|' + sample.id;
+          let native = assets.get(key);
+          try {
+            if (!native) {
+              if (!room(sample.data.byteLength)) throw new Error('memory');
+              const buffer = ctx.createBuffer(1, sample.data.length, rate); buffer.copyToChannel(sample.data, 0);
+              native = store(key, buffer, sample.data.byteLength); native.obsolete = !current();
+            }
+            pin(native); samples.push(Object.freeze({ midi: sample.midi, buffer: native.data }));
+          } catch (_) { notify('bass:' + sample.id, 'hata', 'Bas tamponu hazırlanamadı veya bellek sınırı aşıldı; sentetik bas kullanılıyor.'); }
+        }
+        const frozen = Object.freeze(samples); nativeBanks.set(rate, frozen); return frozen;
+      }, retain, release
     });
   }
   function reserve(n) {
@@ -127,5 +191,5 @@ function createRealSoundsRuntime({ network, cache, decode, hasKey = () => true, 
   }
   return { prepareRealSounds, invalidate, reserve, stats: () => ({ bytes, limit, entries: assets.size, generation }) };
 }
-Object.assign(C, { DRUM_CANONICAL_RATE, resampleDrum, normalizeDrumSample, realDrumSignature, createRealSoundsRuntime });
+Object.assign(C, { DRUM_CANONICAL_RATE, BASS_SAMPLE_RMS, BASS_SAMPLE_PEAK, normalizeBassSample, bassSampleSource, realSoundsSignature, resampleDrum, normalizeDrumSample, realDrumSignature, createRealSoundsRuntime });
 })(typeof window !== 'undefined' ? window : globalThis);
