@@ -44,7 +44,7 @@ function validateDecoded(pcm, sampleRate) {
   return { ok: true, reason: '', mono, sampleRate };
 }
 const searches = new WeakMap();
-async function selectDrumKit({ network, decode, cache, shouldAbort = () => false, onProgress = () => {} }) {
+async function selectDrumKit({ network, decode, cache, shouldAbort = () => false, onProgress = () => {}, orderCandidates = (spec, candidates) => candidates }) {
   const kit = {}, decoded = {}, sampleRates = {}, skipped = [], chosen = new Map(); let resident = 0;
   const fail = (reason) => ({ ok: false, reason, kit: null });
   const cancelled = () => shouldAbort();
@@ -64,7 +64,7 @@ async function selectDrumKit({ network, decode, cache, shouldAbort = () => false
         searchCache.set(spec.kind, { time: Date.now(), candidates });
       }
     } catch (_) { if (spec.required) return fail(spec.kind + ': CC0 ses aranamadı; bağlantını ve anahtarını kontrol et.'); }
-    for (const candidate of rankCandidates(spec, candidates).slice(0, 5)) {
+    for (const candidate of orderCandidates(spec, rankCandidates(spec, candidates)).slice(0, 5)) {
       if (cancelled()) return fail('Seçim iptal edildi.');
       const record = C.normalizeSoundRecord({ ...candidate.record, selector: 'fallback', why: '' });
       if (!record) continue;

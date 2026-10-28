@@ -104,7 +104,8 @@ function renderSoundSelection() {
   syncRealSoundGeneration();
   const rs = C.normalizeRealSounds(S.proj.realSounds), hasKey = !!soundSettings.get().freesoundKey;
   $('#btnSoundSelect').disabled = !hasKey;
-  $('#soundSelectHint').textContent = hasKey ? 'CC0 tek vuruşlar sırayla aranır ve doğrulanır.' : 'Önce Freesound API anahtarını kaydet.';
+  $('#btnSoundReroll').disabled = !hasKey || !Object.keys(rs.drums).length;
+  $('#soundSelectHint').textContent = hasKey ? (soundSettings.get().geminiKey ? 'Gemini arama ve seçim önerir; hata olursa deterministik seçim kullanılır.' : 'Gemini anahtarı yok: deterministik CC0 seçimi kullanılır.') : 'Önce Freesound API anahtarını kaydet.';
   $('#inRealSounds').checked = rs.enabled;
   $('#chipRealSounds').textContent = rs.enabled ? 'açık' : 'kapalı';
   const signature = JSON.stringify(rs.drums);
@@ -112,8 +113,9 @@ function renderSoundSelection() {
   $('#soundKitList').innerHTML = Object.keys(rs.drums).length ? C.DRUM_KINDS.map((lane) => {
     const r = rs.drums[lane];
     if (!r) return `<div data-sound-lane="${lane}"><b>${lane}</b> <span data-sound-state="${lane}">sentetik</span></div>`;
-    return `<div data-sound-lane="${lane}"><b>${lane}</b> <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a> — ${esc(r.author)} — CC0 <span data-sound-state="${lane}">${rs.enabled ? (DRUM_REAL.states[lane] || 'sentetik') : 'sentetik'}</span> <button data-sound-preview="${lane}" ${REAL.decoded[lane] ? '' : 'disabled'} aria-label="${lane} önizle">▶</button></div>`;
+    return `<div data-sound-lane="${lane}"><b>${lane}</b> <a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">${esc(r.name)}</a> — ${esc(r.author)} — CC0 <span data-sound-state="${lane}">${rs.enabled ? (DRUM_REAL.states[lane] || 'sentetik') : 'sentetik'}</span> <button data-sound-preview="${lane}" ${REAL.decoded[lane] ? '' : 'disabled'} aria-label="${lane} önizle">▶</button>${r.selector === 'gemini' ? `<p class="hint" data-sound-why="${lane}"></p>` : ''}</div>`;
   }).join('') : '';
+  for (const [lane, r] of Object.entries(rs.drums)) { const el = $(`[data-sound-why="${lane}"]`); if (el) el.textContent = 'Neden: ' + r.why; }
   $('#soundCredits').textContent = C.soundCredits(S.proj).join('\n');
   $('#soundAudioStatus').textContent = Object.values(DRUM_REAL.messages).filter(Boolean).join(' ');
 }
@@ -121,23 +123,30 @@ function editRealSounds(fn) {
   histCommit(); HIST.t = -Infinity;
   fn(); refresh(); HIST.t = -Infinity;
 }
-$('#btnSoundSelect').onclick = async () => {
+async function runSoundSelection(reroll = false) {
   invalidateSoundSelection();
   const generation = REAL.generation, project = S.proj;
   const shouldAbort = () => generation !== REAL.generation || project !== S.proj;
   const deps = REAL.injected || { network: soundNetwork, decode: decodeSoundPreview, cache: soundCache };
   $('#soundSelectStatus').textContent = 'CC0 davul seti seçiliyor…';
   let result;
-  try { result = await C.selectDrumKit({ ...deps, shouldAbort, onProgress: (text) => { if (!shouldAbort()) $('#soundSelectStatus').textContent = text; } }); }
+  const settings = soundSettings.get();
+  let vocalLevel = null;
+  if (settings.geminiKey && S.audio?.data?.length) { let square = 0; for (const sample of S.audio.data) square += sample * sample; vocalLevel = Math.sqrt(square / S.audio.data.length); }
+  const summary = C.buildSongSummary(S.proj, { ...S.d, vocalLevel, hasRecordedVocal: !!S.audio });
+  const gemini = settings.geminiKey ? (deps.gemini || ((request) => (deps.network?.geminiGenerate ? deps.network : soundNetwork).geminiGenerate({ ...request, model: settings.geminiModel }))) : null;
+  try { result = await C.selectDrumKitWithGemini({ ...deps, gemini, summary, exclude: reroll ? Object.fromEntries(Object.entries(S.proj.realSounds.drums).map(([lane, r]) => [lane, r.id])) : undefined, shouldAbort, onProgress: (text) => { if (!shouldAbort()) $('#soundSelectStatus').textContent = text; } }); }
   catch (_) { result = { ok: false, reason: 'Ses seçilemedi; bağlantını kontrol edip yeniden dene.' }; }
   if (shouldAbort()) return;
   if (!result.ok) { $('#soundSelectStatus').textContent = result.reason; return; }
   editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds({ ...S.proj.realSounds, enabled: true, drums: result.kit }); });
   REAL.decoded = result.decoded; REAL.sampleRates = result.sampleRates; REAL.signature = JSON.stringify(S.proj.realSounds.drums);
   renderSoundSelection();
-  $('#soundSelectStatus').textContent = 'Davul seti seçildi.';
+  $('#soundSelectStatus').textContent = 'Davul seti seçildi. ' + (result.status || '');
   if (Player.playing) void applyRealSoundsNow();
-};
+}
+$('#btnSoundSelect').onclick = () => runSoundSelection();
+$('#btnSoundReroll').onclick = () => runSoundSelection(true);
 $('#inRealSounds').onchange = (e) => { invalidateSoundSelection(true); editRealSounds(() => { S.proj.realSounds.enabled = e.target.checked; }); void applyRealSoundsNow(); };
 $('#btnSoundReset').onclick = () => { invalidateSoundSelection(); editRealSounds(() => { S.proj.realSounds = C.normalizeRealSounds(null); }); void applyRealSoundsNow(); };
 $('#soundKitList').onclick = async (e) => {
