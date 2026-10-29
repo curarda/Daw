@@ -1,0 +1,3380 @@
+{
+  "schema_version": 1,
+  "songs": [
+    {
+      "schema_version": 1,
+      "artist": "Massive Attack",
+      "title": "Angel",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/massive-attack/angel"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi."
+      ],
+      "sections": [
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "Cm",
+            "Eb",
+            "Cm",
+            "Eb",
+            "Cm",
+            "Eb",
+            "Cm",
+            "Eb",
+            "Cm",
+            "Eb",
+            "Cm",
+            "Eb",
+            "Cm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "C",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: C Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "Cm",
+            "Ab",
+            "Fm",
+            "Dbsus4",
+            "Cm",
+            "Ab",
+            "Fm",
+            "Db"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "C",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: C Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Massive Attack",
+      "title": "Group Four",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/massive-attack/group-four"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "\"IV/II\" ikincil derece olarak okundu (II = E üzerinden IV = A); kulakla doğrulanmadı."
+      ],
+      "sections": [
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "D#m",
+            "Esus4",
+            "D#m",
+            "Esus4",
+            "D#m",
+            "Esus4",
+            "D#m",
+            "A",
+            "Esus4",
+            "D#m",
+            "Esus4",
+            "D#m",
+            "Esus4",
+            "D#m",
+            "Esus4",
+            "D#m",
+            "A",
+            "Esus4"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D#",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D♯ Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭V",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭V",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "sus4",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Portishead",
+      "title": "Mysterons",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/portishead/mysterons"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Hooktheory'de yalnızca Intro bölümü var."
+      ],
+      "sections": [
+        {
+          "label": "Intro",
+          "type": "intro",
+          "chords": [
+            "A#m",
+            "B",
+            "A#m",
+            "B"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "A#",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: A♯ Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Portishead",
+      "title": "Pedestal",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/portishead/pedestal"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "v64(#5) → artırılmış (Aaug), vo64 → azaltılmış (Adim) olarak okundu (yürüyen bas çizgisi)."
+      ],
+      "sections": [
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "Dm",
+            "Aaug",
+            "Adim",
+            "Dm",
+            "Cm",
+            "Dm",
+            "Aaug",
+            "Adim",
+            "Dm",
+            "Cm",
+            "Dm",
+            "Aaug",
+            "Adim",
+            "Dm",
+            "Cm",
+            "Dm",
+            "Aaug",
+            "Adim",
+            "Dm",
+            "Cm",
+            "Dm",
+            "Cm",
+            "Dm",
+            "Cm",
+            "Dm",
+            "Cm",
+            "Dm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "V+",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "v°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "V+",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "v°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "V+",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "v°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "V+",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "v°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "Cm",
+            "Dm",
+            "Cm",
+            "Dm",
+            "Cm",
+            "Dm",
+            "Cm",
+            "Dm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Siouxsie and the Banshees",
+      "title": "Bring Me the Head of the Preacher Man",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/siouxsie-and-the-banshees/bring-me-the-head-of-the-preacher-man"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Phrygian Dominant uygulamada tanımlı bir mod değil; bölüm Frig (phrygian) olarak işaretlendi. Majör tonik akoru bu yüzden \"ödünç\" görünür.",
+        "Chorus Hooktheory'de E Frig (Intro/Verse/Pre-Chorus B Phrygian Dominant)."
+      ],
+      "sections": [
+        {
+          "label": "Intro",
+          "type": "intro",
+          "chords": [
+            "Bsus4",
+            "C",
+            "B",
+            "C"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "phrygian",
+              "confidence": 0.6,
+              "reason": "Hooktheory: B Phrygian Dominant (uygulamada Frig'e eşlendi)"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "C",
+            "B",
+            "C",
+            "B",
+            "C"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "phrygian",
+              "confidence": 0.6,
+              "reason": "Hooktheory: B Phrygian Dominant (uygulamada Frig'e eşlendi)"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Pre-Chorus",
+          "type": "prechorus",
+          "chords": [
+            "C",
+            "B",
+            "C",
+            "B",
+            "C"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "phrygian",
+              "confidence": 0.6,
+              "reason": "Hooktheory: B Phrygian Dominant (uygulamada Frig'e eşlendi)"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "Em",
+            "F",
+            "Am6",
+            "Em",
+            "F",
+            "Am6",
+            "Em",
+            "F",
+            "Am6",
+            "Em",
+            "F",
+            "Am6"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "E",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: E Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": "6",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Depeche Mode",
+      "title": "A Question of Time",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/depeche-mode/a-question-of-time"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "viio/… ikincil azaltılmış akorlar (G♯dim, F♯dim, C♯dim) bemol tonlarda Abdim, Gbdim, Dbdim yazıldı.",
+        "Atlanan Hooktheory bölümleri (Frig değil ya da tek akor): Intro (G minor)."
+      ],
+      "sections": [
+        {
+          "label": "Verse / Pre-Chorus",
+          "type": "prechorus",
+          "chords": [
+            "Gm",
+            "Abdim",
+            "Gm",
+            "F",
+            "Gbdim",
+            "F",
+            "Gm",
+            "Abdim",
+            "Gm",
+            "F",
+            "Gbdim",
+            "F",
+            "Cm",
+            "Dbdim",
+            "Cm",
+            "Ab",
+            "Eb",
+            "Gm",
+            "Fm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "G",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: G Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭ii°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "vii°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭ii°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "vii°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭v°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Pre-Chorus",
+          "type": "prechorus",
+          "chords": [
+            "Cm",
+            "Ab",
+            "Cm",
+            "Gm",
+            "Ab",
+            "Bb"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "G",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: G Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Depeche Mode",
+      "title": "Something to Do",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/depeche-mode/something-to-do"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Atlanan Hooktheory bölümleri (Frig değil ya da tek akor): Verse (F major); Chorus (F major)."
+      ],
+      "sections": [
+        {
+          "label": "Instrumental",
+          "type": "instrumental",
+          "chords": [
+            "Gm",
+            "Eb",
+            "Ab",
+            "Db",
+            "Cm",
+            "Gm",
+            "Eb",
+            "Ab",
+            "Db",
+            "Cm",
+            "Gm",
+            "Eb",
+            "Ab",
+            "Db",
+            "Cm",
+            "Gm",
+            "Eb",
+            "Ab",
+            "Db",
+            "Cm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "G",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: G Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭V",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭V",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭V",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭V",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Depeche Mode",
+      "title": "Only When I Lose Myself",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/depeche-mode/only-when-i-lose-myself"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Hooktheory'deki tek akorluk \"Pre-Chorus\" (D♯m) eklenmedi.",
+        "Atlanan Hooktheory bölümleri (Frig değil ya da tek akor): Pre-Chorus (tek akor, atlandı); Chorus (Eb dorian); Instrumental (Eb dorian)."
+      ],
+      "sections": [
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "D#m",
+            "E",
+            "D#m6",
+            "E",
+            "C#m",
+            "B",
+            "G#m",
+            "D#m",
+            "E",
+            "D#m",
+            "E",
+            "D#m",
+            "B",
+            "C#m",
+            "B",
+            "A#dim"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D#",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D♯ Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "v°",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Bridge",
+          "type": "bridge",
+          "chords": [
+            "D#7sus4",
+            "E6",
+            "D#7sus4",
+            "E6",
+            "D#7sus4",
+            "C#m7",
+            "D#sus4",
+            "E6",
+            "G#sus4",
+            "D#7sus4",
+            "C#m7",
+            "D#sus4",
+            "E6",
+            "G#sus4"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D#",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D♯ Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": "7sus4",
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": "7sus4",
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": "7sus4",
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": "7sus4",
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": "sus4",
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": "sus4",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Depeche Mode",
+      "title": "Never Let Me Go",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/depeche-mode/never-let-me-go"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi."
+      ],
+      "sections": [
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "Dm",
+            "Bb",
+            "Gm",
+            "Eb",
+            "Dm",
+            "Bb",
+            "Gm",
+            "Eb",
+            "Dm",
+            "Bb",
+            "Gm",
+            "Eb",
+            "Dm",
+            "Bb",
+            "Gm",
+            "Eb"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "Dm",
+            "Bb",
+            "Gm",
+            "Eb"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Bridge",
+          "type": "bridge",
+          "chords": [
+            "Gm",
+            "F",
+            "Eb",
+            "Bb",
+            "Gm",
+            "F",
+            "Eb",
+            "Bb",
+            "Gm",
+            "F",
+            "Eb",
+            "Bb"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Radiohead",
+      "title": "Everything in Its Right Place",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/radiohead/everything-in-its-right-place"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Bridge 6/4 ölçüde, Intro 2/4 ölçüde (Hooktheory meter)."
+      ],
+      "sections": [
+        {
+          "label": "Intro",
+          "type": "intro",
+          "chords": [
+            "C",
+            "Db7",
+            "Cm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "C",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: C Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "F",
+            "C",
+            "Db7",
+            "Cm",
+            "F",
+            "C",
+            "Db7",
+            "Cm",
+            "C",
+            "Db7",
+            "Cm",
+            "C",
+            "Db7",
+            "Cm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "C",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: C Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Bridge",
+          "type": "bridge",
+          "chords": [
+            "Db7",
+            "C",
+            "Eb6",
+            "Db7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "C",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: C Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": "6",
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Radiohead",
+      "title": "Pyramid Song",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/radiohead/pyramid-song"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi."
+      ],
+      "sections": [
+        {
+          "label": "Intro / Verse",
+          "type": "verse",
+          "chords": [
+            "F#",
+            "G7",
+            "F#m",
+            "G",
+            "F#",
+            "G7",
+            "F#m",
+            "G7",
+            "F#",
+            "G7",
+            "F#m",
+            "G",
+            "F#",
+            "G7",
+            "F#m",
+            "G7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "F#",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: F♯ Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "F#",
+            "G7",
+            "F#m",
+            "G7",
+            "F#",
+            "F#m",
+            "E",
+            "G7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "F#",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: F♯ Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Instrumental",
+          "type": "instrumental",
+          "chords": [
+            "F#",
+            "G7",
+            "A",
+            "G7",
+            "F#",
+            "G7",
+            "F#m",
+            "G7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "F#",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: F♯ Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Radiohead",
+      "title": "Down Is the New Up",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/radiohead/down-is-the-new-up"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Atlanan Hooktheory bölümleri (Frig değil ya da tek akor): Chorus (D major)."
+      ],
+      "sections": [
+        {
+          "label": "Chorus Lead-Out",
+          "type": "chorus",
+          "chords": [
+            "Am",
+            "Gm",
+            "Am",
+            "Gbm",
+            "Am",
+            "Cm",
+            "Bm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "A",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: A Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "vi",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭iii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Radiohead",
+      "title": "In Limbo",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/radiohead/in-limbo"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Atlanan Hooktheory bölümleri (Frig değil ya da tek akor): Verse (D dorian)."
+      ],
+      "sections": [
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "Cm",
+            "Gm",
+            "Eb",
+            "C",
+            "Em",
+            "Cm",
+            "Gm",
+            "Eb",
+            "C",
+            "Em"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "ii",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Radiohead",
+      "title": "Backdrifts",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/radiohead/backdrifts"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Phrygian Dominant uygulamada tanımlı bir mod değil; bölüm Frig (phrygian) olarak işaretlendi. Majör tonik akoru bu yüzden \"ödünç\" görünür.",
+        "Atlanan Hooktheory bölümleri (Frig değil ya da tek akor): Verse (B mixolydian)."
+      ],
+      "sections": [
+        {
+          "label": "Chorus",
+          "type": "chorus",
+          "chords": [
+            "B",
+            "D",
+            "A",
+            "B",
+            "D",
+            "A",
+            "B",
+            "D",
+            "A",
+            "C"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "phrygian",
+              "confidence": 0.6,
+              "reason": "Hooktheory: B Phrygian Dominant (uygulamada Frig'e eşlendi)"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Radiohead",
+      "title": "My Iron Lung",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/radiohead/my-iron-lung"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Phrygian Dominant uygulamada tanımlı bir mod değil; bölüm Frig (phrygian) olarak işaretlendi. Majör tonik akoru bu yüzden \"ödünç\" görünür.",
+        "Verse'teki alterasyonlu akorlar (Dm7b5, Eb7b5, F13, Am7b5, Cdim) Hooktheory'den; kulakla doğrulanmadı."
+      ],
+      "sections": [
+        {
+          "label": "Intro / Verse",
+          "type": "verse",
+          "chords": [
+            "G",
+            "Cm",
+            "G",
+            "Gbdim",
+            "G",
+            "Cm",
+            "G",
+            "Cm",
+            "G",
+            "Cm",
+            "G",
+            "Cm",
+            "G",
+            "Cm",
+            "G",
+            "Cm"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "G",
+              "mode": "phrygian",
+              "confidence": 0.6,
+              "reason": "Hooktheory: G Phrygian Dominant (uygulamada Frig'e eşlendi)"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "vii°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "G",
+            "Cm",
+            "G",
+            "Cm",
+            "G",
+            "Cm",
+            "G",
+            "Cmadd9",
+            "Dm7b5",
+            "Eb7b5",
+            "F13",
+            "G",
+            "Am7b5",
+            "Cdim",
+            "G",
+            "Am7b5",
+            "Cdim",
+            "G",
+            "Cm",
+            "G",
+            "Cmadd9",
+            "Dm7b5",
+            "Eb7b5",
+            "F13"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "G",
+              "mode": "phrygian",
+              "confidence": 0.6,
+              "reason": "Hooktheory: G Phrygian Dominant (uygulamada Frig'e eşlendi)"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": "add9",
+              "bass": null
+            },
+            {
+              "core": "v°",
+              "color": "ø7",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": "7b5",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": "13",
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "ii°",
+              "color": "ø7",
+              "bass": null
+            },
+            {
+              "core": "iv°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "ii°",
+              "color": "ø7",
+              "bass": null
+            },
+            {
+              "core": "iv°",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "iv",
+              "color": "add9",
+              "bass": null
+            },
+            {
+              "core": "v°",
+              "color": "ø7",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": "7b5",
+              "bass": null
+            },
+            {
+              "core": "♭VII",
+              "color": "13",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "The Dears",
+      "title": "22: The Death of All the Romance",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/the-dears/22-the-death-of-all-the-romance"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Hooktheory'de yalnızca Verse bölümü var."
+      ],
+      "sections": [
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "Bm",
+            "F#7",
+            "Am",
+            "D",
+            "G",
+            "C",
+            "F#7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: B Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "V",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭vii",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "V",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Tame Impala",
+      "title": "New Person, Same Old Mistakes",
+      "source_notes": {
+        "capo": null,
+        "tuning": null,
+        "other": "Hooktheory TheoryTab: https://www.hooktheory.com/theorytab/view/tame-impala/new-person-same-old-mistakes"
+      },
+      "warnings": [
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Ters çevrimler (bas çizgisi) kök konumuna indirildi; art arda gelen aynı kökten akorlar tek akorda birleştirildi.",
+        "Kaynak ton vermiyor; ton Hooktheory'den: Verse ve Chorus C Frig, Bridge D♯ Frig."
+      ],
+      "sections": [
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "C",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: C Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Pre-Chorus / Chorus",
+          "type": "prechorus",
+          "chords": [
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab",
+            "Cm",
+            "Db9",
+            "Ab"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "C",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: C Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "9",
+              "bass": null
+            },
+            {
+              "core": "♭VI",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Bridge",
+          "type": "bridge",
+          "chords": [
+            "D#m",
+            "F#",
+            "E7",
+            "F#13",
+            "D#m",
+            "F#",
+            "E7",
+            "D#m",
+            "F#",
+            "E",
+            "D#m",
+            "F#",
+            "E7"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "D#",
+              "mode": "phrygian",
+              "confidence": 0.85,
+              "reason": "Hooktheory: D♯ Phrygian"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": "13",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "i",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "♭II",
+              "color": "7",
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "artist": "Muse",
+      "title": "Break It to Me",
+      "source_notes": {
+        "capo": null,
+        "tuning": "Açık B (MuseWiki)",
+        "other": "Akorlar: https://www.kompas.com/hype/copy/2022/08/19/085600166/lirik-dan-chord-lagu-break-it-to-me-muse- — ton: https://musewiki.org/Break_It_to_Me_(song)"
+      },
+      "warnings": [
+        "Hooktheory'de bu şarkı yok; akorlar tek bir amatör akor sayfasından (Kompas), ton Matt Bellamy'nin MuseWiki'deki açıklamasından.",
+        "Süreler (bars) kaynakta olmadığı için null bırakıldı; bölümler süre istatistiğine girmez.",
+        "Phrygian Dominant uygulamada tanımlı bir mod değil; bölüm Frig (phrygian) olarak işaretlendi. Majör tonik akoru bu yüzden \"ödünç\" görünür.",
+        "Chorus (Em Am D B7/D♯ Em Am C F♯ B5) Bellamy'ye göre E harmonik minör olduğu için Frig değil; eklenmedi."
+      ],
+      "sections": [
+        {
+          "label": "Intro / Refrain",
+          "type": "chorus",
+          "chords": [
+            "D",
+            "B"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "phrygian",
+              "confidence": 0.5,
+              "reason": "MuseWiki: B Phrygian Dominant (uygulamada Frig'e eşlendi); ♭III–I"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "♭III",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        },
+        {
+          "label": "Verse",
+          "type": "verse",
+          "chords": [
+            "B",
+            "E",
+            "B",
+            "E",
+            "B"
+          ],
+          "bars": null,
+          "key_proposals": [
+            {
+              "tonic": "B",
+              "mode": "phrygian",
+              "confidence": 0.5,
+              "reason": "MuseWiki: \"B Phrygian Dominant verse\" (uygulamada Frig'e eşlendi); I–IV"
+            }
+          ],
+          "degrees_preview": [
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "IV",
+              "color": null,
+              "bass": null
+            },
+            {
+              "core": "I",
+              "color": null,
+              "bass": null
+            }
+          ],
+          "warnings": []
+        }
+      ]
+    }
+  ]
+}

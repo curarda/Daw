@@ -31,6 +31,7 @@ const POWER_JSON = { schema_version: 1, artist: 'Güç Grubu', title: 'Riff', se
 
 const browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
 const context = await browser.newContext({ viewport: { width: 1500, height: 1000 }, acceptDownloads: true });
+await context.addInitScript(() => { try { localStorage.setItem('miniDaw.style.seed', 'off'); } catch (e) { /* depolama kapalı */ } }); // hazır şarkılar bu testin boş veri seti varsayımını bozmasın
 const page = await context.newPage();
 const errors = [];
 page.on('pageerror', (e) => errors.push(e.message));
