@@ -27,16 +27,18 @@ function guitarTrack(sr) {
 // 2 ölçülük döngü: projedeki gerçek akor akışı (seçili bölümün başından); akor yoksa Am–F–C–G
 function guitarAudition(sr) {
   const g = C.makeGrid(S.proj.settings), part = gEff(GT.target), barQ = g.barQ;
-  let slots = null, real = false;
+  let slots = null, real = false, startQ = 0;
   if (S.d && S.d.chords.length) {
     const sec = GT.target !== '_all' ? S.d.sections.find((s) => s.id === GT.target) : null;
-    const startQ = sec ? (sec.startBar - 1) * barQ : Math.floor(S.d.chords[0].q0 / barQ + 1e-6) * barQ;
+    startQ = sec ? (sec.startBar - 1) * barQ : Math.floor(S.d.chords[0].q0 / barQ + 1e-6) * barQ;
     slots = C.guitarSlotsFrom(S.d).filter((sl) => sl.q1 > startQ + 1e-6 && sl.q0 < startQ + 2 * barQ - 1e-6)
       .map((sl) => Object.assign({}, sl, { q0: Math.max(sl.q0, startQ) - startQ, q1: Math.min(sl.q1, startQ + 2 * barQ) - startQ }));
     real = slots.length > 0;
   }
   if (!real) slots = [[9, 'm'], [5, ''], [0, ''], [7, '']].map(([r, q], i) => ({ q0: (i * barQ) / 2, q1: ((i + 1) * barQ) / 2, chord: { root: r, q }, section: '_all', tonic: 9 }));
-  const events = C.guitarEvents(slots, g, () => part);
+  // şarkıya uyum açıksa ön dinleme de gerçek bölüm / davul / piyano durumundan türetilen partiyi çalar (kaydırılmış zamanı geri al)
+  const getPart = real && part.groove === true && C.GuitarGroove ? (sl) => C.GuitarGroove.derive(S.proj, S.d, Object.assign({}, sl, { q0: sl.q0 + startQ, q1: sl.q1 + startQ }), part) : () => part;
+  const events = C.guitarEvents(slots, g, getPart);
   return { real, events, data: C.renderGuitar(events, sr, Math.round(2 * g.barSec * sr), g.spq, 1) };
 }
 
@@ -70,10 +72,15 @@ function resampleGrid(p, grid) {
   for (const [i, o] of Object.entries(p.stepOverrides)) { const k = (i * oq) / nq; if (Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) < n) ov[Math.round(k)] = o; }
   old.steps = steps; old.grid = grid; p.stepOverrides = ov; GT.sel = null;
 }
+// ritmi, çalış biçimini ya da şekli elle değiştiren işlemler şarkıya uyumu kapatır (parti olduğu gibi çalar)
+const GROOVE_MANUAL = ['mode', 'adir', 'arate', 'pat', 'custom', 'pgrid', 'dmode', 'shape', 'art', 'sart', 'orn', 'stype', 'sacc'];
+function grooveOff(p) { if (p.groove === true) { p.groove = false; status('Elle düzenleme: şarkıya uyum kapandı; parti olduğu gibi çalacak (panelin başından tekrar açabilirsin).'); } }
 function gAction(k, v) {
   const meter = S.proj.settings.meter;
   gEdit((p) => {
+    if (GROOVE_MANUAL.includes(k)) grooveOff(p);
     switch (k) {
+      case 'groove': p.groove = !p.groove; GT.sel = null; break;
       case 'mode': p.mode = v; GT.sel = null; break;
       case 'adir': p.arpeggio.direction = v; break;
       case 'arate': p.arpeggio.rate = v; break;
@@ -109,11 +116,11 @@ function gAction(k, v) {
 // ---- adım ızgarası: tıkla = döngü (es → D → U → ölü) ve seç; uzun bas = vurgu
 function gStepClick(i) {
   GT.sel = i;
-  gEdit((p) => { toCustom(p); const s = p.pattern.steps[i]; s.type = STEP_NEXT[s.type]; });
+  gEdit((p) => { grooveOff(p); toCustom(p); const s = p.pattern.steps[i]; s.type = STEP_NEXT[s.type]; });
 }
 function gStepAccent(i) {
   GT.sel = i;
-  gEdit((p) => { toCustom(p); const s = p.pattern.steps[i]; if (s.accent) delete s.accent; else s.accent = true; });
+  gEdit((p) => { grooveOff(p); toCustom(p); const s = p.pattern.steps[i]; if (s.accent) delete s.accent; else s.accent = true; });
 }
 
 // ---- panel
@@ -187,7 +194,9 @@ function panelHtml(part, meter) {
     + `<div class="gsub"><span>Delay süresi</span>${[['8n', "8'lik"], ['d8n', "noktalı 8'lik"], ['4n', "4'lük"]].map(([x, l]) => gchip('dtime', x, l, fx.delay.time === x)).join('')}</div>`
     + gslider('dfb', 'Delay geri besleme', 0, 85, Math.round(fx.delay.feedback * 100), (x) => x + '%')
     + gslider('spread', 'Strum yayılması', 5, 25, hu.strumSpreadMs, (x) => x + ' ms') + gslider('vjit', 'Vuruş gücü sapması', 0, 50, Math.round(hu.velocityJitter * 100), (x) => x + '%') + gslider('tjit', 'Zamanlama sapması', 0, 20, hu.timingJitterMs, (x) => x + ' ms');
-  return grow('1 · Vuruş modu (sağ el)', r1) + grow('2 · Ritim kalıbı', r2) + grow('3 · Voicing (sol el)', r3) + grow('4 · Süsleme (sol el, adım bazlı)', r4) + grow('5 · Nota süresi ve kesme', r5) + grow('6 · Ton / FX', r6);
+  const r0 = gchip('groove', 'groove', part.groove ? 'Açık' : 'Kapalı', !!part.groove)
+    + `<div class="hint">${part.groove ? 'Ritim, çalış biçimi ve akor şekli her bölümde türe, bölüm enerjisine, davulun kick\'ine ve piyano / bas durumuna göre seçilir (piyano arpej çalarken gitar sadeleşir, piyano ya da bas varken üst teller çalınır). Aşağıdaki kalıp ve mod ayarları bu modda bilgi içindir; birini elle değiştirirsen uyum kapanır. Ton, FX, renk, konum ve drone yine geçerlidir.' : 'Uyum kapalı: aşağıdaki parti, tüm şarkıda olduğu gibi çalar.'}</div>`;
+  return grow('0 · Şarkıya uyum', r0) + grow('1 · Vuruş modu (sağ el)', r1) + grow('2 · Ritim kalıbı', r2) + grow('3 · Voicing (sol el)', r3) + grow('4 · Süsleme (sol el, adım bazlı)', r4) + grow('5 · Nota süresi ve kesme', r5) + grow('6 · Ton / FX', r6);
 }
 function renderGuitar() {
   const st = gState(), meter = S.proj.settings.meter;

@@ -33,7 +33,7 @@ try {
   await open(p);
   const suggestions = await page.evaluate(() => window.__dawAPI.C.topSuggestions(window.__dawAPI.S.proj).map((r) => r.id));
   assert.deepEqual(await page.locator('#packSuggestions [data-pack]').evaluateAll((els) => els.map((e) => e.dataset.pack)), suggestions);
-  assert.equal(await page.locator('#inPack option').count(), 14);
+  assert.equal(await page.locator('#inPack option').count(), 15);
   assert.deepEqual(await page.locator('#inPack option').evaluateAll((els) => els.map((e) => e.value)), await page.evaluate(() => window.__dawAPI.C.rankPacks(window.__dawAPI.S.proj).map((r) => r.id)));
   const initial = await state();
   await page.locator('#packSuggestions [data-pack]').first().click();

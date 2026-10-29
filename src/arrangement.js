@@ -91,7 +91,8 @@ function arrangedEvents(d, proj, opts = {}) {
   if (wants('guitar') && proj.guitar && (!opts.midi || (proj.guitar.instrument || 'piano') !== 'piano')) {
     const parts = new Map();
     out.guitar = C.guitarEvents(C.guitarSlotsFrom(d), g, (sl) => {
-      const part = C.guitarPartFor(proj.guitar, sl.section, proj, d);
+      const base = C.guitarPartFor(proj.guitar, sl.section, proj, d);
+      const part = C.GuitarGroove && base.groove === true ? C.GuitarGroove.derive(proj, d, sl, base) : base; // groove: bölüm / davul / piyano durumuna göre türetilmiş parti
       const key = guitarGroupKey(proj, d, sl.section, part);
       if (!parts.has(key)) parts.set(key, part);
       return parts.get(key);

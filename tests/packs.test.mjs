@@ -11,10 +11,10 @@ function project(meter = '4/4') {
 }
 const derive = (p) => C.derive(p, { duration: 0, rawNotes: [] });
 function frozen(v) { if (v && typeof v === 'object') { assert.ok(Object.isFrozen(v)); Object.values(v).forEach(frozen); } }
-assert.equal(C.PACKS.length, 16); frozen(C.PACKS);
-assert.deepEqual(C.PACKS.map((p) => p.id), ['dream-pop', 'indie-pop', 'electro-pop', 'alt-rock', 'indie-rock', 'post-punk', 'synthwave', 'darkwave', 'alternative-pop', 'pop-rock', 'akustik', 'balad', 'synthpop', 'dans-elektronik', 'vals', 'balad-68']);
-assert.equal(new Set(C.PACKS.map((p) => p.id)).size, 16);
-for (const [meter, count] of [['4/4', 14], ['3/4', 1], ['6/8', 1], ['2/4', 0]]) {
+assert.equal(C.PACKS.length, 17); frozen(C.PACKS);
+assert.deepEqual(C.PACKS.map((p) => p.id), ['dream-pop', 'indie-pop', 'electro-pop', 'alt-rock', 'indie-rock', 'post-punk', 'synthwave', 'darkwave', 'alternative-pop', 'pop-rock', 'akustik', 'balad', 'synthpop', 'dans-elektronik', 'trip-hop', 'vals', 'balad-68']);
+assert.equal(new Set(C.PACKS.map((p) => p.id)).size, 17);
+for (const [meter, count] of [['4/4', 15], ['3/4', 1], ['6/8', 1], ['2/4', 0]]) {
   const p = project(meter); assert.equal(C.eligiblePacks(p).length, count);
   if (!count) { assert.deepEqual(C.rankPacks(p), []); assert.equal(C.nextPack(p, null), null); }
 }

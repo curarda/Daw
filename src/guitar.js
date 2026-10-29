@@ -295,6 +295,7 @@ function defaultGuitarPart(meter = '4/4') {
     fx: { chorus: 0, delay: { mix: 0, time: '8n', feedback: 0.3 }, reverb: 0.15 },
     humanize: { strumSpreadMs: 12, velocityJitter: 0.08, timingJitterMs: 4 },
     swing: 0,
+    groove: true, // ritim, çalış biçimi ve şekil bölüme / davula / piyanoya göre türetilir (src/guitargroove.js); elle düzenleme kapatır
   };
 }
 function defaultGuitarState(meter = '4/4') { return { instrument: 'piano', parts: { _all: defaultGuitarPart(meter) }, presets: [] }; }
@@ -317,6 +318,7 @@ function normalizeGuitarState(st, meter) {
     const p = st.parts[k];
     st.parts[k] = Object.assign({}, base, p, { arpeggio: Object.assign({}, base.arpeggio, p.arpeggio), voicing: Object.assign({}, base.voicing, p.voicing),
       fx: Object.assign({}, base.fx, p.fx, { delay: Object.assign({}, base.fx.delay, p.fx && p.fx.delay) }), humanize: Object.assign({}, base.humanize, p.humanize), stepOverrides: p.stepOverrides || {} });
+    st.parts[k].groove = p.groove === true; // bayrağı olmayan eski parti elle yazılmıştır: olduğu gibi çalar
     normalizeGuitarPart(st.parts[k], meter);
   }
   st.presets = st.presets || [];
@@ -371,8 +373,9 @@ function guitarEvents(slots, g, getPart, opts = {}) {
   // 1) voicing: aynı partiyi paylaşan akorlar zaman sırasıyla tek dizi (el hareketi minimum)
   const parts = slots.map((sl) => getPart(sl));
   const voic = new Array(slots.length);
-  for (const p of new Set(parts)) {
-    const idx = slots.map((_, i) => i).filter((i) => parts[i] === p);
+  const groupOf = (p) => (p.vgroup != null ? p.vgroup : p); // groove partileri aynı sesleme ayarını paylaşıyorsa tek el hareketi dizisi
+  for (const gk of new Set(parts.map(groupOf))) {
+    const idx = slots.map((_, i) => i).filter((i) => groupOf(parts[i]) === gk), p = parts[idx[0]];
     const vs = C.guitarVoicings(idx.map((i) => ({ chord: slots[i].chord, tonic: slots[i].tonic })), p.voicing);
     idx.forEach((i, k) => { voic[i] = vs[k]; });
   }

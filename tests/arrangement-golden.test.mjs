@@ -10,6 +10,7 @@ for (const meter of ['4/4', '6/8']) {
   p.guitar = C.defaultGuitarState(meter); p.guitar.instrument = 'both';
   p.guitar.parts.b = JSON.parse(JSON.stringify(p.guitar.parts._all));
   p.guitar.parts.b.articulation = 'letRing';
+  for (const part of Object.values(p.guitar.parts)) part.groove = false; // fixture elle yazılmış partiyle kaydedildi: bu test arrangement hattını sınar, gitar groove'unu değil
   const loops = C.loopsFor(meter);
   p.drums = { on: true, loop: loops[0].id, startBar: 2, fills: true };
   p.sections = ['a', 'b', 'c'].map((id, i) => ({ id, name: i === 1 ? 'Nakarat' : 'Verse', startBar: i * 2 + 1, endBar: i * 2 + 2, tonic: 9, mode: 'minor', arr: { piano: i === 1 ? 'synth-arp' : null, drums: i === 2 ? 'off' : loops[i % loops.length].id } }));
