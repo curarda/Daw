@@ -98,24 +98,25 @@ function applyPack(proj, d, packId, opts = {}) {
     if (q.guitar.parts._all?.locked) warnings.push('Kilitli gitar partisi korundu');
     else q.guitar.parts._all = { ...C.defaultGuitarPart(q.settings.meter), ...clone(p.guitar), pattern: clone(C.GUITAR_PATTERNS.find((g) => g.id === p.guitar.pattern)) };
   }
-  if (!locks.bass) {
-    const t = q.bass ||= B.defaultBassTrack(), b = p.bass;
-    Object.assign(t, { enabled: true, instrumentType: b.instrumentType === 'guitar' ? 'bass-guitar' : 'synth', instrumentPreset: b.preset, styleProfileId: b.profile, styleMix: null, pump: b.pump, useSampler: false });
-    const ctx = B.bassContext(d, q);
-    B.ensureBars(t, ctx);
-    const retained = t.bars.filter((bar) => bar.locked || t.sections[bar.sectionId]?.locked).map(clone);
-    for (const s of d.sections) if (!t.sections[s.id].locked) t.sections[s.id] = { ...B.defaultBassSection(s.typeNorm, t.instrumentType), templateFamily: b.templateFamily, density: b.density };
-    if (retained.length || Object.values(t.sections).some((s) => s.locked)) warnings.push('Kilitli bas ölçüleri ve bölüm ayarları korundu');
-    for (const bar of retained) t.bars[bar.index].locked = true;
-    B.bassGenerateAll(t, ctx);
-    for (const bar of retained) t.bars[bar.index] = bar;
-  }
+  // matris ve paket kimliği önce: bas, hangi bölümde hangi davul loop'unun çaldığını (kick'leri) buna göre görür
   q.matrix ||= { rows: {} }; q.matrix.rows ||= {}; q.matrix.enabled = true; q.pack.id = p.id;
   for (const s of d.sections) {
     const r = q.matrix.rows[s.id] ||= {};
     for (const l of layers) r[l] = locks[l] ? prior[s.id][l] : null;
   }
   for (const r of Object.values(q.matrix.rows)) for (const l of layers) if (!locks[l]) r[l] = null;
+  if (!locks.bass) {
+    const t = q.bass ||= B.defaultBassTrack(), b = p.bass;
+    Object.assign(t, { enabled: true, instrumentType: b.instrumentType === 'guitar' ? 'bass-guitar' : 'synth', instrumentPreset: b.preset, styleProfileId: b.profile, styleMix: null, pump: b.pump, useSampler: false, engine: 'groove', feelId: p.id }); // groove: ritim ve perde türün desenlerinden, davulun kick'inden ve akorlardan gelir
+    const ctx = B.bassContext(d, q);
+    B.ensureBars(t, ctx);
+    const retained = t.bars.filter((bar) => bar.locked || t.sections[bar.sectionId]?.locked).map(clone);
+    for (const s of d.sections) if (!t.sections[s.id].locked) t.sections[s.id] = { ...B.defaultBassSection(s.typeNorm, t.instrumentType), templateFamily: B.Groove.active(t, ctx) ? 'auto' : b.templateFamily, density: b.density };
+    if (retained.length || Object.values(t.sections).some((s) => s.locked)) warnings.push('Kilitli bas ölçüleri ve bölüm ayarları korundu');
+    for (const bar of retained) t.bars[bar.index].locked = true;
+    B.bassGenerateAll(t, ctx);
+    for (const bar of retained) t.bars[bar.index] = bar;
+  }
   Object.assign(proj, q);
   return { warnings, changed: layers.filter((l) => !locks[l]), kept: layers.filter((l) => locks[l]), ...(opts.keepManual ? { manual } : {}) };
 }

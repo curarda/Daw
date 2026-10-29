@@ -54,6 +54,21 @@ function gateEvents(events, proj, d, layer) {
   if (events.fxTable) gated.fxTable = events.fxTable;
   return gated;
 }
+// Bir ölçüde gerçekten çalan davul loop'u (bas bunun kick'ine kilitlenir); davul kapalıysa, ölçüde susuyorsa ya da loop bilinmiyorsa null.
+// "auto" loop'u uygulama çözer (C.autoDrumLoop); çekirdek tek başına çalışırken bilinmez.
+function drumLoopForBar(proj, d, bar) {
+  const ds = proj.drums || {};
+  if (!ds.on || bar < (ds.startBar || 1) || !d || !d.sections) return null;
+  const sections = proj.sections || [];
+  const gateSection = d.sections.find((s) => bar >= s.startBar && bar <= s.endBar);
+  if (!effectiveCell(proj, d, gateSection?.id, 'drums')) return null;
+  const section = d.sections.find((s) => !s.implicit && bar >= s.startBar && bar <= s.endBar);
+  const rootId = section ? (C.linkedRoot ? C.linkedRoot(proj, d, section.id) : section.id) : null;
+  const a = rootId ? sections.find((s) => s.id === rootId)?.arr?.drums : undefined;
+  if (a === 'off') return null;
+  const byId = (id) => C.DRUM_LOOPS.find((l) => l.id === id && l.meter === proj.settings.meter) || null;
+  return (a && byId(a)) || (isLastChorus(proj, d, section?.id) ? byId(activePack(proj).drums.alt) : byId(ds.loop) || (C.autoDrumLoop ? C.autoDrumLoop(proj) : null));
+}
 function guitarGroupKey(proj, d, id, part) {
   const links = C.resolveLinks?.(proj, d) || {}, sourceId = links[id]?.rootId || id;
   const group = proj.guitar.voiceGroups?.[sourceId];
@@ -103,5 +118,5 @@ function arrangedEvents(d, proj, opts = {}) {
   if (proj.matrix && proj.matrix.enabled !== false) for (const layer of layers) out[layer] = gateEvents(out[layer], proj, d, layer);
   return out;
 }
-Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers, guitarGroupKey });
+Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers, guitarGroupKey, drumLoopForBar });
 })(typeof window !== 'undefined' ? window : globalThis);

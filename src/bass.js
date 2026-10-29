@@ -181,7 +181,7 @@ function defaultBassSection(type, instrumentType) {
 function defaultBassTrack() {
   return {
     enabled: false, generated: false, volume: 0.8, seed: 1, instrumentType: 'bass-guitar', instrumentPreset: 'Dark pick', layer: null, doubleLow: false,
-    styleProfileId: 'post-punk-drive', styleMix: null, useSampler: false, range: Object.assign({}, RANGE_DEFAULT['bass-guitar']),
+    styleProfileId: 'post-punk-drive', styleMix: null, engine: 'groove', feelId: null, useSampler: false, range: Object.assign({}, RANGE_DEFAULT['bass-guitar']),
     synthGuitarTemplates: false, pump: 0, resonance: null, drive: null,
     sections: {}, bars: [], loops: [], customTemplates: [], profiles: [],
     tap: { grid: '16n', latencyMs: 0, mode: 'asPlayed', loopBars: 1 },
@@ -208,6 +208,21 @@ function bassContext(d, proj) {
   };
   ctx.lastChord = (i) => { for (let k = i; k >= 0; k--) { const s = ctx.segs(k); if (s) return s[s.length - 1].chord; } return null; };
   ctx.firstChord = (i) => { for (let k = i; k < ctx.bars; k++) { const s = ctx.segs(k); if (s) return s[0].chord; } return null; };
+  // davul kick'leri (bas ızgarasında 16'lık adım) ve vokal melodisi: groove motoru bunlara bakar
+  ctx.kicks = (i) => {
+    const L = C.drumLoopForBar && proj && proj.drums ? C.drumLoopForBar(proj, d, i + 1) : null;
+    if (!L || !L.K) return null;
+    const out = [], per = g.barQ / L.K.length;
+    for (let j = 0; j < L.K.length; j++) {
+      if (L.K[j] !== 'x' && L.K[j] !== 'X') continue;
+      const s = Math.round((j * per) / STEP_Q);
+      if (s >= 0 && s < steps && !out.includes(s)) out.push(s);
+    }
+    return out;
+  };
+  const vocal = (d.notes || []).filter((n) => n.effMidi != null && n.q1 > n.q0).sort((a, b) => a.q0 - b.q0);
+  ctx.melodyPc = (q) => { for (const n of vocal) { if (n.q0 > q + 1e-6) break; if (q < n.q1 - 1e-6) return mod12(n.effMidi); } return null; };
+  ctx.melodyCount = (i) => vocal.filter((n) => n.q0 >= i * g.barQ - 1e-6 && n.q0 < (i + 1) * g.barQ - 1e-6).length;
   void byBar;
   return ctx;
 }
@@ -351,10 +366,12 @@ function pickTemplate(track, prof_, type, meter, energy, rng, o = {}) {
   const id = pickW(rng, entries);
   return cand.find((t) => t.id === id) || cand[0];
 }
+const grooveOn = (track, ctx) => !!Bass.Groove && Bass.Groove.active(track, ctx);
 // bölümlerin 4 ölçülük cümleleri: A, A, A', B — cümle düzeyinde rastgele akış (tohum, bölüm, cümle no) → ölçüler tek tek yeniden hesaplanabilir
 function planMotifs(track, ctx) {
   const type = track.instrumentType, prof_ = activeProfile(track), meter = ctx.meter;
   const plan = new Array(ctx.bars).fill(null);
+  if (grooveOn(track, ctx)) return plan; // groove motoru ölçüleri kendisi planlar
   let prevFamily = null, prevEnergy = null;
   for (const sec of ctx.secs) {
     const set = track.sections[sec.id]; if (!set) continue;
@@ -447,7 +464,7 @@ function buildBarNotes(env) {
   const lastSeg = segs[segs.length - 1];
   const nextDiffers = !!nextChord && !sameChord(lastSeg.chord, nextChord);
   // bölümün son ölçüsü (ya da sabit öncül isteği) her zaman bir sonraki köke öncül ile biter
-  if ((lastBarOfSection && nextChord && !ped) || env.forcePickup) slots = withPickup(slots, steps).map((s) => (s.role === 'pickup' && !s.sr ? Object.assign(s, { sr: 'pickup' }) : s));
+  if ((lastBarOfSection && nextChord && !ped && !env.noPickup) || env.forcePickup) slots = withPickup(slots, steps).map((s) => (s.role === 'pickup' && !s.sr ? Object.assign(s, { sr: 'pickup' }) : s));
   const notes = [], warnings = [];
   let prev = env.prevMidi ?? null, prevRole = 'root';
   const nextRoot = nextChord ? homeRoot(chordInfo(nextChord).bassPc, center, range) : null;
@@ -526,7 +543,7 @@ function buildBarNotes(env) {
   // bölümün ilk ölçüsü: çapa bir adım uzun tutulur (sonraki onset izin veriyorsa)
   if (firstBarOfSection && notes.length) {
     const a = notes[0];
-    if (a.startBeat === 0 && (!notes[1] || notes[1].startBeat >= a.durationBeats + STEP_Q - 1e-9)) a.durationBeats += STEP_Q;
+    if (a.startBeat === 0 && (!notes[1] || notes[1].startBeat >= a.durationBeats + STEP_Q - 1e-9) && (!tpl.groove || a.durationBeats + STEP_Q <= ctx.barQ + 1e-9)) a.durationBeats += STEP_Q;
   }
   return { notes, warnings };
 }
@@ -570,11 +587,17 @@ function applyFill(env, res) {
 const noteKey = (n) => `${n.startBeat}|${n.durationBeats}|${n.midi}`;
 const barKey = (b) => b.notes.map(noteKey).join(';');
 // ölçü imzası: akorlar, bölüm anahtarı, ölçü ve bir sonraki ölçünün ilk akoru (öncül için) — değişirse "kirli"
+// groove: tür ve o ölçüdeki kick'ler imzaya girer; davul loop'u ya da tür değişince kilitsiz ölçüler yeniden hesaplanır
+function grooveSig(ctx, track, i) {
+  if (!grooveOn(track, ctx)) return '';
+  const k = ctx.kicks ? ctx.kicks(i) : null;
+  return 'G' + Bass.Groove.feelFor(track, ctx).id + ':' + (k ? k.join('.') : '-');
+}
 function barSig(ctx, track, i) {
   const segs = ctx.segs(i), sec = ctx.secOf(i);
   const nx = ctx.firstChord(i + 1), pv = ctx.lastChord(i - 1);
   const f = (c) => (c ? `${mod12(c.root)}${c.q}/${c.bass ?? ''}` : '-');
-  return [ctx.meter, sec ? `${sec.id}:${sec.tonic}:${sec.mode}:${i + 1 === sec.endBar ? 'E' : ''}${i + 1 === sec.startBar ? 'S' : ''}` : '-', segs ? segs.map((s) => `${s.s0}-${s.s1}:${f(s.chord)}`).join(',') : '-', f(nx), f(pv), track.instrumentType, track.range.low + ':' + track.range.high].join('|');
+  return [ctx.meter, sec ? `${sec.id}:${sec.tonic}:${sec.mode}:${i + 1 === sec.endBar ? 'E' : ''}${i + 1 === sec.startBar ? 'S' : ''}` : '-', segs ? segs.map((s) => `${s.s0}-${s.s1}:${f(s.chord)}`).join(',') : '-', f(nx), f(pv), track.instrumentType, track.range.low + ':' + track.range.high, grooveSig(ctx, track, i)].join('|');
 }
 
 // bir ölçüyü üretir (planlı); locked/loop ölçüler atlanır. opts.free: kendi akışından şablon + roller seç (yeniden zar)
@@ -587,9 +610,12 @@ function generateBar(track, ctx, i, motifs, opts = {}) {
   const hyp = secSet.hypnotic && bar.rerollCount === 0 && !opts.free && !opts.recipe; // hipnotik: her ölçüde aynı akış → birebir tekrar
   const rng = hyp ? rngFor(track.seed, 'hyp', sec ? sec.id : '_none', salt) : rngFor(track.seed, 'bar', i, bar.rerollCount, salt);
   const idx = tplIndex(track);
-  let tpl, prs, kind = 'free';
+  let tpl, prs, kind = 'free', groove = null;
   let plan = motifs && motifs[i];
-  if (bar.source === 'tapped' && bar.recipe && bar.recipe.templateId && idx.get(bar.recipe.templateId)) {
+  if (!opts.recipe && !(bar.source === 'tapped' && bar.recipe && bar.recipe.templateId && idx.get(bar.recipe.templateId)) && grooveOn(track, ctx)) {
+    groove = Bass.Groove.plan(track, ctx, i, { secSet, sec, bar, variant: bar.rerollCount + salt });
+    tpl = groove.tpl; prs = groove.prs; kind = 'groove'; plan = null;
+  } else if (bar.source === 'tapped' && bar.recipe && bar.recipe.templateId && idx.get(bar.recipe.templateId)) {
     tpl = idx.get(bar.recipe.templateId); prs = drawRoles(track, prof_, type, tpl, energy, rng); kind = 'tapped';
   } else if (opts.recipe) {
     tpl = null; kind = 'recipe';
@@ -610,12 +636,12 @@ function generateBar(track, ctx, i, motifs, opts = {}) {
   // A' çeşitlemesi: öncül eklenir
   const nextC = ctx.firstChord(i + 1), curLast = ctx.lastChord(i);
   let forcePickup = !!(plan && plan.pickup && kind !== 'free' && !opts.recipe && (!secSet.hypnotic || (nextC && curLast && !sameChord(nextC, curLast))));
-  const env = { track, ctx, i, rng, secSet, sec, tpl, slots, roles, energy, prevMidi: opts.prevMidi, nextFirst: opts.nextFirst, forcePickup };
+  const env = { track, ctx, i, rng, secSet, sec, tpl, slots, roles, energy, prevMidi: opts.prevMidi, nextFirst: opts.nextFirst, forcePickup, noPickup: !!(groove && groove.noPickup) };
   let res = buildBarNotes(env);
   // dolgu: cümle sonu (4. ölçü ya da bölümün son ölçüsü), bölüm izin veriyor, pedal yok
   const pos = sec ? (i + 1 - sec.startBar) % 4 : 0, phraseEnd = pos === 3 || (sec && i + 1 === sec.endBar);
   const ped = pedalFor(bar, secSet);
-  if (phraseEnd && secSet.fills && !ped && !opts.noFill && !opts.recipe && rng() < 0.15 + 0.5 * energy) applyFill(env, res);
+  if (!groove && phraseEnd && secSet.fills && !ped && !opts.noFill && !opts.recipe && rng() < 0.15 + 0.5 * energy) applyFill(env, res);
   bar.templateId = tpl.id; bar.energy = energy; bar.sectionId = sec ? sec.id : null; bar.warnings = res.warnings;
   bar.notes = res.notes;
   bar.recipe = { templateId: tpl.id, slots: slots.map((s) => ({ step: s.step, len: s.len, pr: s.pr, sr: s.sr, role: s.role, octave: s.octave, ghost: s.ghost, vel: s.vel, accent: s.accent, glide: s.glide, gate: s.gate, degree: s.degree })) };
@@ -635,6 +661,7 @@ function triple(track, i) { // i, i-1, i-2 aynı notalar mı (kilit / döngü / 
   return k === barKey(b[i - 1]) && k === barKey(b[i - 2]);
 }
 function noTriple(track, ctx, i, motifs, opts) {
+  if (grooveOn(track, ctx)) return; // groove: aynı akor + aynı bölüm = aynı hat (tekrar bilinçli)
   const sec = ctx.secOf(i), secSet = track.sections[sec ? sec.id : '_none'];
   if (secSet && secSet.hypnotic) return;
   const bad = () => [i, i + 1, i + 2].some((e) => track.bars[e] && !track.bars[e].locked && track.bars[e].source !== 'loop' && triple(track, e) && ![e, e - 1, e - 2].some((x) => isFixed(track.bars[x] || {}) && x !== i));
@@ -784,6 +811,12 @@ function bassReroll(track, ctx, i) {
 // yoğunlaştır / seyrekleştir: ailedeki komşu şablona geç
 function bassDensity(track, ctx, i, dir) {
   const b = track.bars[i]; if (!b || b.locked || b.source === 'loop') return false;
+  if (grooveOn(track, ctx) && String(b.templateId).startsWith('groove:')) { // groove: bir kova yukarı / aşağı
+    b.densityBias = clamp((b.densityBias || 0) + (dir > 0 ? 1 : -1), -2, 2);
+    generateBar(track, ctx, i, null, { prevMidi: prevNote(track, i), nextFirst: nextFixedFirst(track, i) });
+    applyTies(track, ctx, i - 1, i + 1); applyLoops(track, ctx);
+    return true;
+  }
   const idx = tplIndex(track), tpl = idx.get(b.templateId); if (!tpl) return false;
   const list = templatesFor(track, ctx.meter, track.instrumentType).concat(tpl.custom ? [tpl] : []);
   const nb = dir > 0 ? siblingUp(list, tpl) : siblingDown(list, tpl);

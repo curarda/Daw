@@ -15,7 +15,7 @@ assert.deepEqual(C.migrateMatrix({}).realSounds, p2.realSounds);
 const restore = JSON.parse(JSON.stringify({ ...p, realSounds: { enabled: true, drums: { K: { ...r, license: 'bad' }, evil: r }, bass: [r] } }));
 assert.deepEqual(C.migrateMatrix(restore).realSounds, { enabled: true, drums: {}, bass: [r] });
 for (const model of ['../../x', 'x?key=y', '<script>', 'a'.repeat(65)]) {
-  const st = C.createSoundSettings(null); st.set({ geminiModel: model }); assert.equal(st.get().geminiModel, 'gemini-2.5-flash'); assert.ok(st.status().message);
+  const st = C.createSoundSettings(null); st.set({ geminiModel: model }); assert.equal(st.get().geminiModel, 'gemini-3.6-flash'); assert.ok(st.status().message);
 }
 const fail = { getItem() { throw Error('blocked'); }, setItem() { throw Error('blocked'); }, removeItem() { throw Error('blocked'); } };
 const st = C.createSoundSettings(fail); st.set({ freesoundKey: 'FS_FAKE_KEY_SENTINEL_1234' }); assert.ok(st.status().storageFailed); assert.ok(!st.maskKey(st.get().freesoundKey).includes(st.get().freesoundKey)); st.clear(); assert.equal(st.get().freesoundKey, '');
@@ -31,6 +31,10 @@ for (let id = 1; id <= 28; id++) await full.put({ ...r, id, url: r.url.replace('
 assert.ok((await full.stats()).bytes <= 40000000); assert.equal(await full.get(1, r.previewUrl), null); assert.ok(await full.get(28, r.previewUrl));
 let persisted;
 const storage = { getItem: () => persisted || null, setItem: (_, v) => { persisted = v; }, removeItem: () => { persisted = null; } };
+{ // kayıtlı eski varsayılan yeni varsayılana geçer; açık seçilen başka model korunur
+  const old = { getItem: () => JSON.stringify({ freesoundKey: '', geminiKey: '', geminiModel: 'gemini-2.5-flash' }), setItem() {} };
+  assert.equal(C.createSoundSettings(old).get().geminiModel, 'gemini-3.6-flash');
+}
 const saved = C.createSoundSettings(storage); saved.set({ freesoundKey: 'FS_FAKE_KEY_SENTINEL_1234', geminiModel: 'gemini-2.5-pro' });
 assert.equal(C.createSoundSettings(storage).get().geminiModel, 'gemini-2.5-pro'); assert.equal(saved.status().storageFailed, false);
 console.log('realsounds-state: ingress, migration/history chain, isolation, settings fallback, LRU, poisoned cache OK');

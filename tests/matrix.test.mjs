@@ -19,7 +19,7 @@ for (const project of [C.newProject(), C.migrateMatrix({})]) {
   assert.equal(disabled.matrix.enabled, false);
   assert.deepEqual(disabled.matrix.rows, enabled.matrix.rows);
 }
-const p = C.newProject(); p.guitar.instrument = 'both'; p.bass.enabled = true; p.drums.on = true;
+const p = C.newProject(); p.guitar.instrument = 'both'; p.bass.enabled = true; p.bass.engine = 'legacy'; p.drums.on = true; // fixture eski şablon motoruyla kaydedildi
 p.sections = ['a', 'b', 'c'].map((id, i) => ({ id, type: 'chorus', name: id, startBar: i * 2 + 1, endBar: i * 2 + 2, tonic: 9, mode: 'minor' }));
 const d = C.derive(p, { duration: 6 * C.makeGrid(p.settings).barSec, rawNotes: [] });
 C.Bass.bassGenerateAll(p.bass, C.Bass.bassContext(d, p));
@@ -36,7 +36,7 @@ for (const expected of fixture) {
   legacy.drums = { on: true, loop: loops[0].id, startBar: 2, fills: true };
   legacy.sections = ['a', 'b', 'c'].map((id, i) => ({ id, name: i === 1 ? 'Nakarat' : 'Verse', startBar: i * 2 + 1, endBar: i * 2 + 2, tonic: 9, mode: 'minor', arr: { piano: i === 1 ? 'synth-arp' : null, drums: i === 2 ? 'off' : loops[i % loops.length].id } }));
   const ld = C.derive(legacy, { duration: 6 * C.makeGrid(legacy.settings).barSec, rawNotes: [] });
-  legacy.bass.enabled = true; C.Bass.bassGenerateAll(legacy.bass, C.Bass.bassContext(ld, legacy));
+  legacy.bass.enabled = true; legacy.bass.engine = 'legacy'; C.Bass.bassGenerateAll(legacy.bass, C.Bass.bassContext(ld, legacy));
   assert.deepEqual(JSON.parse(JSON.stringify(C.arrangedEvents(ld, legacy))), expected.events);
   assert.deepEqual(Array.from(C.exportMidi(legacy, ld, { name: loops[0].name, events: expected.events.drums })), expected.midi);
 }
