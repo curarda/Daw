@@ -433,6 +433,12 @@ try {
     // bölüme tıkla → seçilir; denetçideki "Bölümü sil"
     await page.mouse.click(tl.x + (await barX(6)), y);
     await page.click('#inspector button[data-act=secDelete]');
+    assert.deepEqual(await secs(), ['Verse 1–8'], 'silinen bölümün ölçüleri komşuya katılır (akorlar yerinde kalır)');
+    assert.match(await page.textContent('#status'), /“Nakarat” bölümü kaldırıldı; ölçü 5–8 “Verse” bölümüne katıldı\. Akorlar/);
+    // bitişi 4'e çek: 5–8 boşalır (komşu yok, akorlar gider)
+    const setEnd = (id, v) => page.locator(`#sectionList [data-act=secEnd][data-id="${id}"]`).evaluate((el, val) => { el.value = val; el.dispatchEvent(new Event('change', { bubbles: true })); }, v);
+    const firstId = await S(() => window.__daw.proj.sections[0].id);
+    await setEnd(firstId, '4');
     assert.deepEqual(await secs(), ['Verse 1–4']);
     // boş şeride tek tık: bölüm açılmaz
     await page.mouse.click(tl.x + (await barX(6)), y);
@@ -443,11 +449,13 @@ try {
     await page.mouse.move(tl.x + (await barX(7)), y, { steps: 5 }); await page.mouse.up();
     const added = await secs();
     assert.equal(added.length, 2); assert.match(added[1], /5–7$/);
-    // seç + Delete tuşu
+    // seç + Delete tuşu: ölçüleri önceki bölüme katılır
     await page.mouse.click(tl.x + (await barX(6)), y);
     await page.keyboard.press('Delete');
+    assert.deepEqual(await secs(), ['Verse 1–7']);
+    await setEnd(firstId, '4');
     assert.deepEqual(await secs(), ['Verse 1–4']);
-    return `denetçiden silindi · tek tık → bölüm yok · sürükle → ${added[1]} · Delete ile silindi`;
+    return `denetçiden silindi (komşuya katıldı) · tek tık → bölüm yok · sürükle → ${added[1]} · Delete ile silindi (komşuya katıldı)`;
   });
 
   await step('Eklenen her şey tekrar tıklanınca en üstte "kaldır" satırıyla gelir (nota, akor kilidi, bölüm kilitleri)', async () => {
