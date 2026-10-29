@@ -48,6 +48,7 @@ legend { color: var(--muted); font-size: 12px; padding: 0 4px; }
 #topbar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .brand { font-weight: 700; font-size: 15px; }
 .brand small { color: var(--muted); font-weight: 400; margin-left: 4px; }
+#inPackToolbar { width: auto; max-width: 150px; }
 .group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 #posReadout { min-width: 88px; text-align: center; background: #0e1014; border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; }
 button.ab { min-width: 150px; }
@@ -348,6 +349,7 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
   </div>
   <div class="group">
     <button id="btnDemo" class="accent" title="Ölçü + ton + akorlar + davul + bas tek tuşla; sonra çalar">✨ Demo yap</button>
+    <select id="inPackToolbar" aria-label="Tür paketi (Demo yap bunu uygular)" title="Tür paketi: Demo yap seçili paketi uygular (4a ile aynı seçim)"></select>
     <label class="chk" title="Açıkken Demo yap, paket uygulama ve ⟳ akorlara dokunmaz; kendi seçtiğin akorlar korunur."><input type="checkbox" id="inPreserveChordsToolbar"> 🔒 Akorları koru</label>
     <button id="btnTest" class="accent">Test melodisi üret</button>
     <button id="btnUndo" title="Geri al (Ctrl+Z)" disabled>↶</button><button id="btnRedo" title="Yinele (Ctrl+Shift+Z)" disabled>↷</button>
@@ -12291,6 +12293,9 @@ function renderPacks() {
   $('#chipPack').textContent = record(p.pack.id)?.name || 'yok';
   select.innerHTML = ranked.map((r) => `<option value="${r.id}">${esc(record(r.id).name)} — ${fit(r)}</option>`).join('');
   select.value = ranked.some((r) => r.id === p.pack.selectedId) ? p.pack.selectedId : ranked.some((r) => r.id === p.pack.id) ? p.pack.id : ranked[0]?.id || '';
+  $('#inPackToolbar').innerHTML = ranked.map((r) => `<option value="${r.id}">${esc(record(r.id).name)}</option>`).join('');
+  $('#inPackToolbar').value = select.value;
+  $('#inPackToolbar').disabled = !ranked.length;
   $('#packSuggestions').innerHTML = C.topSuggestions(p).map((r) => `<button data-pack="${r.id}">${esc(record(r.id).name)}<small>${fit(r)}</small></button>`).join('');
   $('#packUnavailable').hidden = !!ranked.length;
   for (const el of [select, $('#btnPackApply'), $('#btnPackNext'), ...$$('[data-pack-lock]')]) el.disabled = !ranked.length;
@@ -12305,7 +12310,7 @@ function applyPackUI(id) {
       const result = C.applyPack(S.proj, S.d, id);
       PACK_UI.project = S.proj; PACK_UI.warnings = result.warnings; PACK_UI.kept = result.kept;
       S.proj.pack.selectedId = id;
-      $('#inPack').value = id;
+      $('#inPack').value = id; $('#inPackToolbar').value = id;
     });
     clearTimeout(BS.timer);
     const name = C.PACKS.find((p) => p.id === id).name;
@@ -12318,8 +12323,11 @@ $('#packSuggestions').onclick = (e) => { const b = e.target.closest('[data-pack]
 $('#inPack').onchange = (e) => {
   histCommit();
   S.proj.pack.selectedId = e.target.value || null;
+  $('#inPackToolbar').value = e.target.value;
   renderVersions();
 };
+// Üst çubuktaki tür seçici, 4a'daki seçimle aynıdır (Demo yap ikisinde de aynı paketi uygular)
+$('#inPackToolbar').onchange = (e) => { $('#inPack').value = e.target.value; $('#inPack').onchange({ target: $('#inPack') }); };
 $('#btnPackApply').onclick = () => applyPackUI($('#inPack').value);
 $('#btnPackNext').onclick = () => applyPackUI(C.nextPack(S.proj, S.proj.pack.id || $('#inPack').value));
 $('#packLocks').onclick = (e) => {

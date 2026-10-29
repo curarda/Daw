@@ -2810,6 +2810,9 @@ function renderPacks() {
   $('#chipPack').textContent = record(p.pack.id)?.name || 'yok';
   select.innerHTML = ranked.map((r) => `<option value="${r.id}">${esc(record(r.id).name)} — ${fit(r)}</option>`).join('');
   select.value = ranked.some((r) => r.id === p.pack.selectedId) ? p.pack.selectedId : ranked.some((r) => r.id === p.pack.id) ? p.pack.id : ranked[0]?.id || '';
+  $('#inPackToolbar').innerHTML = ranked.map((r) => `<option value="${r.id}">${esc(record(r.id).name)}</option>`).join('');
+  $('#inPackToolbar').value = select.value;
+  $('#inPackToolbar').disabled = !ranked.length;
   $('#packSuggestions').innerHTML = C.topSuggestions(p).map((r) => `<button data-pack="${r.id}">${esc(record(r.id).name)}<small>${fit(r)}</small></button>`).join('');
   $('#packUnavailable').hidden = !!ranked.length;
   for (const el of [select, $('#btnPackApply'), $('#btnPackNext'), ...$$('[data-pack-lock]')]) el.disabled = !ranked.length;
@@ -2824,7 +2827,7 @@ function applyPackUI(id) {
       const result = C.applyPack(S.proj, S.d, id);
       PACK_UI.project = S.proj; PACK_UI.warnings = result.warnings; PACK_UI.kept = result.kept;
       S.proj.pack.selectedId = id;
-      $('#inPack').value = id;
+      $('#inPack').value = id; $('#inPackToolbar').value = id;
     });
     clearTimeout(BS.timer);
     const name = C.PACKS.find((p) => p.id === id).name;
@@ -2837,8 +2840,11 @@ $('#packSuggestions').onclick = (e) => { const b = e.target.closest('[data-pack]
 $('#inPack').onchange = (e) => {
   histCommit();
   S.proj.pack.selectedId = e.target.value || null;
+  $('#inPackToolbar').value = e.target.value;
   renderVersions();
 };
+// Üst çubuktaki tür seçici, 4a'daki seçimle aynıdır (Demo yap ikisinde de aynı paketi uygular)
+$('#inPackToolbar').onchange = (e) => { $('#inPack').value = e.target.value; $('#inPack').onchange({ target: $('#inPack') }); };
 $('#btnPackApply').onclick = () => applyPackUI($('#inPack').value);
 $('#btnPackNext').onclick = () => applyPackUI(C.nextPack(S.proj, S.proj.pack.id || $('#inPack').value));
 $('#packLocks').onclick = (e) => {

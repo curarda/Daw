@@ -64,6 +64,12 @@ try {
   await page.evaluate(() => { const api = window.__dawAPI; api.S.proj.settings.bpm = 121; api.refresh(); });
   assert.equal(await page.inputValue('#inPack'), 'balad');
   assert.deepEqual(await page.locator('#packSuggestions [data-pack]').evaluateAll((els) => els.map((e) => e.dataset.pack)), await page.evaluate(() => window.__dawAPI.C.topSuggestions(window.__dawAPI.S.proj).map((r) => r.id)));
+  // The toolbar genre picker next to Demo yap mirrors the 4a selection in both directions.
+  assert.equal(await page.inputValue('#inPackToolbar'), 'balad');
+  assert.deepEqual(await page.locator('#inPackToolbar option').evaluateAll((els) => els.map((e) => e.value)), await page.locator('#inPack option').evaluateAll((els) => els.map((e) => e.value)));
+  await page.selectOption('#inPackToolbar', 'dream-pop');
+  assert.equal(await page.inputValue('#inPack'), 'dream-pop'); assert.equal((await state()).pack.selectedId, 'dream-pop');
+  await page.selectOption('#inPack', 'balad'); assert.equal(await page.inputValue('#inPackToolbar'), 'balad');
   await page.click('[data-pack-lock="drums"]');
   assert.equal((await state()).pack.locks.drums, true);
   await undo(); assert.equal((await state()).pack.locks.drums, false);
