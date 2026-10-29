@@ -33,7 +33,7 @@ try {
   await open(p);
   const suggestions = await page.evaluate(() => window.__dawAPI.C.topSuggestions(window.__dawAPI.S.proj).map((r) => r.id));
   assert.deepEqual(await page.locator('#packSuggestions [data-pack]').evaluateAll((els) => els.map((e) => e.dataset.pack)), suggestions);
-  assert.equal(await page.locator('#inPack option').count(), 14);
+  assert.equal(await page.locator('#inPack option').count(), 15);
   assert.deepEqual(await page.locator('#inPack option').evaluateAll((els) => els.map((e) => e.value)), await page.evaluate(() => window.__dawAPI.C.rankPacks(window.__dawAPI.S.proj).map((r) => r.id)));
   const initial = await state();
   await page.locator('#packSuggestions [data-pack]').first().click();
@@ -91,7 +91,9 @@ try {
   // Scheduled audio must obey the same disabled-matrix arrangement as a pack-less project.
   await page.uncheck('#inMatrixEnabled');
   const audible = await page.evaluate(async () => {
-    const api = window.__dawAPI, { C, S } = api, plain = structuredClone(S.proj); plain.pack.id = null;
+    const api = window.__dawAPI, { C, S } = api;
+    for (const part of Object.values(S.proj.guitar.parts)) part.groove = false; // gitar groove pakete bağlıdır; bu adım matris geçidini sınar
+    const plain = structuredClone(S.proj); plain.pack.id = null;
     const expected = C.arrangedEvents(S.d, plain), actual = C.arrangedEvents(S.d, S.proj), scheduled = {};
     api.onScheduledEvents = (ev) => Object.assign(scheduled, ev);
     await api.player().play({ from: 0 }); api.stop(); delete api.onScheduledEvents;

@@ -78,6 +78,7 @@ const FEELS = {
   akustik: { name: 'Akustik', bands: { low: ['whole'], mid: ['halves', 'halves5'], high: ['q', 'halves5'] }, approach: false },
   balad: { name: 'Balad', bands: { low: ['whole'], mid: ['halves'], high: ['halves', 'dotted'] }, approach: false },
   synthpop: { name: 'Synthpop', bands: { low: ['q'], mid: ['off', 'e8'], high: ['off', 'e8-oct', 'arp'] }, gate: 0.7 },
+  'trip-hop': { name: 'Trip hop', bands: { low: ['whole', 'halves'], mid: ['dotted', 'push', 'halves'], high: ['push', 'dotted', 'sync'] }, gate: 0.97 },
   'dans-elektronik': { name: 'Dans / Elektronik', bands: { low: ['q'], mid: ['off', 'arp'], high: ['s16', 'acid', 'off'] }, gate: 0.6 },
   vals: { name: 'Vals', meter: '3/4', bands: { low: ['W1'], mid: ['W13', 'W1'], high: ['W123', 'W13'] } },
   'balad-68': { name: '6/8 Balad', meter: '6/8', bands: { low: ['S1'], mid: ['Sdot', 'S1'], high: ['Sdot', 'S8'] } },

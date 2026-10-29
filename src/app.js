@@ -1205,7 +1205,8 @@ function makeDemo() {
     // 2) bölüm ve ton: bölüm yoksa tek bölüm; onaylanmamış önerilen tonlar onaylanır
     if (!S.proj.sections.length) {
       const id = uid(); C.rekeyChordChoices(S.proj, '_all', id);
-      S.proj.sections.push({ id, link: null, name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: null, mode: null }); refresh();
+      const ik = C.inheritedSectionKey(S.proj);
+      S.proj.sections.push({ id, link: null, name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: ik.tonic, mode: ik.mode }); refresh();
     }
     let keyed = 0;
     for (const s of S.proj.sections) if (s.tonic == null) { const ds = S.d.sections.find((x) => x.id === s.id); if (ds && ds.tonic != null) { s.tonic = ds.tonic; s.mode = ds.mode; keyed++; } }
@@ -2182,6 +2183,11 @@ function draw() {
     c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(x0, secY + 2, x1 - x0, TL.SEC - 4);
     c.fillStyle = '#fff'; c.fillText(`ölçü ${a}–${b}`, x0 + 6, secY + TL.SEC / 2);
   }
+  if (S.drag && S.drag.type === 'secEdge' && S.drag.moved) {
+    const ed = S.drag.edge, line = qToX((ed.kind === 'end' ? S.drag.k : S.drag.k - 1) * barQ);
+    c.strokeStyle = '#ffb347'; c.lineWidth = 2; c.beginPath(); c.moveTo(line, secY); c.lineTo(line, H); c.stroke(); c.lineWidth = 1;
+    c.fillStyle = '#ffb347'; c.fillRect(line - 22, secY + 2, 44, 16); c.fillStyle = '#111'; c.fillText(`ölçü ${ed.kind === 'end' ? S.drag.k : S.drag.k}`, line - 18, secY + 10);
+  }
   // akor şeridi
   const chY = TL.RULER + TL.SEC;
   c.fillStyle = '#171a21'; c.fillRect(TL.KW, chY, W, TL.CHORD);
@@ -2419,6 +2425,19 @@ function noteAt(x, y) {
   return best;
 }
 const sectionAtBar = (bar) => S.proj.sections.find((s) => bar >= s.startBar && bar <= s.endBar);
+// bölüm şeridinde bir bölümün kenarı (±5 px): yan yana iki bölümün ortak sınırı tek tutamaktır
+function secEdgeAt(x) {
+  if (!S.d) return null;
+  const barQ = grid().barQ, secs = S.proj.sections.slice().sort((a, b) => a.startBar - b.startBar);
+  let best = null;
+  const consider = (edge, dist) => { if (dist <= 5 && (!best || dist < best.dist)) best = Object.assign({ dist }, edge); };
+  secs.forEach((s, i) => {
+    const prev = secs[i - 1], next = secs[i + 1];
+    consider(prev && prev.endBar + 1 === s.startBar ? { kind: 'boundary', aId: prev.id, bId: s.id, k: s.startBar } : { kind: 'start', id: s.id, k: s.startBar }, Math.abs(x - qToX((s.startBar - 1) * barQ)));
+    if (!(next && s.endBar + 1 === next.startBar)) consider({ kind: 'end', id: s.id, k: s.endBar }, Math.abs(x - qToX(s.endBar * barQ)));
+  });
+  return best;
+}
 function editFor(n, create) {
   let e = C.findEdit(S.proj.noteEdits, n);
   if (!e && create) { e = { t0: n.t0, t1: n.t1 }; S.proj.noteEdits.push(e); }
@@ -2443,6 +2462,8 @@ cv.addEventListener('pointerdown', (e) => {
   }
   if (y < TL.RULER + TL.SEC) {
     const bar = Math.max(1, Math.floor(q / g.barQ) + 1);
+    const eg = secEdgeAt(x);
+    if (eg) { S.drag = { type: 'secEdge', edge: eg, k: eg.k, moved: false }; cv.setPointerCapture(e.pointerId); draw(); return; }
     const s = sectionAtBar(bar);
     if (s) { select({ type: 'section', id: s.id }); return; }
     S.drag = { type: 'newSection', b0: bar, b1: bar, x0: x, moved: false };
@@ -2493,6 +2514,7 @@ cv.addEventListener('pointermove', (e) => {
     if (x < TL.KW && y > TL.TOP) { cv.style.cursor = 'pointer'; cv.title = 'Tuşa bas: notayı duy'; return; }
     const ti = y < TL.RULER ? tapAt(x) : -1;
     if (ti >= 0) { cv.style.cursor = 'ew-resize'; cv.title = 'Değişim noktası (tap): sürükle = kaydır · Alt+tık = sil'; return; }
+    if (y >= TL.RULER && y < TL.RULER + TL.SEC && secEdgeAt(x)) { cv.style.cursor = 'ew-resize'; cv.title = 'Bölüm sınırı: sürükle (ölçüye yapışır). Akorlar ve kilitler yerinde kalır; komşu bölüm gerekirse kısalır.'; return; }
     const hb = boundaryAt(x, y);
     if (JSON.stringify(hb) !== JSON.stringify(S.hoverMark)) { S.hoverMark = hb; draw(); }
     if (hb) {
@@ -2521,6 +2543,17 @@ cv.addEventListener('pointermove', (e) => {
   if (S.drag.type === 'tap') {
     S.proj.taps[S.drag.i] = Math.max(0, S.drag.t0 + ((x - S.drag.x0) / S.view.pxPerQ) * g.spq);
     S.drag.moved = true; draw(); return;
+  }
+  if (S.drag.type === 'secEdge') {
+    const ed = S.drag.edge, n = Math.round(xToQ(x) / g.barQ), secs = S.proj.sections;
+    const sec = (id) => secs.find((s) => s.id === id);
+    let k = ed.kind === 'end' ? n : n + 1;
+    if (ed.kind === 'boundary') k = C.clamp(k, sec(ed.aId).startBar + 1, sec(ed.bId).endBar);
+    else if (ed.kind === 'start') k = C.clamp(k, 1, sec(ed.id).endBar);
+    else k = C.clamp(k, sec(ed.id).startBar, S.d.bars);
+    if (k !== S.drag.k) S.drag.k = k;
+    if (Math.abs(x - qToX((ed.k - (ed.kind === 'end' ? 0 : 1)) * g.barQ)) >= 4) S.drag.moved = true;
+    draw(); return;
   }
   if (S.drag.type === 'newSection') {
     if (Math.abs(x - S.drag.x0) >= 4) S.drag.moved = true;
@@ -2592,6 +2625,21 @@ cv.addEventListener('pointerup', () => {
   if (dr.type === 'tap') { S.proj.taps.sort((a, b) => a - b); refresh(); return; }
   if (dr.type === 'marquee') { finishMarquee(dr); return; }
   if (dr.type === 'startFlag') { if (dr.moved) setStartBar(dr.which, dr.bar); else draw(); return; }
+  if (dr.type === 'secEdge') {
+    const ed = dr.edge;
+    if (!dr.moved || dr.k === ed.k) { draw(); return; }
+    const sec = (id) => S.proj.sections.find((s) => s.id === id);
+    if (ed.kind === 'boundary') {
+      const a = sec(ed.aId), b = sec(ed.bId);
+      if (dr.k < b.startBar) setSectionBars(b.id, dr.k, b.endBar, `“${b.name}” sınırı ölçü ${dr.k}'ye taşındı:`);
+      else setSectionBars(a.id, a.startBar, dr.k - 1, `“${a.name}” sınırı ölçü ${dr.k - 1}'e taşındı:`);
+    } else {
+      const s = sec(ed.id);
+      if (ed.kind === 'start') setSectionBars(s.id, dr.k, s.endBar, `“${s.name}” başlangıcı ölçü ${dr.k}'ye taşındı:`);
+      else setSectionBars(s.id, s.startBar, dr.k, `“${s.name}” bitişi ölçü ${dr.k}'e taşındı:`);
+    }
+    draw(); return;
+  }
   if (dr.type === 'newSection') {
     // tek tık bölüm açmaz (yanlışlıkla 1 ölçülük bölüm oluşuyordu); bölüm sürükleyerek açılır
     if (!dr.moved) status('Bölüm eklemek için bölüm şeridinde ölçüler boyunca sürükleyin (ya da 4. adımdaki "Ekle").');
@@ -2789,21 +2837,55 @@ function addSection(name, a, b) {
     const used = new Set(S.proj.sections.map((s) => s.name));
     name = ['Verse', 'Nakarat', 'Köprü', 'Verse 2', 'Nakarat 2', 'Outro'].find((n) => !used.has(n)) || 'Bölüm ' + (S.proj.sections.length + 1);
   }
-  const s = { id: uid(), link: null, name, startBar: a, endBar: b, tonic: null, mode: null };
+  const ik = C.inheritedSectionKey(S.proj); // bölüm yokken saklanan ton (son bölüm silindiyse) yeni bölüme geçer
+  const s = { id: uid(), link: null, name, startBar: a, endBar: b, tonic: ik.tonic, mode: ik.mode };
   S.proj.sections.push(s);
   S.proj.sections.sort((p, q) => p.startBar - q.startBar);
   S.sel = { type: 'section', id: s.id }; S.customSection = s.id;
   refresh();
   status(`“${name}” bölümü eklendi (ölçü ${a}–${b}). Tonunu 4. adımda seçin.`);
 }
-function deleteSection(id) {
+// Bölüm düzenlemeleri akorları ve kilitleri korur (src/sections.js). Önce kopyada denenir: geçersizse hiçbir şey değişmez, geçmişe adım girmez.
+function sectionOp(ids, op, message) {
+  if (!S.d) return false;
+  const r0 = op(JSON.parse(JSON.stringify(S.proj)));
+  if (!r0.ok) { status(r0.reason, 'err'); return false; }
+  let result = null;
+  structuralEdit(ids, () => { result = op(S.proj); if (S.sel && S.sel.type === 'section' && !S.proj.sections.some((x) => x.id === S.sel.id)) S.sel = null; }, () => message(result));
+  return true;
+}
+const neighborIds = (id) => S.proj.sections.filter((x) => { const s = S.proj.sections.find((y) => y.id === id); return s && (x.endBar + 1 === s.startBar || x.startBar === s.endBar + 1); }).map((x) => x.id);
+function deleteSection(id, keepChords = true) {
   const s = S.proj.sections.find((x) => x.id === id);
   if (!s) return;
-  structuralEdit([id], () => {
-    S.proj.sections = S.proj.sections.filter((x) => x.id !== id);
-    S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar < s.startBar || l.bar > s.endBar);
-    if (S.sel && S.sel.id === id) S.sel = null;
-  }, `“${s.name}” bölümü silindi (ölçü ${s.startBar}–${s.endBar}).`);
+  const keyText = (k) => (k ? ` (ton: ${C.keyName(k.tonic, k.mode)})` : '');
+  sectionOp([id, ...neighborIds(id)], (p) => C.removeSection(p, S.d, id, { keepChords }), (r) => {
+    const kept = `${r.chords ? `${r.chords} akor` : ''}${r.chords && r.locks ? ' ve ' : ''}${r.locks ? `${r.locks} kilit` : ''}`;
+    if (r.mode === 'implicit') return `“${s.name}” bölümü kaldırıldı: artık bölüm yok, tüm şarkı${keyText(r.key)}. Akorlar${r.locks ? ' ve kilitler' : ''} yerinde kaldı${kept ? ` (${kept})` : ''}.`;
+    if (r.mode === 'prev' || r.mode === 'next') return `“${s.name}” bölümü kaldırıldı; ölçü ${s.startBar}–${s.endBar} “${r.into}” bölümüne katıldı. Akorlar${r.locks ? ' ve kilitler' : ''} yerinde kaldı${kept ? ` (${kept})` : ''}.`;
+    if (r.mode === 'gap') return `“${s.name}” bölümü silindi (ölçü ${s.startBar}–${s.endBar}). Komşu bölüm olmadığı için bu ölçülerde akor kalmadı; bir bölüm ekleyince yeniden oluşur.`;
+    return `“${s.name}” bölümü akorlarıyla birlikte silindi (ölçü ${s.startBar}–${s.endBar}).`;
+  });
+}
+function mergeSection(id, dir) {
+  const s = S.proj.sections.find((x) => x.id === id);
+  const other = S.proj.sections.find((x) => (dir < 0 ? x.endBar + 1 === s.startBar : x.startBar === s.endBar + 1));
+  if (!s || !other) { status('Yan yana (bitişik) bölüm yok.', 'err'); return; }
+  const [a, b] = dir < 0 ? [other, s] : [s, other];
+  sectionOp([a.id, b.id], (p) => C.mergeSections(p, S.d, a.id, b.id), (r) => `“${a.name}” ve “${b.name}” birleşti: “${r.name}” ölçü ${r.startBar}–${r.endBar}. Akorlar ve kilitler yerinde kaldı.`);
+}
+function splitSectionAtPlayhead(id) {
+  const s = S.proj.sections.find((x) => x.id === id);
+  if (!s) return;
+  const bar = barAtPlayhead(), newId = uid();
+  sectionOp([id], (p) => C.splitSection(p, S.d, id, bar, newId), (r) => `“${r.first}” ölçü ${bar}'den bölündü: yeni bölüm “${r.second}” (ölçü ${bar}–${s.endBar}). Akorlar ve kilitler yerinde kaldı.`);
+}
+// aralık değişimi: komşu bölüm gerekirse kısalır; akorlar ve kilitler yerinde kalır
+function setSectionBars(id, a, b, label) {
+  const s = S.proj.sections.find((x) => x.id === id);
+  if (!s) return false;
+  return sectionOp([id, ...S.proj.sections.filter((x) => x.id !== id && !(Math.max(a, b) < x.startBar - 1 || Math.min(a, b) > x.endBar + 1)).map((x) => x.id)], (p) => C.setSectionRange(p, S.d, id, a, b),
+    (r) => `${label || `“${s.name}” aralığı`} ölçü ${r.startBar}–${r.endBar}${r.trimmed.length ? `; ${r.trimmed.map((n) => `“${n}”`).join(', ')} buna göre kısaldı` : ''}. Akorlar ve kilitler yerinde kaldı.`);
 }
 // Paket paneli; uyarılar yalnızca son uygulama için gösterilir.
 const PACK_UI = { project: null, warnings: [], kept: [] };
@@ -2991,7 +3073,7 @@ function structuralEdit(ids, fn, message) {
     syncInputs();
   });
   const count = before - Object.keys(C.resolveLinks(S.proj, S.d)).length;
-  status(message + (count ? ` ${count} bağlı bölüm sesi korunarak bağımsız kopya oldu.` : ''));
+  status((typeof message === 'function' ? message() : message) + (count ? ` ${count} bağlı bölüm sesi korunarak bağımsız kopya oldu.` : ''));
 }
 document.addEventListener('click', (e) => {
   const source = e.target.closest('[data-link-source]'), unlink = e.target.closest('[data-link-unlink]');
@@ -3068,7 +3150,12 @@ function renderSections() {
           <input type="text" value="${esc(src.name)}" data-act="secName" data-id="${s.id}" aria-label="bölüm adı">
           <input type="number" min="1" value="${s.startBar}" data-act="secStart" data-id="${s.id}" title="başlangıç ölçüsü">
           <input type="number" min="1" value="${s.endBar}" data-act="secEnd" data-id="${s.id}" title="bitiş ölçüsü">
-          <button class="danger" data-act="secDel" data-id="${s.id}" title="bölümü sil">✕ Sil</button></div>`;
+          <button class="danger" data-act="secDel" data-id="${s.id}" title="bölümü sil: akorlar ve kilitler yerinde kalır (ölçüleri komşu bölüme katılır ya da tüm şarkı olur)">✕ Sil</button></div>
+        <div class="sec-tools">
+          <button class="small" data-act="secMergePrev" data-id="${s.id}"${secs.some((o) => !o.implicit && o.endBar + 1 === s.startBar) ? '' : ' disabled'} title="önceki bölümle birleştir (akorlar yerinde kalır)">⇤ Öncekiyle birleştir</button>
+          <button class="small" data-act="secMergeNext" data-id="${s.id}"${secs.some((o) => !o.implicit && o.startBar === s.endBar + 1) ? '' : ' disabled'} title="sonraki bölümle birleştir (akorlar yerinde kalır)">Sonrakiyle birleştir ⇥</button>
+          <button class="small" data-act="secSplit" data-id="${s.id}" title="imlecin olduğu ölçüden ikiye böl (akorlar yerinde kalır)">✂ İmleçten böl</button>
+          <button class="small" data-act="secDelChords" data-id="${s.id}" title="bölümü ve içindeki akorları sil">🗑 Akorlarıyla sil</button></div>`;
     const sources = s.implicit ? [] : secs.filter((other) => !other.implicit && C.validateLink(S.proj, S.d, s.id, other.id).ok);
     const linkRow = s.implicit ? '' : `<div class="section-link"><label>Bağla: <select data-act="secLink" data-id="${esc(s.id)}" aria-label="${esc(s.name)}: Bağla"${sources.length ? '' : ' disabled'}><option value="">— bağsız —</option>${sources.map((other) => `<option value="${esc(other.id)}"${src.link?.sourceId === other.id ? ' selected' : ''}>${esc(other.name)} (${other.startBar}–${other.endBar})</option>`).join('')}</select></label>${sources.length ? '' : '<span class="hint">Aynı uzunlukta başka bölüm yok</span>'}${linkActions(s.id)}</div>`;
     const keyRow = s.implicit ? '' : `<div class="keyrow">
@@ -3095,6 +3182,10 @@ $('#sectionList').addEventListener('click', (e) => {
     refresh();
     status(`Ton seçildi: ${C.keyName(+b.dataset.t, b.dataset.m)}`);
   } else if (b.dataset.act === 'secDel' && s) deleteSection(s.id);
+  else if (b.dataset.act === 'secDelChords' && s) deleteSection(s.id, false);
+  else if (b.dataset.act === 'secMergePrev' && s) mergeSection(s.id, -1);
+  else if (b.dataset.act === 'secMergeNext' && s) mergeSection(s.id, +1);
+  else if (b.dataset.act === 'secSplit' && s) splitSectionAtPlayhead(s.id);
 });
 $('#sectionList').addEventListener('change', (e) => {
   const t = e.target, s = S.proj.sections.find((x) => x.id === t.dataset.id);
@@ -3103,9 +3194,8 @@ $('#sectionList').addEventListener('change', (e) => {
   if (t.dataset.act === 'secName') s.name = t.value.trim() || s.name;
   if (t.dataset.act === 'secStart' || t.dataset.act === 'secEnd') {
     const a = t.dataset.act === 'secStart' ? +t.value : s.startBar, b = t.dataset.act === 'secEnd' ? +t.value : s.endBar;
-    const ov = S.proj.sections.find((x) => x !== s && !(Math.max(a, b) < x.startBar || Math.min(a, b) > x.endBar));
-    if (ov || a < 1 || b < 1) status('Geçersiz/çakışan ölçü aralığı.', 'err');
-    else { structuralEdit([s.id], () => { const sec = S.proj.sections.find((x) => x.id === s.id); sec.startBar = Math.min(a, b); sec.endBar = Math.max(a, b); S.proj.sections.sort((p, q) => p.startBar - q.startBar); }, 'Bölüm aralığı değişti.'); return; }
+    if (!(a >= 1 && b >= 1)) status('Geçersiz ölçü aralığı.', 'err');
+    else { if (!setSectionBars(s.id, a, b, 'Bölüm aralığı')) renderSections(); return; }
   }
   if (t.dataset.act === 'secTonic') {
     if (t.value === '') { s.tonic = null; s.mode = null; }

@@ -1955,7 +1955,10 @@ function derive(proj, st) {
   const off = effectiveOffset(proj);
   const bars = totalBars(proj, st.duration);
   let sections = proj.sections.map((s) => Object.assign({ link: null }, s));
-  if (!sections.length) sections = [{ id: '_all', name: 'Tümü', startBar: 1, endBar: bars, implicit: true }];
+  if (!sections.length) { // bölüm yok: tüm şarkı; son bölüm silindiyse tonu saklanır (proj.implicitKey) ki akorlar aynı anahtarda kalsın
+    const ik = proj.implicitKey && proj.implicitKey.tonic != null && proj.implicitKey.mode ? { tonic: proj.implicitKey.tonic, mode: proj.implicitKey.mode } : {};
+    sections = [Object.assign({ id: '_all', name: 'Tümü', startBar: 1, endBar: bars, implicit: true }, ik)];
+  }
   sections.sort((a, b) => a.startBar - b.startBar);
   const secOfQ = (q) => { const bar = Math.floor(q / g.barQ + 1e-6) + 1; return sections.find((s) => bar >= s.startBar && bar <= s.endBar) || null; };
   // 3) notalar (zaman çizelgesi + düzenlemeler)

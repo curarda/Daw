@@ -318,3 +318,5 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
 
 .version-row { border-top: 1px solid var(--line); padding: 8px 0; }
 .version-row .row { margin-top: 5px; flex-wrap: wrap; }
+.sec-tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.sec-tools button.small { padding: 2px 6px; font-size: 11px; }

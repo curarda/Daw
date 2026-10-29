@@ -330,6 +330,8 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
 
 .version-row { border-top: 1px solid var(--line); padding: 8px 0; }
 .version-row .row { margin-top: 5px; flex-wrap: wrap; }
+.sec-tools { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+.sec-tools button.small { padding: 2px 6px; font-size: 11px; }
 </style>
 </head>
 <body>
@@ -2776,7 +2778,10 @@ function derive(proj, st) {
   const off = effectiveOffset(proj);
   const bars = totalBars(proj, st.duration);
   let sections = proj.sections.map((s) => Object.assign({ link: null }, s));
-  if (!sections.length) sections = [{ id: '_all', name: 'Tümü', startBar: 1, endBar: bars, implicit: true }];
+  if (!sections.length) { // bölüm yok: tüm şarkı; son bölüm silindiyse tonu saklanır (proj.implicitKey) ki akorlar aynı anahtarda kalsın
+    const ik = proj.implicitKey && proj.implicitKey.tonic != null && proj.implicitKey.mode ? { tonic: proj.implicitKey.tonic, mode: proj.implicitKey.mode } : {};
+    sections = [Object.assign({ id: '_all', name: 'Tümü', startBar: 1, endBar: bars, implicit: true }, ik)];
+  }
   sections.sort((a, b) => a.startBar - b.startBar);
   const secOfQ = (q) => { const bar = Math.floor(q / g.barQ + 1e-6) + 1; return sections.find((s) => bar >= s.startBar && bar <= s.endBar) || null; };
   // 3) notalar (zaman çizelgesi + düzenlemeler)
@@ -4227,6 +4232,7 @@ function defaultGuitarPart(meter = '4/4') {
     fx: { chorus: 0, delay: { mix: 0, time: '8n', feedback: 0.3 }, reverb: 0.15 },
     humanize: { strumSpreadMs: 12, velocityJitter: 0.08, timingJitterMs: 4 },
     swing: 0,
+    groove: true, // ritim, çalış biçimi ve şekil bölüme / davula / piyanoya göre türetilir (src/guitargroove.js); elle düzenleme kapatır
   };
 }
 function defaultGuitarState(meter = '4/4') { return { instrument: 'piano', parts: { _all: defaultGuitarPart(meter) }, presets: [] }; }
@@ -4249,6 +4255,7 @@ function normalizeGuitarState(st, meter) {
     const p = st.parts[k];
     st.parts[k] = Object.assign({}, base, p, { arpeggio: Object.assign({}, base.arpeggio, p.arpeggio), voicing: Object.assign({}, base.voicing, p.voicing),
       fx: Object.assign({}, base.fx, p.fx, { delay: Object.assign({}, base.fx.delay, p.fx && p.fx.delay) }), humanize: Object.assign({}, base.humanize, p.humanize), stepOverrides: p.stepOverrides || {} });
+    st.parts[k].groove = p.groove === true; // bayrağı olmayan eski parti elle yazılmıştır: olduğu gibi çalar
     normalizeGuitarPart(st.parts[k], meter);
   }
   st.presets = st.presets || [];
@@ -4303,8 +4310,9 @@ function guitarEvents(slots, g, getPart, opts = {}) {
   // 1) voicing: aynı partiyi paylaşan akorlar zaman sırasıyla tek dizi (el hareketi minimum)
   const parts = slots.map((sl) => getPart(sl));
   const voic = new Array(slots.length);
-  for (const p of new Set(parts)) {
-    const idx = slots.map((_, i) => i).filter((i) => parts[i] === p);
+  const groupOf = (p) => (p.vgroup != null ? p.vgroup : p); // groove partileri aynı sesleme ayarını paylaşıyorsa tek el hareketi dizisi
+  for (const gk of new Set(parts.map(groupOf))) {
+    const idx = slots.map((_, i) => i).filter((i) => groupOf(parts[i]) === gk), p = parts[idx[0]];
     const vs = C.guitarVoicings(idx.map((i) => ({ chord: slots[i].chord, tonic: slots[i].tonic })), p.voicing);
     idx.forEach((i, k) => { voic[i] = vs[k]; });
   }
@@ -4624,6 +4632,187 @@ function renderGuitar(events, sr, length, spq, gain = 1) {
 Object.assign(C, { TUNINGS, GUITAR_FALLBACK, guitarBaseQuality, guitarDrone, guitarVoicings, guitarMoveCost: moveCost, guitarToneSpec: toneSpec,
   GUITAR_PATTERNS, GUITAR_MODES, ARTICULATIONS, guitarPatternsFor, defaultGuitarPart, defaultGuitarState, normalizeGuitarPart, normalizeGuitarState, guitarPartFor, stepArticulation, setStepArticulation,
   guitarSlotsFrom, guitarEvents, patternById, clonePattern, GRID_Q, RATE_Q, ksPluck, renderGuitar, guitarFx });
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// ---------------------------------------------------------------- GİTAR GROOVE: türe, bölüme, davula ve diğer çalgılara bağlı gitar partisi
+// DOM'suz; Core.GuitarGroove (build'de guitar.js'in ardından). Elle yazılmış parti yerine, çalma anında bölüm başına bir parti TÜRETİR:
+//   1) tür (paket): her türün enerji kovasına (low / mid / high) göre rolleri vardır (halka, arpej, folk, palm-mute 8'lik, skank, kick vuruşu…),
+//   2) bölüm enerjisi: giriş / köprü sade, kıta orta, nakarat dolu,
+//   3) davul: o ölçüde çalan loop'un kick'ine kilitlenen roller kick'e vurgu koyar, skank / chop kick'ten kaçınır, vuruşlar trampette keser,
+//   4) iş bölümü: piyano / synth arpej çalıyorsa gitar sade (halka, skank, chop, vuruş); piyano blok akor tutuyorsa gitar ritim ya da arpej;
+//      piyano yoksa gitar harmoniyi taşır; piyano ya da bas varken üst üç tel (üçlü) çalınır, kalın tellerle çakışma olmaz,
+//   5) rastgelelik yok: aynı girdi → aynı parti; insan titremesi küçültülür (davula sıkı).
+// Part.groove === true ise geçerlidir; elle düzenlenen parti (groove: false) olduğu gibi çalar.
+(function (root) {
+const C = root.Core;
+const { clamp } = C;
+const STEP_Q = 0.25;
+
+// ---------------------------------------------------------------- 1) ROLLER (16'lık ızgarada adım dizisi)
+// d aşağı · u yukarı · x ölü · - es; BÜYÜK harf = vurgu. Dinamik roller (stab, chop) kick / trampet adımlarından kurulur.
+const grid = (n) => new Array(n).fill('-');
+const put = (g, list, ch) => { for (const s of list) if (s >= 0 && s < g.length) g[s] = ch; return g; };
+const pick = (s) => s.split('');
+const ROLES = {
+  // halka: tek vuruş, akor sonuna kadar çalar
+  pad: { mode: 'strum', art: 'letRing', sust: true, fit: 'free', steps: ({ n }) => put(grid(n), [0], 'D') },
+  pad2: { mode: 'strum', art: 'letRing', sust: true, fit: 'free', steps: ({ n }) => put(put(grid(n), [0], 'D'), [Math.round(n / 2)], 'd') },
+  // arpej: ızgara bir maskedir (arpej hızının her adımında bir ses)
+  arp8: { mode: 'arpeggio', rate: '8n', dir: 'up', busy: true, fit: 'free', steps: ({ n }) => put(grid(n), range(0, n, 2), 'd').map((c, i) => (i === 0 ? 'D' : c)) },
+  arp8ud: { mode: 'arpeggio', rate: '8n', dir: 'upDown', busy: true, fit: 'free', steps: ({ n }) => put(grid(n), range(0, n, 2), 'd').map((c, i) => (i === 0 ? 'D' : c)) },
+  travis: { mode: 'arpeggio', rate: '8n', dir: 'travis', busy: true, fit: 'free', steps: ({ n }) => put(grid(n), range(0, n, 2), 'd').map((c, i) => (i === 0 ? 'D' : c)) },
+  arp16: { mode: 'arpeggio', rate: '16n', dir: 'up', busy: true, fit: 'free', steps: ({ n }) => put(grid(n), range(0, n, 1), 'd').map((c, i) => (i === 0 ? 'D' : c)) },
+  // strum
+  folk: { mode: 'strum', busy: true, fit: 'lock', steps: () => pick('D---d-u---u-d-u-') },
+  strum8: { mode: 'strum', busy: true, fit: 'lock', steps: ({ n }) => put(grid(n), range(0, n, 2), 'd') },
+  strum8ud: { mode: 'strum', busy: true, fit: 'lock', steps: ({ n }) => pick('d-u-d-u-d-u-d-u-').slice(0, n) },
+  pm8: { mode: 'strum', art: 'palmMute', busy: true, drive: true, fit: 'lock', steps: ({ n }) => put(grid(n), range(0, n, 2), 'd') },
+  gallop: { mode: 'strum', busy: true, drive: true, fit: 'lock', steps: () => pick('d-dd'.repeat(4)) },
+  sync: { mode: 'strum', fit: 'lock', steps: () => pick('d--d--d-d--d--d-') },
+  // seyrek: yalnızca kick ya da offbeat / backbeat
+  skank: { mode: 'strum', art: 'staccato', fit: 'dodge', steps: ({ n }) => put(grid(n), range(2, n, 4), 'u') },
+  chop: { mode: 'strum', art: 'staccato', fit: 'free', steps: ({ n, S }) => put(grid(n), S && S.length ? S : [Math.round(n / 4), Math.round((3 * n) / 4)], 'd') },
+  stab: { mode: 'strum', fit: 'lock', steps: ({ n, K }) => put(put(grid(n), (K || []).filter((k) => k % 2 === 0 || k === 3 || k === 11), 'd'), [0], 'D') },
+};
+// 3/4 ve 6/8: tek çeyrek / noktalı çeyrek nabzı; adım sayısı 12 (16'lık ızgara)
+const ROLES_34 = {
+  pad: ROLES.pad, pad2: { ...ROLES.pad2, steps: ({ n }) => put(put(grid(n), [0], 'D'), [8], 'd') },
+  arp8: ROLES.arp8, arp8ud: ROLES.arp8ud, travis: ROLES.arp8,
+  waltz: { mode: 'strum', busy: true, fit: 'lock', steps: () => pick('D---d---d---') },
+  waltzbass: { mode: 'bassChord', busy: true, fit: 'lock', bassSteps: [0], steps: () => pick('D---d---d---') },
+  sync: { mode: 'strum', fit: 'lock', steps: () => pick('D-----d-----') },
+};
+const ROLES_68 = {
+  pad: ROLES.pad, pad2: { ...ROLES.pad2, steps: ({ n }) => put(put(grid(n), [0], 'D'), [6], 'd') },
+  arp8: ROLES.arp8, arp8ud: ROLES.arp8ud, travis: ROLES.arp8,
+  six8: { mode: 'strum', busy: true, fit: 'lock', steps: () => pick('D---d-u-d-u-') },
+  dotted: { mode: 'strum', fit: 'lock', steps: () => pick('D-----d-----') },
+};
+function range(a, b, step) { const o = []; for (let i = a; i < b; i += step) o.push(i); return o; }
+const ROLE_TABLE = { '4/4': ROLES, '3/4': ROLES_34, '6/8': ROLES_68 };
+
+// ---------------------------------------------------------------- 2) TÜRLER: enerji kovasına göre aday roller (öncelik sırasıyla)
+// off: bölüm enerjisine eklenen kayma · lift: yüksek kovada ton bir kademe yükselir (clean → crunch → drive) · led: gitar ana ritim çalgısı (piyano meşgulken de çalar)
+const FEELS = {
+  'dream-pop': { bands: { low: ['pad', 'arp8'], mid: ['arp8ud', 'arp8'], high: ['arp16', 'arp8ud'] } },
+  'indie-pop': { bands: { low: ['arp8', 'pad'], mid: ['folk', 'strum8ud'], high: ['strum8ud', 'folk', 'strum8'] } },
+  'electro-pop': { bands: { low: ['pad'], mid: ['skank', 'chop'], high: ['skank', 'strum8'] } },
+  'alt-rock': { led: true, lift: true, bands: { low: ['pm8', 'pad'], mid: ['pm8', 'gallop'], high: ['gallop', 'strum8'] } },
+  'indie-rock': { led: true, lift: true, bands: { low: ['arp8', 'pm8'], mid: ['strum8ud', 'pm8'], high: ['strum8', 'strum8ud'] } },
+  'post-punk': { led: true, bands: { low: ['skank'], mid: ['skank', 'chop'], high: ['skank', 'sync'] } },
+  synthwave: { bands: { low: ['pad'], mid: ['pm8'], high: ['strum8', 'pm8'] } },
+  darkwave: { bands: { low: ['pad'], mid: ['arp8'], high: ['arp8ud', 'arp8'] } },
+  'alternative-pop': { bands: { low: ['pad'], mid: ['arp8'], high: ['folk', 'arp8ud'] } },
+  'pop-rock': { led: true, bands: { low: ['arp8', 'pad'], mid: ['strum8', 'folk'], high: ['strum8ud', 'strum8', 'sync'] } },
+  akustik: { off: -0.05, bands: { low: ['travis', 'arp8'], mid: ['folk', 'travis'], high: ['folk', 'strum8ud'] } },
+  balad: { off: -0.05, bands: { low: ['pad'], mid: ['pad2', 'arp8'], high: ['arp8ud', 'pad2'] } },
+  synthpop: { bands: { low: ['pad'], mid: ['chop'], high: ['skank', 'chop'] } },
+  'dans-elektronik': { bands: { low: ['pad'], mid: ['chop'], high: ['skank', 'chop'] } },
+  'trip-hop': { off: -0.05, bands: { low: ['pad', 'arp8'], mid: ['pad2', 'arp8'], high: ['arp8', 'arp8ud', 'sync'] } },
+  vals: { meter: '3/4', bands: { low: ['pad'], mid: ['waltzbass', 'arp8'], high: ['waltz', 'waltzbass'] } },
+  'balad-68': { meter: '6/8', bands: { low: ['pad'], mid: ['arp8', 'dotted'], high: ['six8', 'dotted'] } },
+};
+const SPARSE = { low: ['pad'], mid: ['pad2', 'chop'], high: ['sync', 'stab', 'chop'] };
+const METER_FEEL = { '3/4': 'vals', '6/8': 'balad-68' };
+const TONES = ['clean', 'crunch', 'drive'];
+const ENERGY = { intro: 0.25, verse: 0.4, prechorus: 0.6, chorus: 0.825, postchorus: 0.7, bridge: 0.3, outro: 0.25, instrumental: 0.5, other: 0.5 };
+
+function feelOf(proj, meter) {
+  if (meter !== '4/4') return METER_FEEL[meter] || null;
+  const id = proj.pack && proj.pack.id;
+  if (id && FEELS[id] && !FEELS[id].meter) return id;
+  const tone = proj.guitar && proj.guitar.parts && proj.guitar.parts._all && proj.guitar.parts._all.tone;
+  return tone === 'clean' ? 'indie-pop' : 'pop-rock'; // paketsiz: kayıt tonuna göre pop çizgisi
+}
+const bandOf = (e) => (e < 0.34 ? 'low' : e < 0.7 ? 'mid' : 'high');
+
+// davul loop'unun bir şeridi → 16'lık adım listesi
+function laneSteps(L, lane, barQ, n) {
+  const str = L && L[lane];
+  if (!str) return null;
+  const out = [], per = barQ / str.length;
+  for (let j = 0; j < str.length; j++) {
+    if (str[j] !== 'x' && str[j] !== 'X') continue;
+    const s = Math.round((j * per) / STEP_Q);
+    if (s >= 0 && s < n && !out.includes(s)) out.push(s);
+  }
+  return out;
+}
+// aday rol ile davulun uyumu (bas groove'uyla aynı fikir): lock → kick'leri kapsar, dodge → kick'ten kaçınır
+function fit(role, hits, K, index) {
+  const bonus = -0.15 * index;
+  if (role.fit === 'free') return 1 + bonus; // arpej / halka: tür sırasına göre; yalnızca iyi oturan kilitli rol bunu geçer
+  if (!K || !K.length || !hits.length) return bonus;
+  const hit = hits.filter((s) => K.includes(s)).length;
+  if (role.fit === 'dodge') return 3 * (1 - hit / hits.length) * Math.min(1, (K.length - 1) / 3) + bonus;
+  if (role.fit === 'lock') return 3 * (hit / K.length) - (hits.length - hit) / hits.length + bonus;
+  return bonus;
+}
+
+// ---------------------------------------------------------------- 3) PARTİ TÜRETME
+const cache = new Map();
+const clone = (v) => JSON.parse(JSON.stringify(v));
+function derive(proj, d, slot, part, o = {}) {
+  if (!part || part.groove !== true || !d || !d.g) return part;
+  const g = d.g, meter = g.meter, table = ROLE_TABLE[meter];
+  const feelId = feelOf(proj, meter), feel = feelId && FEELS[feelId];
+  if (!table || !feel) return part;
+  const n = Math.round(g.barQ / STEP_Q), bar = Math.floor(slot.q0 / g.barQ + 1e-6) + 1;
+  const sec = d.sections.find((s) => bar >= s.startBar && bar <= s.endBar) || null;
+  const type = (sec && sec.typeNorm) || 'other';
+  const band = bandOf(clamp((ENERGY[type] ?? 0.5) + (feel.off || 0), 0, 1));
+  const layers = sec ? C.effectiveLayers(proj, d, sec.id) : { piano: false, guitar: true, bass: false, drums: false };
+  const L = layers.drums && C.drumLoopForBar ? C.drumLoopForBar(proj, d, bar) : null;
+  const K = laneSteps(L, 'K', g.barQ, n), S = laneSteps(L, 'S', g.barQ, n);
+  // diğer akor çalgısı (piyano / synth): arpej ve shuffle meşguldür, blok akor sakindir
+  const pianoStyle = (sec && (proj.sections || []).find((s) => s.id === (C.linkedRoot ? C.linkedRoot(proj, d, sec.id) : sec.id))?.arr?.piano) || (proj.piano && proj.piano.style) || 'piano-chord';
+  const pianoKind = pianoStyle === 'off' ? null : (C.PIANO_STYLES[pianoStyle] || C.PIANO_STYLES['piano-chord']).pattern;
+  const pianoOn = !!layers.piano && !!pianoKind, pianoBusy = pianoOn && pianoKind !== 'chord';
+  let names = feel.bands[band].filter((r) => table[r]);
+  const base = names;
+  if (pianoBusy && !feel.led) names = names.filter((r) => !table[r].busy);
+  else if (pianoOn && pianoKind === 'chord') names = names.filter((r) => !table[r].sust || band === 'low');
+  if (!names.length) names = base.filter((r) => !table[r].busy);
+  if (!names.length) names = SPARSE[band].filter((r) => table[r]); // piyano meşgul, türün adayı kalmadı: seyrek ama sönük olmayan roller
+  if (!names.length) names = ['pad'].filter((r) => table[r]);
+  const ctx = { n, K, S };
+  const cands = names.map((name, index) => {
+    const role = table[name], steps = role.steps(ctx), hits = steps.map((c, i) => (c === '-' ? -1 : i)).filter((i) => i >= 0);
+    return { name, role, steps, hits, score: fit(role, hits, K, index) };
+  }).sort((a, b) => b.score - a.score);
+  const best = cands[(o.variant || 0) % cands.length];
+  const role = best.role;
+  const steps = best.steps.slice();
+  // kick'e vurgu: kilitli rollerde kick adımlarındaki vuruşlar vurgulu (büyük harf); ilk vuruş her zaman
+  if (role.fit === 'lock' && K) for (const k of K) if (steps[k] !== '-' && steps[k] !== 'x') steps[k] = steps[k].toUpperCase();
+  const pattern = {
+    id: `groove:${best.name}`, name: `Groove · ${best.name}`, meter, grid: '16n',
+    steps: steps.map((c) => (c === '-' ? { type: 'rest' } : Object.assign({ type: c.toLowerCase() === 'u' ? 'U' : c.toLowerCase() === 'x' ? 'dead' : 'D' }, c === c.toUpperCase() && c !== '-' ? { accent: true } : {}, role.art ? { defaultArticulation: role.art } : {}))),
+    compatibleModes: ['strum', 'arpeggio', 'bassChord'],
+  };
+  if (role.bassSteps) pattern.bassSteps = role.bassSteps;
+  // ses şekli: piyano / synth varken üst üç tel, yoksa tam akor; sürüş rolleri bas varken power
+  let shape = pianoOn && !feel.led ? 'triad' : 'full';
+  if (role.drive) shape = layers.bass || pianoOn ? 'power' : 'full';
+  else if (pianoOn && feel.led) shape = band === 'high' ? 'full' : 'triad';
+  let tone = part.tone;
+  if (feel.lift && band === 'high') tone = TONES[Math.min(TONES.indexOf(part.tone) + 1, 2)] || part.tone;
+  const out = clone(part);
+  Object.assign(out, {
+    mode: role.mode, pattern, stepOverrides: {}, articulation: role.art || 'normal', directionMode: 'alternate', tone,
+    humanize: { strumSpreadMs: part.humanize ? part.humanize.strumSpreadMs : 12, velocityJitter: Math.min(0.04, part.humanize ? part.humanize.velocityJitter : 0.04), timingJitterMs: Math.min(1.5, part.humanize ? part.humanize.timingJitterMs : 1.5) },
+  });
+  if (role.mode === 'arpeggio') out.arpeggio = { direction: role.dir, rate: role.rate };
+  out.voicing = Object.assign({}, part.voicing, { shape });
+  out.vgroup = JSON.stringify(out.voicing); // aynı sesleme ayarını paylaşan partiler tek el hareketi dizisi olur
+  out.grooveInfo = { feel: feelId, band, role: best.name, shape, piano: pianoOn ? pianoKind : null, bass: !!layers.bass, kicks: K };
+  const key = JSON.stringify([out.mode, out.pattern, out.arpeggio, out.articulation, out.tone, out.voicing, out.humanize, out.swing, out.fx, out.palmMuteAmount, out.directionMode]);
+  if (!cache.has(key)) { if (cache.size > 400) cache.clear(); cache.set(key, out); }
+  const hit = cache.get(key);
+  return Object.assign(hit, { grooveInfo: out.grooveInfo }); // aynı biçim aynı nesne (arrangement gruplaması kimlik karşılaştırır)
+}
+
+Object.assign(C, { GuitarGroove: { ROLES, ROLES_34, ROLES_68, FEELS, METER_FEEL, derive, feelOf, bandOf } });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // ---------------------------------------------------------------- VOKAL TEMİZLİĞİ + OTOMATİK MİKS (DOM'suz, çevrimdışı; oynatma ve dışa aktarım aynı yolu kullanır)
@@ -6049,6 +6238,7 @@ const FEELS = {
   akustik: { name: 'Akustik', bands: { low: ['whole'], mid: ['halves', 'halves5'], high: ['q', 'halves5'] }, approach: false },
   balad: { name: 'Balad', bands: { low: ['whole'], mid: ['halves'], high: ['halves', 'dotted'] }, approach: false },
   synthpop: { name: 'Synthpop', bands: { low: ['q'], mid: ['off', 'e8'], high: ['off', 'e8-oct', 'arp'] }, gate: 0.7 },
+  'trip-hop': { name: 'Trip hop', bands: { low: ['whole', 'halves'], mid: ['dotted', 'push', 'halves'], high: ['push', 'dotted', 'sync'] }, gate: 0.97 },
   'dans-elektronik': { name: 'Dans / Elektronik', bands: { low: ['q'], mid: ['off', 'arp'], high: ['s16', 'acid', 'off'] }, gate: 0.6 },
   vals: { name: 'Vals', meter: '3/4', bands: { low: ['W1'], mid: ['W13', 'W1'], high: ['W123', 'W13'] } },
   'balad-68': { name: '6/8 Balad', meter: '6/8', bands: { low: ['S1'], mid: ['Sdot', 'S1'], high: ['Sdot', 'S8'] } },
@@ -6924,7 +7114,8 @@ function arrangedEvents(d, proj, opts = {}) {
   if (wants('guitar') && proj.guitar && (!opts.midi || (proj.guitar.instrument || 'piano') !== 'piano')) {
     const parts = new Map();
     out.guitar = C.guitarEvents(C.guitarSlotsFrom(d), g, (sl) => {
-      const part = C.guitarPartFor(proj.guitar, sl.section, proj, d);
+      const base = C.guitarPartFor(proj.guitar, sl.section, proj, d);
+      const part = C.GuitarGroove && base.groove === true ? C.GuitarGroove.derive(proj, d, sl, base) : base; // groove: bölüm / davul / piyano durumuna göre türetilmiş parti
       const key = guitarGroupKey(proj, d, sl.section, part);
       if (!parts.has(key)) parts.set(key, part);
       return parts.get(key);
@@ -7000,6 +7191,8 @@ const PACKS = freeze([
   pack('synthpop', 'Synthpop', [105, 135], 'four', 'pulse8', 'synth-arp', ['plain8', 'strum', 'clean', 'normal', 0, 0, .2, false], ['synth', 'Synth saw', 'drive', .8], template('piano', 'piano bass')),
   // Davul ve bas girişi, nakaratta akor katmanı.
   pack('dans-elektronik', 'Dans / Elektronik', [120, 135], 'four', 'ebm', 'synth-chord', ['plain8', 'strum', 'clean', 'normal', 0, 0, .2, false], ['synth', 'Acid squelch', 'roll', .95], template('bass drums', 'bass drums')),
+  // Ağır boom-bap, derin sub bas ve sisli piyano; gitar gürültülü arpejle kıtada bekler, nakaratta açılır.
+  pack('trip-hop', 'Trip hop', [60, 95], 'boombap', 'ht-clap', 'piano-chord', ['plain8', 'arpeggio', 'clean', 'letRing', .2, .3, .5], ['synth', 'Warm sub', 'drone', .4], template('piano guitar', 'piano bass drums')),
   // Vals kıtası hafif, nakaratı tam grup.
   pack('vals', 'Vals', [80, 110], 'w-basic', 'w-ballad', 'piano-arp', ['waltz', 'strum', 'clean', 'normal', 0, 0, .25], ['guitar', 'Dark pick', 'drone', .2], template('piano guitar', 'piano guitar bass'), '3/4'),
   // Noktalı çeyrek BPM; kıtada davulsuz 6/8.
@@ -7272,6 +7465,132 @@ function materializeLinksBeforeStructuralChange(proj, d, sectionIds) {
   return { ok: true, warnings };
 }
 Object.assign(C, { freezeChords, unfreezeChords, chordsAreFrozen, rekeyChordChoices, migrateLinks, validateLink, resolveLinks, linkedRoot, captureChordChoices, applyChordChoices, resolveLinkedChords, resolvedBass, linkSection, unlinkSection, materializeLinksBeforeStructuralChange });
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// ---------------------------------------------------------------- BÖLÜM DÜZENLEMELERİ: akorlar ve kilitler yerinde kalır
+// DOM'suz; Core'a eklenir (build'de links.js'in ardından). Akorlar yalnızca bölümlerin içinde üretilir ve bölüm aralığı / tonu akor motorunu
+// etkiler; bu yüzden bir bölümü silmek, birleştirmek, bölmek ya da sınırını kaydırmak akorları değiştirir ve kilitleri götürürdü.
+// Burada her düzenleme: önce o anki akorlar (kilit / sabit / otomatik durumuyla) alınır, bölümler değiştirilir, etkilenen bölümler için
+// akorlar bölüm başına göre "akor seçimi" (chordChoices) olarak yeniden yazılır, kilitler (ölçüye bağlı) olduğu gibi kalır.
+// Seçimler, o bölümde akoru ya da notayı elle düzenleyene kadar geçerlidir (links.js ile aynı sözleşme).
+(function (root) {
+const C = root.Core;
+const clone = (v) => JSON.parse(JSON.stringify(v));
+const byStart = (a, b) => a.startBar - b.startBar;
+const fail = (reason) => ({ ok: false, reason });
+
+// d: düzenlemeden önceki türetme (S.d); mutate: proj.sections üzerinde düzenleme. Dönüş: { snap, affected: [bölüm kimlikleri] }
+function keepChordsAcross(proj, d, mutate) {
+  const snap = (d.chords || []).map((c) => ({ bar: c.bar, half: c.half || 0, chord: clone(c.chord), state: c.locked ? 'lock' : c.pinned ? 'pin' : 'auto' }));
+  const before = new Map(proj.sections.map((s) => [s.id, s.startBar + ':' + s.endBar]));
+  mutate();
+  proj.sections.sort(byStart);
+  const live = proj.sections.length ? proj.sections : [{ id: '_all', startBar: 1, endBar: d.bars }];
+  const affected = live.filter((s) => before.get(s.id) !== s.startBar + ':' + s.endBar);
+  const liveIds = new Set(live.map((s) => s.id)), affIds = new Set(affected.map((s) => s.id));
+  proj.chordChoices = (proj.chordChoices || []).filter((c) => liveIds.has(c.sectionId) && !affIds.has(c.sectionId));
+  for (const s of affected) {
+    for (const c of snap) {
+      if (c.bar < s.startBar || c.bar > s.endBar) continue;
+      proj.chordChoices.push(Object.assign({ sectionId: s.id, relBar: c.bar - s.startBar, half: c.half, chord: clone(c.chord), state: c.state }, proj.preserveChords ? { source: 'freeze' } : {}));
+    }
+  }
+  return { count: snap.length, affected: affected.map((s) => s.id) };
+}
+const keyOf = (d, id) => { const s = d.sections.find((x) => x.id === id); return s && s.tonic != null && s.mode ? { tonic: s.tonic, mode: s.mode } : null; };
+const secById = (proj, id) => proj.sections.find((s) => s.id === id);
+// yeni bölüm önceki yalnız-şarkı tonunu devralsın (bölüm yokken saklanan ton)
+const inheritedKey = (proj) => (!proj.sections.length && proj.implicitKey && proj.implicitKey.tonic != null && proj.implicitKey.mode ? { tonic: proj.implicitKey.tonic, mode: proj.implicitKey.mode } : { tonic: null, mode: null });
+
+// bölümün ayarlarını (gitar partisi, matris satırı, bas bölüm ayarı, düzenleme) başka bölüme kopyala
+function copySectionSettings(proj, fromId, toId) {
+  const from = secById(proj, fromId), to = secById(proj, toId);
+  if (from && to && from.arr) to.arr = clone(from.arr);
+  if (proj.guitar && proj.guitar.parts && proj.guitar.parts[fromId]) proj.guitar.parts[toId] = clone(proj.guitar.parts[fromId]);
+  if (proj.matrix && proj.matrix.rows && proj.matrix.rows[fromId]) proj.matrix.rows[toId] = clone(proj.matrix.rows[fromId]);
+  if (proj.bass && proj.bass.sections && proj.bass.sections[fromId]) proj.bass.sections[toId] = clone(proj.bass.sections[fromId]);
+}
+
+// ---------------------------------------------------------------- 1) SİL
+// keepChords (varsayılan): akorlar ve kilitler kalır. Son bölüm silinirse "bölüm yok / tüm şarkı" olur ve ton saklanır (implicitKey);
+// yoksa ölçüleri bitişik bölüme (önce öncekine) katılır. Komşusu olmayan bölüm silinirse ölçülerde akor kalmaz (akor bölüm içinde üretilir).
+function removeSection(proj, d, id, opts = {}) {
+  const sorted = proj.sections.slice().sort(byStart), s = sorted.find((x) => x.id === id);
+  if (!s) return fail('Bölüm bulunamadı.');
+  const prev = sorted.find((x) => x.endBar + 1 === s.startBar), next = sorted.find((x) => x.startBar === s.endBar + 1);
+  const dropLocks = () => { proj.chordLocks = (proj.chordLocks || []).filter((l) => l.bar < s.startBar || l.bar > s.endBar); };
+  if (opts.keepChords === false) {
+    proj.sections = proj.sections.filter((x) => x.id !== id);
+    dropLocks();
+    return { ok: true, mode: 'plain', chords: 0, locks: 0 };
+  }
+  const locks = (proj.chordLocks || []).filter((l) => l.bar >= s.startBar && l.bar <= s.endBar).length;
+  const key = keyOf(d, id);
+  if (sorted.length === 1) {
+    const r = keepChordsAcross(proj, d, () => { proj.sections = []; });
+    proj.implicitKey = key || proj.implicitKey || null;
+    return { ok: true, mode: 'implicit', chords: r.count, locks, key };
+  }
+  if (prev) {
+    keepChordsAcross(proj, d, () => { secById(proj, prev.id).endBar = s.endBar; proj.sections = proj.sections.filter((x) => x.id !== id); });
+    return { ok: true, mode: 'prev', into: prev.name, chords: d.chords.filter((c) => c.bar >= s.startBar && c.bar <= s.endBar).length, locks };
+  }
+  if (next) {
+    keepChordsAcross(proj, d, () => { secById(proj, next.id).startBar = s.startBar; proj.sections = proj.sections.filter((x) => x.id !== id); });
+    return { ok: true, mode: 'next', into: next.name, chords: d.chords.filter((c) => c.bar >= s.startBar && c.bar <= s.endBar).length, locks };
+  }
+  proj.sections = proj.sections.filter((x) => x.id !== id);
+  dropLocks();
+  return { ok: true, mode: 'gap', chords: 0, locks: 0 };
+}
+
+// ---------------------------------------------------------------- 2) BİRLEŞTİR (bitişik iki bölüm; ilkinin adı ve tonu kalır)
+function mergeSections(proj, d, aId, bId) {
+  const a = secById(proj, aId), b = secById(proj, bId);
+  if (!a || !b) return fail('Bölüm bulunamadı.');
+  if (a.endBar + 1 !== b.startBar) return fail('Yalnızca yan yana (bitişik) bölümler birleştirilir.');
+  keepChordsAcross(proj, d, () => { a.endBar = b.endBar; proj.sections = proj.sections.filter((x) => x.id !== bId); });
+  return { ok: true, name: a.name, startBar: a.startBar, endBar: a.endBar };
+}
+
+// ---------------------------------------------------------------- 3) BÖL (bar: ikinci bölümün ilk ölçüsü)
+function splitSection(proj, d, id, bar, newId) {
+  const s = secById(proj, id);
+  if (!s) return fail('Bölüm bulunamadı.');
+  if (!(bar > s.startBar && bar <= s.endBar)) return fail(`Bölmek için imleci bölümün içine koy (ölçü ${s.startBar + 1}–${s.endBar}).`);
+  const secondName = /\d+$/.test(s.name) ? s.name.replace(/\d+$/, (n) => String(+n + 1)) : s.name + ' 2';
+  keepChordsAcross(proj, d, () => {
+    const second = { id: newId, link: null, name: secondName, type: s.type, startBar: bar, endBar: s.endBar, tonic: s.tonic ?? null, mode: s.mode ?? null };
+    if (second.type == null) delete second.type;
+    s.endBar = bar - 1;
+    proj.sections.push(second);
+    copySectionSettings(proj, id, newId);
+  });
+  return { ok: true, first: s.name, second: secondName, bar };
+}
+
+// ---------------------------------------------------------------- 4) ARALIK: komşu bölüm gerekirse kısalır (tamamen kaplanan bölüm hata)
+function setSectionRange(proj, d, id, a, b) {
+  const s = secById(proj, id), lo = Math.min(a, b), hi = Math.max(a, b);
+  if (!s) return fail('Bölüm bulunamadı.');
+  if (!(lo >= 1)) return fail('Ölçü aralığı geçersiz.');
+  const others = proj.sections.filter((x) => x.id !== id);
+  const swallowed = others.find((x) => x.startBar >= lo && x.endBar <= hi);
+  if (swallowed) return fail(`“${swallowed.name}” bölümünü tamamen kaplıyor; önce onu silin ya da birleştirin.`);
+  const inside = others.find((x) => x.startBar < lo && x.endBar > hi);
+  if (inside) return fail(`Aralık “${inside.name}” bölümünün içinde kalıyor; önce onu bölün.`);
+  const trimmed = [];
+  keepChordsAcross(proj, d, () => {
+    for (const x of others) {
+      if (x.startBar < lo && x.endBar >= lo) { x.endBar = lo - 1; trimmed.push(x.name); }
+      else if (x.startBar <= hi && x.endBar > hi) { x.startBar = hi + 1; trimmed.push(x.name); }
+    }
+    s.startBar = lo; s.endBar = hi;
+  });
+  return { ok: true, trimmed, startBar: lo, endBar: hi };
+}
+
+Object.assign(C, { removeSection, mergeSections, splitSection, setSectionRange, keepChordsAcross, inheritedSectionKey: inheritedKey });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // Sürüm arşivi yalnızca düzenlemeyi saklar; kayıt, tonlar ve bölüm sınırları ortaktır.
@@ -10929,7 +11248,8 @@ function makeDemo() {
     // 2) bölüm ve ton: bölüm yoksa tek bölüm; onaylanmamış önerilen tonlar onaylanır
     if (!S.proj.sections.length) {
       const id = uid(); C.rekeyChordChoices(S.proj, '_all', id);
-      S.proj.sections.push({ id, link: null, name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: null, mode: null }); refresh();
+      const ik = C.inheritedSectionKey(S.proj);
+      S.proj.sections.push({ id, link: null, name: 'Şarkı', startBar: 1, endBar: S.d.bars, tonic: ik.tonic, mode: ik.mode }); refresh();
     }
     let keyed = 0;
     for (const s of S.proj.sections) if (s.tonic == null) { const ds = S.d.sections.find((x) => x.id === s.id); if (ds && ds.tonic != null) { s.tonic = ds.tonic; s.mode = ds.mode; keyed++; } }
@@ -11906,6 +12226,11 @@ function draw() {
     c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(x0, secY + 2, x1 - x0, TL.SEC - 4);
     c.fillStyle = '#fff'; c.fillText(`ölçü ${a}–${b}`, x0 + 6, secY + TL.SEC / 2);
   }
+  if (S.drag && S.drag.type === 'secEdge' && S.drag.moved) {
+    const ed = S.drag.edge, line = qToX((ed.kind === 'end' ? S.drag.k : S.drag.k - 1) * barQ);
+    c.strokeStyle = '#ffb347'; c.lineWidth = 2; c.beginPath(); c.moveTo(line, secY); c.lineTo(line, H); c.stroke(); c.lineWidth = 1;
+    c.fillStyle = '#ffb347'; c.fillRect(line - 22, secY + 2, 44, 16); c.fillStyle = '#111'; c.fillText(`ölçü ${ed.kind === 'end' ? S.drag.k : S.drag.k}`, line - 18, secY + 10);
+  }
   // akor şeridi
   const chY = TL.RULER + TL.SEC;
   c.fillStyle = '#171a21'; c.fillRect(TL.KW, chY, W, TL.CHORD);
@@ -12143,6 +12468,19 @@ function noteAt(x, y) {
   return best;
 }
 const sectionAtBar = (bar) => S.proj.sections.find((s) => bar >= s.startBar && bar <= s.endBar);
+// bölüm şeridinde bir bölümün kenarı (±5 px): yan yana iki bölümün ortak sınırı tek tutamaktır
+function secEdgeAt(x) {
+  if (!S.d) return null;
+  const barQ = grid().barQ, secs = S.proj.sections.slice().sort((a, b) => a.startBar - b.startBar);
+  let best = null;
+  const consider = (edge, dist) => { if (dist <= 5 && (!best || dist < best.dist)) best = Object.assign({ dist }, edge); };
+  secs.forEach((s, i) => {
+    const prev = secs[i - 1], next = secs[i + 1];
+    consider(prev && prev.endBar + 1 === s.startBar ? { kind: 'boundary', aId: prev.id, bId: s.id, k: s.startBar } : { kind: 'start', id: s.id, k: s.startBar }, Math.abs(x - qToX((s.startBar - 1) * barQ)));
+    if (!(next && s.endBar + 1 === next.startBar)) consider({ kind: 'end', id: s.id, k: s.endBar }, Math.abs(x - qToX(s.endBar * barQ)));
+  });
+  return best;
+}
 function editFor(n, create) {
   let e = C.findEdit(S.proj.noteEdits, n);
   if (!e && create) { e = { t0: n.t0, t1: n.t1 }; S.proj.noteEdits.push(e); }
@@ -12167,6 +12505,8 @@ cv.addEventListener('pointerdown', (e) => {
   }
   if (y < TL.RULER + TL.SEC) {
     const bar = Math.max(1, Math.floor(q / g.barQ) + 1);
+    const eg = secEdgeAt(x);
+    if (eg) { S.drag = { type: 'secEdge', edge: eg, k: eg.k, moved: false }; cv.setPointerCapture(e.pointerId); draw(); return; }
     const s = sectionAtBar(bar);
     if (s) { select({ type: 'section', id: s.id }); return; }
     S.drag = { type: 'newSection', b0: bar, b1: bar, x0: x, moved: false };
@@ -12217,6 +12557,7 @@ cv.addEventListener('pointermove', (e) => {
     if (x < TL.KW && y > TL.TOP) { cv.style.cursor = 'pointer'; cv.title = 'Tuşa bas: notayı duy'; return; }
     const ti = y < TL.RULER ? tapAt(x) : -1;
     if (ti >= 0) { cv.style.cursor = 'ew-resize'; cv.title = 'Değişim noktası (tap): sürükle = kaydır · Alt+tık = sil'; return; }
+    if (y >= TL.RULER && y < TL.RULER + TL.SEC && secEdgeAt(x)) { cv.style.cursor = 'ew-resize'; cv.title = 'Bölüm sınırı: sürükle (ölçüye yapışır). Akorlar ve kilitler yerinde kalır; komşu bölüm gerekirse kısalır.'; return; }
     const hb = boundaryAt(x, y);
     if (JSON.stringify(hb) !== JSON.stringify(S.hoverMark)) { S.hoverMark = hb; draw(); }
     if (hb) {
@@ -12245,6 +12586,17 @@ cv.addEventListener('pointermove', (e) => {
   if (S.drag.type === 'tap') {
     S.proj.taps[S.drag.i] = Math.max(0, S.drag.t0 + ((x - S.drag.x0) / S.view.pxPerQ) * g.spq);
     S.drag.moved = true; draw(); return;
+  }
+  if (S.drag.type === 'secEdge') {
+    const ed = S.drag.edge, n = Math.round(xToQ(x) / g.barQ), secs = S.proj.sections;
+    const sec = (id) => secs.find((s) => s.id === id);
+    let k = ed.kind === 'end' ? n : n + 1;
+    if (ed.kind === 'boundary') k = C.clamp(k, sec(ed.aId).startBar + 1, sec(ed.bId).endBar);
+    else if (ed.kind === 'start') k = C.clamp(k, 1, sec(ed.id).endBar);
+    else k = C.clamp(k, sec(ed.id).startBar, S.d.bars);
+    if (k !== S.drag.k) S.drag.k = k;
+    if (Math.abs(x - qToX((ed.k - (ed.kind === 'end' ? 0 : 1)) * g.barQ)) >= 4) S.drag.moved = true;
+    draw(); return;
   }
   if (S.drag.type === 'newSection') {
     if (Math.abs(x - S.drag.x0) >= 4) S.drag.moved = true;
@@ -12316,6 +12668,21 @@ cv.addEventListener('pointerup', () => {
   if (dr.type === 'tap') { S.proj.taps.sort((a, b) => a - b); refresh(); return; }
   if (dr.type === 'marquee') { finishMarquee(dr); return; }
   if (dr.type === 'startFlag') { if (dr.moved) setStartBar(dr.which, dr.bar); else draw(); return; }
+  if (dr.type === 'secEdge') {
+    const ed = dr.edge;
+    if (!dr.moved || dr.k === ed.k) { draw(); return; }
+    const sec = (id) => S.proj.sections.find((s) => s.id === id);
+    if (ed.kind === 'boundary') {
+      const a = sec(ed.aId), b = sec(ed.bId);
+      if (dr.k < b.startBar) setSectionBars(b.id, dr.k, b.endBar, `“${b.name}” sınırı ölçü ${dr.k}'ye taşındı:`);
+      else setSectionBars(a.id, a.startBar, dr.k - 1, `“${a.name}” sınırı ölçü ${dr.k - 1}'e taşındı:`);
+    } else {
+      const s = sec(ed.id);
+      if (ed.kind === 'start') setSectionBars(s.id, dr.k, s.endBar, `“${s.name}” başlangıcı ölçü ${dr.k}'ye taşındı:`);
+      else setSectionBars(s.id, s.startBar, dr.k, `“${s.name}” bitişi ölçü ${dr.k}'e taşındı:`);
+    }
+    draw(); return;
+  }
   if (dr.type === 'newSection') {
     // tek tık bölüm açmaz (yanlışlıkla 1 ölçülük bölüm oluşuyordu); bölüm sürükleyerek açılır
     if (!dr.moved) status('Bölüm eklemek için bölüm şeridinde ölçüler boyunca sürükleyin (ya da 4. adımdaki "Ekle").');
@@ -12513,21 +12880,55 @@ function addSection(name, a, b) {
     const used = new Set(S.proj.sections.map((s) => s.name));
     name = ['Verse', 'Nakarat', 'Köprü', 'Verse 2', 'Nakarat 2', 'Outro'].find((n) => !used.has(n)) || 'Bölüm ' + (S.proj.sections.length + 1);
   }
-  const s = { id: uid(), link: null, name, startBar: a, endBar: b, tonic: null, mode: null };
+  const ik = C.inheritedSectionKey(S.proj); // bölüm yokken saklanan ton (son bölüm silindiyse) yeni bölüme geçer
+  const s = { id: uid(), link: null, name, startBar: a, endBar: b, tonic: ik.tonic, mode: ik.mode };
   S.proj.sections.push(s);
   S.proj.sections.sort((p, q) => p.startBar - q.startBar);
   S.sel = { type: 'section', id: s.id }; S.customSection = s.id;
   refresh();
   status(`“${name}” bölümü eklendi (ölçü ${a}–${b}). Tonunu 4. adımda seçin.`);
 }
-function deleteSection(id) {
+// Bölüm düzenlemeleri akorları ve kilitleri korur (src/sections.js). Önce kopyada denenir: geçersizse hiçbir şey değişmez, geçmişe adım girmez.
+function sectionOp(ids, op, message) {
+  if (!S.d) return false;
+  const r0 = op(JSON.parse(JSON.stringify(S.proj)));
+  if (!r0.ok) { status(r0.reason, 'err'); return false; }
+  let result = null;
+  structuralEdit(ids, () => { result = op(S.proj); if (S.sel && S.sel.type === 'section' && !S.proj.sections.some((x) => x.id === S.sel.id)) S.sel = null; }, () => message(result));
+  return true;
+}
+const neighborIds = (id) => S.proj.sections.filter((x) => { const s = S.proj.sections.find((y) => y.id === id); return s && (x.endBar + 1 === s.startBar || x.startBar === s.endBar + 1); }).map((x) => x.id);
+function deleteSection(id, keepChords = true) {
   const s = S.proj.sections.find((x) => x.id === id);
   if (!s) return;
-  structuralEdit([id], () => {
-    S.proj.sections = S.proj.sections.filter((x) => x.id !== id);
-    S.proj.chordLocks = S.proj.chordLocks.filter((l) => l.bar < s.startBar || l.bar > s.endBar);
-    if (S.sel && S.sel.id === id) S.sel = null;
-  }, `“${s.name}” bölümü silindi (ölçü ${s.startBar}–${s.endBar}).`);
+  const keyText = (k) => (k ? ` (ton: ${C.keyName(k.tonic, k.mode)})` : '');
+  sectionOp([id, ...neighborIds(id)], (p) => C.removeSection(p, S.d, id, { keepChords }), (r) => {
+    const kept = `${r.chords ? `${r.chords} akor` : ''}${r.chords && r.locks ? ' ve ' : ''}${r.locks ? `${r.locks} kilit` : ''}`;
+    if (r.mode === 'implicit') return `“${s.name}” bölümü kaldırıldı: artık bölüm yok, tüm şarkı${keyText(r.key)}. Akorlar${r.locks ? ' ve kilitler' : ''} yerinde kaldı${kept ? ` (${kept})` : ''}.`;
+    if (r.mode === 'prev' || r.mode === 'next') return `“${s.name}” bölümü kaldırıldı; ölçü ${s.startBar}–${s.endBar} “${r.into}” bölümüne katıldı. Akorlar${r.locks ? ' ve kilitler' : ''} yerinde kaldı${kept ? ` (${kept})` : ''}.`;
+    if (r.mode === 'gap') return `“${s.name}” bölümü silindi (ölçü ${s.startBar}–${s.endBar}). Komşu bölüm olmadığı için bu ölçülerde akor kalmadı; bir bölüm ekleyince yeniden oluşur.`;
+    return `“${s.name}” bölümü akorlarıyla birlikte silindi (ölçü ${s.startBar}–${s.endBar}).`;
+  });
+}
+function mergeSection(id, dir) {
+  const s = S.proj.sections.find((x) => x.id === id);
+  const other = S.proj.sections.find((x) => (dir < 0 ? x.endBar + 1 === s.startBar : x.startBar === s.endBar + 1));
+  if (!s || !other) { status('Yan yana (bitişik) bölüm yok.', 'err'); return; }
+  const [a, b] = dir < 0 ? [other, s] : [s, other];
+  sectionOp([a.id, b.id], (p) => C.mergeSections(p, S.d, a.id, b.id), (r) => `“${a.name}” ve “${b.name}” birleşti: “${r.name}” ölçü ${r.startBar}–${r.endBar}. Akorlar ve kilitler yerinde kaldı.`);
+}
+function splitSectionAtPlayhead(id) {
+  const s = S.proj.sections.find((x) => x.id === id);
+  if (!s) return;
+  const bar = barAtPlayhead(), newId = uid();
+  sectionOp([id], (p) => C.splitSection(p, S.d, id, bar, newId), (r) => `“${r.first}” ölçü ${bar}'den bölündü: yeni bölüm “${r.second}” (ölçü ${bar}–${s.endBar}). Akorlar ve kilitler yerinde kaldı.`);
+}
+// aralık değişimi: komşu bölüm gerekirse kısalır; akorlar ve kilitler yerinde kalır
+function setSectionBars(id, a, b, label) {
+  const s = S.proj.sections.find((x) => x.id === id);
+  if (!s) return false;
+  return sectionOp([id, ...S.proj.sections.filter((x) => x.id !== id && !(Math.max(a, b) < x.startBar - 1 || Math.min(a, b) > x.endBar + 1)).map((x) => x.id)], (p) => C.setSectionRange(p, S.d, id, a, b),
+    (r) => `${label || `“${s.name}” aralığı`} ölçü ${r.startBar}–${r.endBar}${r.trimmed.length ? `; ${r.trimmed.map((n) => `“${n}”`).join(', ')} buna göre kısaldı` : ''}. Akorlar ve kilitler yerinde kaldı.`);
 }
 // Paket paneli; uyarılar yalnızca son uygulama için gösterilir.
 const PACK_UI = { project: null, warnings: [], kept: [] };
@@ -12715,7 +13116,7 @@ function structuralEdit(ids, fn, message) {
     syncInputs();
   });
   const count = before - Object.keys(C.resolveLinks(S.proj, S.d)).length;
-  status(message + (count ? ` ${count} bağlı bölüm sesi korunarak bağımsız kopya oldu.` : ''));
+  status((typeof message === 'function' ? message() : message) + (count ? ` ${count} bağlı bölüm sesi korunarak bağımsız kopya oldu.` : ''));
 }
 document.addEventListener('click', (e) => {
   const source = e.target.closest('[data-link-source]'), unlink = e.target.closest('[data-link-unlink]');
@@ -12792,7 +13193,12 @@ function renderSections() {
           <input type="text" value="${esc(src.name)}" data-act="secName" data-id="${s.id}" aria-label="bölüm adı">
           <input type="number" min="1" value="${s.startBar}" data-act="secStart" data-id="${s.id}" title="başlangıç ölçüsü">
           <input type="number" min="1" value="${s.endBar}" data-act="secEnd" data-id="${s.id}" title="bitiş ölçüsü">
-          <button class="danger" data-act="secDel" data-id="${s.id}" title="bölümü sil">✕ Sil</button></div>`;
+          <button class="danger" data-act="secDel" data-id="${s.id}" title="bölümü sil: akorlar ve kilitler yerinde kalır (ölçüleri komşu bölüme katılır ya da tüm şarkı olur)">✕ Sil</button></div>
+        <div class="sec-tools">
+          <button class="small" data-act="secMergePrev" data-id="${s.id}"${secs.some((o) => !o.implicit && o.endBar + 1 === s.startBar) ? '' : ' disabled'} title="önceki bölümle birleştir (akorlar yerinde kalır)">⇤ Öncekiyle birleştir</button>
+          <button class="small" data-act="secMergeNext" data-id="${s.id}"${secs.some((o) => !o.implicit && o.startBar === s.endBar + 1) ? '' : ' disabled'} title="sonraki bölümle birleştir (akorlar yerinde kalır)">Sonrakiyle birleştir ⇥</button>
+          <button class="small" data-act="secSplit" data-id="${s.id}" title="imlecin olduğu ölçüden ikiye böl (akorlar yerinde kalır)">✂ İmleçten böl</button>
+          <button class="small" data-act="secDelChords" data-id="${s.id}" title="bölümü ve içindeki akorları sil">🗑 Akorlarıyla sil</button></div>`;
     const sources = s.implicit ? [] : secs.filter((other) => !other.implicit && C.validateLink(S.proj, S.d, s.id, other.id).ok);
     const linkRow = s.implicit ? '' : `<div class="section-link"><label>Bağla: <select data-act="secLink" data-id="${esc(s.id)}" aria-label="${esc(s.name)}: Bağla"${sources.length ? '' : ' disabled'}><option value="">— bağsız —</option>${sources.map((other) => `<option value="${esc(other.id)}"${src.link?.sourceId === other.id ? ' selected' : ''}>${esc(other.name)} (${other.startBar}–${other.endBar})</option>`).join('')}</select></label>${sources.length ? '' : '<span class="hint">Aynı uzunlukta başka bölüm yok</span>'}${linkActions(s.id)}</div>`;
     const keyRow = s.implicit ? '' : `<div class="keyrow">
@@ -12819,6 +13225,10 @@ $('#sectionList').addEventListener('click', (e) => {
     refresh();
     status(`Ton seçildi: ${C.keyName(+b.dataset.t, b.dataset.m)}`);
   } else if (b.dataset.act === 'secDel' && s) deleteSection(s.id);
+  else if (b.dataset.act === 'secDelChords' && s) deleteSection(s.id, false);
+  else if (b.dataset.act === 'secMergePrev' && s) mergeSection(s.id, -1);
+  else if (b.dataset.act === 'secMergeNext' && s) mergeSection(s.id, +1);
+  else if (b.dataset.act === 'secSplit' && s) splitSectionAtPlayhead(s.id);
 });
 $('#sectionList').addEventListener('change', (e) => {
   const t = e.target, s = S.proj.sections.find((x) => x.id === t.dataset.id);
@@ -12827,9 +13237,8 @@ $('#sectionList').addEventListener('change', (e) => {
   if (t.dataset.act === 'secName') s.name = t.value.trim() || s.name;
   if (t.dataset.act === 'secStart' || t.dataset.act === 'secEnd') {
     const a = t.dataset.act === 'secStart' ? +t.value : s.startBar, b = t.dataset.act === 'secEnd' ? +t.value : s.endBar;
-    const ov = S.proj.sections.find((x) => x !== s && !(Math.max(a, b) < x.startBar || Math.min(a, b) > x.endBar));
-    if (ov || a < 1 || b < 1) status('Geçersiz/çakışan ölçü aralığı.', 'err');
-    else { structuralEdit([s.id], () => { const sec = S.proj.sections.find((x) => x.id === s.id); sec.startBar = Math.min(a, b); sec.endBar = Math.max(a, b); S.proj.sections.sort((p, q) => p.startBar - q.startBar); }, 'Bölüm aralığı değişti.'); return; }
+    if (!(a >= 1 && b >= 1)) status('Geçersiz ölçü aralığı.', 'err');
+    else { if (!setSectionBars(s.id, a, b, 'Bölüm aralığı')) renderSections(); return; }
   }
   if (t.dataset.act === 'secTonic') {
     if (t.value === '') { s.tonic = null; s.mode = null; }
@@ -13907,16 +14316,18 @@ function guitarTrack(sr) {
 // 2 ölçülük döngü: projedeki gerçek akor akışı (seçili bölümün başından); akor yoksa Am–F–C–G
 function guitarAudition(sr) {
   const g = C.makeGrid(S.proj.settings), part = gEff(GT.target), barQ = g.barQ;
-  let slots = null, real = false;
+  let slots = null, real = false, startQ = 0;
   if (S.d && S.d.chords.length) {
     const sec = GT.target !== '_all' ? S.d.sections.find((s) => s.id === GT.target) : null;
-    const startQ = sec ? (sec.startBar - 1) * barQ : Math.floor(S.d.chords[0].q0 / barQ + 1e-6) * barQ;
+    startQ = sec ? (sec.startBar - 1) * barQ : Math.floor(S.d.chords[0].q0 / barQ + 1e-6) * barQ;
     slots = C.guitarSlotsFrom(S.d).filter((sl) => sl.q1 > startQ + 1e-6 && sl.q0 < startQ + 2 * barQ - 1e-6)
       .map((sl) => Object.assign({}, sl, { q0: Math.max(sl.q0, startQ) - startQ, q1: Math.min(sl.q1, startQ + 2 * barQ) - startQ }));
     real = slots.length > 0;
   }
   if (!real) slots = [[9, 'm'], [5, ''], [0, ''], [7, '']].map(([r, q], i) => ({ q0: (i * barQ) / 2, q1: ((i + 1) * barQ) / 2, chord: { root: r, q }, section: '_all', tonic: 9 }));
-  const events = C.guitarEvents(slots, g, () => part);
+  // şarkıya uyum açıksa ön dinleme de gerçek bölüm / davul / piyano durumundan türetilen partiyi çalar (kaydırılmış zamanı geri al)
+  const getPart = real && part.groove === true && C.GuitarGroove ? (sl) => C.GuitarGroove.derive(S.proj, S.d, Object.assign({}, sl, { q0: sl.q0 + startQ, q1: sl.q1 + startQ }), part) : () => part;
+  const events = C.guitarEvents(slots, g, getPart);
   return { real, events, data: C.renderGuitar(events, sr, Math.round(2 * g.barSec * sr), g.spq, 1) };
 }
 
@@ -13950,10 +14361,15 @@ function resampleGrid(p, grid) {
   for (const [i, o] of Object.entries(p.stepOverrides)) { const k = (i * oq) / nq; if (Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) < n) ov[Math.round(k)] = o; }
   old.steps = steps; old.grid = grid; p.stepOverrides = ov; GT.sel = null;
 }
+// ritmi, çalış biçimini ya da şekli elle değiştiren işlemler şarkıya uyumu kapatır (parti olduğu gibi çalar)
+const GROOVE_MANUAL = ['mode', 'adir', 'arate', 'pat', 'custom', 'pgrid', 'dmode', 'shape', 'art', 'sart', 'orn', 'stype', 'sacc'];
+function grooveOff(p) { if (p.groove === true) { p.groove = false; status('Elle düzenleme: şarkıya uyum kapandı; parti olduğu gibi çalacak (panelin başından tekrar açabilirsin).'); } }
 function gAction(k, v) {
   const meter = S.proj.settings.meter;
   gEdit((p) => {
+    if (GROOVE_MANUAL.includes(k)) grooveOff(p);
     switch (k) {
+      case 'groove': p.groove = !p.groove; GT.sel = null; break;
       case 'mode': p.mode = v; GT.sel = null; break;
       case 'adir': p.arpeggio.direction = v; break;
       case 'arate': p.arpeggio.rate = v; break;
@@ -13989,11 +14405,11 @@ function gAction(k, v) {
 // ---- adım ızgarası: tıkla = döngü (es → D → U → ölü) ve seç; uzun bas = vurgu
 function gStepClick(i) {
   GT.sel = i;
-  gEdit((p) => { toCustom(p); const s = p.pattern.steps[i]; s.type = STEP_NEXT[s.type]; });
+  gEdit((p) => { grooveOff(p); toCustom(p); const s = p.pattern.steps[i]; s.type = STEP_NEXT[s.type]; });
 }
 function gStepAccent(i) {
   GT.sel = i;
-  gEdit((p) => { toCustom(p); const s = p.pattern.steps[i]; if (s.accent) delete s.accent; else s.accent = true; });
+  gEdit((p) => { grooveOff(p); toCustom(p); const s = p.pattern.steps[i]; if (s.accent) delete s.accent; else s.accent = true; });
 }
 
 // ---- panel
@@ -14067,7 +14483,9 @@ function panelHtml(part, meter) {
     + `<div class="gsub"><span>Delay süresi</span>${[['8n', "8'lik"], ['d8n', "noktalı 8'lik"], ['4n', "4'lük"]].map(([x, l]) => gchip('dtime', x, l, fx.delay.time === x)).join('')}</div>`
     + gslider('dfb', 'Delay geri besleme', 0, 85, Math.round(fx.delay.feedback * 100), (x) => x + '%')
     + gslider('spread', 'Strum yayılması', 5, 25, hu.strumSpreadMs, (x) => x + ' ms') + gslider('vjit', 'Vuruş gücü sapması', 0, 50, Math.round(hu.velocityJitter * 100), (x) => x + '%') + gslider('tjit', 'Zamanlama sapması', 0, 20, hu.timingJitterMs, (x) => x + ' ms');
-  return grow('1 · Vuruş modu (sağ el)', r1) + grow('2 · Ritim kalıbı', r2) + grow('3 · Voicing (sol el)', r3) + grow('4 · Süsleme (sol el, adım bazlı)', r4) + grow('5 · Nota süresi ve kesme', r5) + grow('6 · Ton / FX', r6);
+  const r0 = gchip('groove', 'groove', part.groove ? 'Açık' : 'Kapalı', !!part.groove)
+    + `<div class="hint">${part.groove ? 'Ritim, çalış biçimi ve akor şekli her bölümde türe, bölüm enerjisine, davulun kick\'ine ve piyano / bas durumuna göre seçilir (piyano arpej çalarken gitar sadeleşir, piyano ya da bas varken üst teller çalınır). Aşağıdaki kalıp ve mod ayarları bu modda bilgi içindir; birini elle değiştirirsen uyum kapanır. Ton, FX, renk, konum ve drone yine geçerlidir.' : 'Uyum kapalı: aşağıdaki parti, tüm şarkıda olduğu gibi çalar.'}</div>`;
+  return grow('0 · Şarkıya uyum', r0) + grow('1 · Vuruş modu (sağ el)', r1) + grow('2 · Ritim kalıbı', r2) + grow('3 · Voicing (sol el)', r3) + grow('4 · Süsleme (sol el, adım bazlı)', r4) + grow('5 · Nota süresi ve kesme', r5) + grow('6 · Ton / FX', r6);
 }
 function renderGuitar() {
   const st = gState(), meter = S.proj.settings.meter;

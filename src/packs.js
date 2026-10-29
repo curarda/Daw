@@ -44,6 +44,8 @@ const PACKS = freeze([
   pack('synthpop', 'Synthpop', [105, 135], 'four', 'pulse8', 'synth-arp', ['plain8', 'strum', 'clean', 'normal', 0, 0, .2, false], ['synth', 'Synth saw', 'drive', .8], template('piano', 'piano bass')),
   // Davul ve bas girişi, nakaratta akor katmanı.
   pack('dans-elektronik', 'Dans / Elektronik', [120, 135], 'four', 'ebm', 'synth-chord', ['plain8', 'strum', 'clean', 'normal', 0, 0, .2, false], ['synth', 'Acid squelch', 'roll', .95], template('bass drums', 'bass drums')),
+  // Ağır boom-bap, derin sub bas ve sisli piyano; gitar gürültülü arpejle kıtada bekler, nakaratta açılır.
+  pack('trip-hop', 'Trip hop', [60, 95], 'boombap', 'ht-clap', 'piano-chord', ['plain8', 'arpeggio', 'clean', 'letRing', .2, .3, .5], ['synth', 'Warm sub', 'drone', .4], template('piano guitar', 'piano bass drums')),
   // Vals kıtası hafif, nakaratı tam grup.
   pack('vals', 'Vals', [80, 110], 'w-basic', 'w-ballad', 'piano-arp', ['waltz', 'strum', 'clean', 'normal', 0, 0, .25], ['guitar', 'Dark pick', 'drone', .2], template('piano guitar', 'piano guitar bass'), '3/4'),
   // Noktalı çeyrek BPM; kıtada davulsuz 6/8.

@@ -19,7 +19,7 @@ for (const project of [C.newProject(), C.migrateMatrix({})]) {
   assert.equal(disabled.matrix.enabled, false);
   assert.deepEqual(disabled.matrix.rows, enabled.matrix.rows);
 }
-const p = C.newProject(); p.guitar.instrument = 'both'; p.bass.enabled = true; p.bass.engine = 'legacy'; p.drums.on = true; // fixture eski şablon motoruyla kaydedildi
+const p = C.newProject(); p.guitar.instrument = 'both'; p.guitar.parts._all.groove = false; p.bass.enabled = true; p.bass.engine = 'legacy'; p.drums.on = true; // fixture eski şablon motoruyla kaydedildi
 p.sections = ['a', 'b', 'c'].map((id, i) => ({ id, type: 'chorus', name: id, startBar: i * 2 + 1, endBar: i * 2 + 2, tonic: 9, mode: 'minor' }));
 const d = C.derive(p, { duration: 6 * C.makeGrid(p.settings).barSec, rawNotes: [] });
 C.Bass.bassGenerateAll(p.bass, C.Bass.bassContext(d, p));
@@ -32,6 +32,7 @@ for (const expected of fixture) {
   const meter = expected.meter; legacy.settings.meter = meter; legacy.settings.bpm = 103; legacy.swing = { ratio: 0.63 };
   legacy.guitar = C.defaultGuitarState(meter); legacy.guitar.instrument = 'both';
   legacy.guitar.parts.b = JSON.parse(JSON.stringify(legacy.guitar.parts._all)); legacy.guitar.parts.b.articulation = 'letRing';
+  for (const part of Object.values(legacy.guitar.parts)) part.groove = false; // fixture elle yazılmış partiyle kaydedildi
   const loops = C.loopsFor(meter);
   legacy.drums = { on: true, loop: loops[0].id, startBar: 2, fills: true };
   legacy.sections = ['a', 'b', 'c'].map((id, i) => ({ id, name: i === 1 ? 'Nakarat' : 'Verse', startBar: i * 2 + 1, endBar: i * 2 + 2, tonic: 9, mode: 'minor', arr: { piano: i === 1 ? 'synth-arp' : null, drums: i === 2 ? 'off' : loops[i % loops.length].id } }));
