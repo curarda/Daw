@@ -211,7 +211,7 @@ function bassContext(d, proj) {
   // davul kick'leri (bas ızgarasında 16'lık adım) ve vokal melodisi: groove motoru bunlara bakar
   ctx.kicks = (i) => {
     const L = C.drumLoopForBar && proj && proj.drums ? C.drumLoopForBar(proj, d, i + 1) : null;
-    if (!L || !L.K) return null;
+    if (!L || !L.K) { const mk = proj && proj.mixKicks && proj.mixKicks[i]; return mk && mk.length ? mk.filter((s) => s < steps) : null; } // hazır miks: kick'ler sesten çözülmüştür
     const out = [], per = g.barQ / L.K.length;
     for (let j = 0; j < L.K.length; j++) {
       if (L.K[j] !== 'x' && L.K[j] !== 'X') continue;

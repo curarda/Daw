@@ -358,6 +358,7 @@ function setAudio(data, sr, name, source) {
 }
 async function analyze() {
   if (!S.audio) { refresh(); return; }
+  if (S.proj.audio.mix) { S.track = null; S.rawNotes = []; S.correctedShift = null; refresh(); return; } // miks: perde analizi yapılmaz, olduğu gibi çalar
   await busy('Perde analizi…', async () => {
     const p = S.proj.pitch;
     S.track = await C.detectPitch(S.audio.data, S.audio.sr, p, (x) => status(`Perde analizi… %${Math.round(x * 100)}`, 'busy'));
@@ -3682,6 +3683,7 @@ function renderChordInspector(box, slot) {
 // ---------------------------------------------------------------- bilgi satırları
 function renderInfo() {
   const a = S.audio;
+  { const row = $('#mixRow'); row.hidden = !isMix(); if (isMix()) $('#mixInfo').textContent = `Miks: ${S.proj.settings.bpm} BPM · ${S.proj.settings.meter} · ölçü başı ${S.proj.audio.offsetSec} s · ${S.proj.mixInfo && S.proj.mixInfo.key ? 'ton ' + C.keyName(S.proj.mixInfo.key.tonic, S.proj.mixInfo.key.mode) + ' · ' : ''}güven %${Math.round(((S.proj.mixInfo && S.proj.mixInfo.confidence) || 0) * 100)} — perde analizi yok, miks olduğu gibi çalar; bas üstüne üretilir.`; }
   $('#audioInfo').textContent = chordsOnly() ? `Yalnız akor şablonu: ${S.midi.name} · melodi yok, ses kaydı yok` : S.midi ? `MIDI: ${S.midi.name} · ${S.midi.notes.length} nota · ses kaydı yok` : a ? `${a.name} · ${(a.data.length / a.sr).toFixed(1)} s · ${a.sr} Hz${S.proj.audio.source === 'record' ? ` · gecikme telafisi ${S.proj.settings.latencyMs} ms` : ''}` : 'Ses yok';
   { // MIDI melodi izi seçimi (birden çok aday iz varsa) + uyarılar
     const row = $('#midiTrackRow'), sel = $('#inMidiTrack'), m = S.midi;
@@ -3935,6 +3937,71 @@ function applyChartResult(r, o = {}) {
   status(`Şablon uygulandı: ${cells.length} akor, ${bars} ölçü${chordsOnly() ? ' · yalnız akorlar' : ''}.${o.info ? ' ' + o.info : ''}${linkedSkipNote()}`);
   return true;
 }
+// ---------------------------------------------------------------- MİKS WAV: hazır miks (vokal + akor + davul) → tempo, ölçü başı, akorlar, ton, kick'ler çözülür; olduğu gibi çalar, üstüne bas üretilir
+const isMix = () => !!(S.audio && S.proj.audio && S.proj.audio.mix);
+function startMixProject(mono, sr, name, r) {
+  Player.stop(true); HIST.reset = true;
+  S.loop.on = false; $('#btnLoop').classList.remove('on');
+  invalidateSoundSelection();
+  S.proj = C.newProject(); S.customSection = null; S.sel = null; S.pos = 0; S.track = null; S.corrected = null; S.correctedShift = null; S.onset = null; S.comps = [];
+  const p = S.proj;
+  p.settings.meter = r.meta.meter; p.settings.bpm = r.meta.bpm;
+  p.audio = { offsetSec: r.offsetSec, alignMode: 'none', leadBars: 0, source: 'file', mix: true };
+  p.pitch.tuning = 'a440';
+  p.vocalFx = Object.assign({}, C.VFX_DEFAULTS, { on: false, touched: true }); // miks olduğu gibi çalar: vokal temizliği uygulanmaz
+  S.audio = { data: mono, sr, name }; S.midi = null; S.rawNotes = []; Player.buffersDirty = true;
+  p.mixKicks = r.kicks; p.mixInfo = { bpm: r.meta.bpm, confidence: r.confidence, key: r.key };
+  const sid = uid();
+  p.sections = [{ id: sid, link: null, name: 'Şarkı', startBar: 1, endBar: r.bars, tonic: r.key ? r.key.tonic : null, mode: r.key ? r.key.mode : null }];
+  p.chordLocks = r.cells.map((c) => ({ bar: c.bar, half: c.half, chord: { root: c.chord.root, q: c.chord.q, bass: c.chord.bass ?? null }, src: 'chart' }));
+  // miksin içinde piyano / gitar / davul zaten var: yalnız bas açık; tür paketi de yalnız basa dokunur (diğer katmanlar kilitli)
+  p.matrix = { enabled: true, rows: { [sid]: { piano: false, guitar: false, drums: false, bass: true } } };
+  p.drums.on = false; p.bass.enabled = true;
+  p.pack = { id: null, selectedId: null, locks: { piano: true, guitar: true, bass: false, drums: true } };
+  syncInputs(); refresh();
+  const pick = C.rankPacks(p)[0];
+  let packName = '';
+  if (pick) { C.applyPack(p, S.d, pick.id); packName = C.PACKS.find((x) => x.id === pick.id).name; }
+  syncInputs(); refresh(); renderPacks(); renderBass(); drawBass();
+  return packName;
+}
+async function analyzeAndStartMix(mono, sr, name, o = {}) {
+  let r;
+  await busy('Miks çözümleniyor (tempo · ölçü başı · akorlar · kick)…', async () => {
+    await tick();
+    r = C.analyzeMix(mono, sr, { meter: o.meter || '4/4', bpm: o.bpm });
+  });
+  if (r.error) { status('Miks çözülemedi: ' + r.error, 'err'); return false; }
+  const packName = startMixProject(mono, sr, name, r);
+  const key = r.key ? C.keyName(r.key.tonic, r.key.mode) : '—';
+  status(`Miks çözüldü: ${r.meta.bpm} BPM · ${r.meta.meter} · ${r.bars} ölçü · ton ${key} · ${r.cells.length} akor 📄 · bas üretildi${packName ? ` (${packName})` : ''}. ▶ Oynat: miks olduğu gibi çalar, bas üstüne eklenir.${r.warnings.length ? ' ⚠ ' + r.warnings.join(' ') : ''} Tempo yarı / çift çıktıysa 2. adımdaki BPM ×2 / ÷2 düğmeleri.`);
+  return true;
+}
+async function loadMixFile(file) {
+  if ((S.audio || S.midi) && !confirm('Miks yeni proje olarak açılsın mı? Kaydetmediysen şu anki proje kaybolur.')) return;
+  const meter = S.proj.settings.meter;
+  let mono, sr;
+  try {
+    await busy('Dosya çözülüyor…', async () => {
+      const buf = await getCtx().decodeAudioData(await file.arrayBuffer());
+      mono = new Float32Array(buf.length); sr = buf.sampleRate;
+      for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i] += d[i] / buf.numberOfChannels; }
+    });
+  } catch (e) { status('Dosya çözülemedi: ' + e.message, 'err'); return; }
+  await analyzeAndStartMix(mono, sr, file.name, { meter });
+}
+async function reanalyzeMix(factor) {
+  if (!isMix()) return;
+  if (!confirm('Miks yeniden çözülsün mü? Bas ve akor düzenlemelerin kaybolur.')) return;
+  const bpm = Math.round(S.proj.settings.bpm * factor * 10) / 10;
+  await analyzeAndStartMix(S.audio.data, S.audio.sr, S.audio.name, { meter: S.proj.settings.meter, bpm });
+}
+$('#btnOpenMix').onclick = () => $('#fileMix').click();
+$('#btnMixLoad').onclick = () => $('#fileMix').click();
+$('#fileMix').addEventListener('change', async (e) => { const f = e.target.files[0]; e.target.value = ''; if (f) await loadMixFile(f); });
+$('#btnMixRe').onclick = () => reanalyzeMix(1);
+$('#btnMixX2').onclick = () => reanalyzeMix(2);
+$('#btnMixD2').onclick = () => reanalyzeMix(0.5);
 // toolbar: "Akor şablonu aç" (.txt ya da .mid): yalnız akorlar alınır; melodi, vokal, bas ve davul izleri okunmaz
 async function loadChordFile(file) {
   if (chordsOnly() && !confirm('Yalnız akor projesi yeni şablonla değişsin mi? Kaydetmediysen şu anki akorlar kaybolur.')) return;
@@ -4216,7 +4283,7 @@ function saveProject() {
   const p = JSON.parse(JSON.stringify(S.proj));
   p.savedAt = new Date().toISOString();
   if (S.midi) p.midiData = Object.assign({ name: S.midi.name, endQ: S.midi.endQ, notes: S.midi.notes }, S.midi.chordsOnly ? { chordsOnly: true } : {}); // MIDI projesi: melodi notaları (ses yok); yalnız akor şablonunda melodi yok
-  if ($('#chkEmbed').checked && S.audio) {
+  if (($('#chkEmbed').checked || isMix()) && S.audio) { // miks projesi sesi olmadan açılamaz: her zaman gömülür
     const wav = C.encodeWav([S.audio.data], S.audio.sr);
     p.audioData = { name: S.audio.name, sr: S.audio.sr, wavBase64: C.bytesToBase64(new Uint8Array(wav)) };
   }
