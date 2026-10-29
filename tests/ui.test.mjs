@@ -714,9 +714,16 @@ try {
     assert.equal(await S(() => window.__daw.proj.guitar.instrument), 'piano');
     const tracks0 = await midiTracks();
     assert.ok(tracks0.some((t) => /^Piyano akorları:[1-9]/.test(t)) && !tracks0.some((t) => /^Gitar/.test(t)), tracks0.join(' | '));
-    // panel: 6 satır, tremolo v2'de kapalı
-    assert.equal(await page.locator('#guitarPanel .grow-l').count(), 6);
+    // panel: 7 satır (0 · Şarkıya uyum + 6 ayar), tremolo v2'de kapalı
+    assert.equal(await page.locator('#guitarPanel .grow-l').count(), 7);
     assert.equal(await page.locator('#guitarPanel [data-k=mode]').count(), 4); assert.ok(await page.locator('#guitarPanel [data-k=mode][data-v=tremolo]').isDisabled());
+    // 0) Şarkıya uyum: açık gelir; ritim / mod / şekil / nota süresi elle değişince kapanır, ton / FX kapatmaz; anahtar tekrar açar
+    assert.equal((await part()).groove, true);
+    await click('art', 'staccato'); assert.equal((await part()).groove, false);
+    assert.match(await S(() => document.querySelector('#status').textContent), /şarkıya uyum kapandı/);
+    await click('art', 'normal'); await click('groove', 'groove'); assert.equal((await part()).groove, true);
+    await click('tone', 'crunch'); assert.equal((await part()).groove, true, 'ton uyumu kapatmaz'); await click('tone', 'clean');
+    await click('groove', 'groove'); assert.equal((await part()).groove, false); // kalan adımlar elle yazılmış parti üzerinde
     // 1) hiçbir seçim diğer katmanları sıfırlamaz
     const changes = [];
     let a = await part();

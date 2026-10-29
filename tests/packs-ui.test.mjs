@@ -91,7 +91,9 @@ try {
   // Scheduled audio must obey the same disabled-matrix arrangement as a pack-less project.
   await page.uncheck('#inMatrixEnabled');
   const audible = await page.evaluate(async () => {
-    const api = window.__dawAPI, { C, S } = api, plain = structuredClone(S.proj); plain.pack.id = null;
+    const api = window.__dawAPI, { C, S } = api;
+    for (const part of Object.values(S.proj.guitar.parts)) part.groove = false; // gitar groove pakete bağlıdır; bu adım matris geçidini sınar
+    const plain = structuredClone(S.proj); plain.pack.id = null;
     const expected = C.arrangedEvents(S.d, plain), actual = C.arrangedEvents(S.d, S.proj), scheduled = {};
     api.onScheduledEvents = (ev) => Object.assign(scheduled, ev);
     await api.player().play({ from: 0 }); api.stop(); delete api.onScheduledEvents;
