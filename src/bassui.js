@@ -514,7 +514,7 @@ function bsSelectChange(el) {
   if (k === 'sec') { BS.sec = v; renderBass(); return; }
   if (k === 'preset') bsDo((t) => { t.instrumentPreset = v; });
   else if (k === 'layerPreset') bsDo((t) => { t.layer = Object.assign({ octaveOffset: 0 }, t.layer, { preset: v }); });
-  else if (k === 'prof') bsDo((t, ctx) => { t.styleProfileId = v; if (t.styleMix && t.styleMix.profileB === v) t.styleMix = null; Bs.bassGenerateAll(t, ctx); }, 'Stil profili uygulandı; kilitsiz ölçüler yeniden üretildi.');
+  else if (k === 'prof') bsDo((t, ctx) => { t.styleProfileId = v; t.feelId = null; if (t.styleMix && t.styleMix.profileB === v) t.styleMix = null; Bs.bassGenerateAll(t, ctx); }, 'Stil profili uygulandı; kilitsiz ölçüler yeniden üretildi.');
   else if (k === 'profB') bsDo((t, ctx) => { t.styleMix = v ? { profileB: v, amount: (t.styleMix && t.styleMix.amount) || 0.5 } : null; Bs.bassGenerateAll(t, ctx); });
   else if (k === 'seed') bsDo((t, ctx) => { t.seed = (parseInt(el.value, 10) || 1) | 0; Bs.bassGenerateAll(t, ctx); }, 'Tohum değişti; kilitsiz ölçüler yeniden üretildi.');
   else if (k === 'rlo' || k === 'rhi') bsDo((t, ctx) => { const lo = k === 'rlo' ? +v : t.range.low, hi = k === 'rhi' ? +v : t.range.high; t.range = { low: Math.min(lo, hi - 12), high: Math.max(hi, lo + 12) }; Bs.bassGenerateAll(t, ctx); });

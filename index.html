@@ -5081,7 +5081,7 @@ function defaultBassSection(type, instrumentType) {
 function defaultBassTrack() {
   return {
     enabled: false, generated: false, volume: 0.8, seed: 1, instrumentType: 'bass-guitar', instrumentPreset: 'Dark pick', layer: null, doubleLow: false,
-    styleProfileId: 'post-punk-drive', styleMix: null, useSampler: false, range: Object.assign({}, RANGE_DEFAULT['bass-guitar']),
+    styleProfileId: 'post-punk-drive', styleMix: null, engine: 'groove', feelId: null, useSampler: false, range: Object.assign({}, RANGE_DEFAULT['bass-guitar']),
     synthGuitarTemplates: false, pump: 0, resonance: null, drive: null,
     sections: {}, bars: [], loops: [], customTemplates: [], profiles: [],
     tap: { grid: '16n', latencyMs: 0, mode: 'asPlayed', loopBars: 1 },
@@ -5108,6 +5108,21 @@ function bassContext(d, proj) {
   };
   ctx.lastChord = (i) => { for (let k = i; k >= 0; k--) { const s = ctx.segs(k); if (s) return s[s.length - 1].chord; } return null; };
   ctx.firstChord = (i) => { for (let k = i; k < ctx.bars; k++) { const s = ctx.segs(k); if (s) return s[0].chord; } return null; };
+  // davul kick'leri (bas ızgarasında 16'lık adım) ve vokal melodisi: groove motoru bunlara bakar
+  ctx.kicks = (i) => {
+    const L = C.drumLoopForBar && proj && proj.drums ? C.drumLoopForBar(proj, d, i + 1) : null;
+    if (!L || !L.K) return null;
+    const out = [], per = g.barQ / L.K.length;
+    for (let j = 0; j < L.K.length; j++) {
+      if (L.K[j] !== 'x' && L.K[j] !== 'X') continue;
+      const s = Math.round((j * per) / STEP_Q);
+      if (s >= 0 && s < steps && !out.includes(s)) out.push(s);
+    }
+    return out;
+  };
+  const vocal = (d.notes || []).filter((n) => n.effMidi != null && n.q1 > n.q0).sort((a, b) => a.q0 - b.q0);
+  ctx.melodyPc = (q) => { for (const n of vocal) { if (n.q0 > q + 1e-6) break; if (q < n.q1 - 1e-6) return mod12(n.effMidi); } return null; };
+  ctx.melodyCount = (i) => vocal.filter((n) => n.q0 >= i * g.barQ - 1e-6 && n.q0 < (i + 1) * g.barQ - 1e-6).length;
   void byBar;
   return ctx;
 }
@@ -5251,10 +5266,12 @@ function pickTemplate(track, prof_, type, meter, energy, rng, o = {}) {
   const id = pickW(rng, entries);
   return cand.find((t) => t.id === id) || cand[0];
 }
+const grooveOn = (track, ctx) => !!Bass.Groove && Bass.Groove.active(track, ctx);
 // bölümlerin 4 ölçülük cümleleri: A, A, A', B — cümle düzeyinde rastgele akış (tohum, bölüm, cümle no) → ölçüler tek tek yeniden hesaplanabilir
 function planMotifs(track, ctx) {
   const type = track.instrumentType, prof_ = activeProfile(track), meter = ctx.meter;
   const plan = new Array(ctx.bars).fill(null);
+  if (grooveOn(track, ctx)) return plan; // groove motoru ölçüleri kendisi planlar
   let prevFamily = null, prevEnergy = null;
   for (const sec of ctx.secs) {
     const set = track.sections[sec.id]; if (!set) continue;
@@ -5347,7 +5364,7 @@ function buildBarNotes(env) {
   const lastSeg = segs[segs.length - 1];
   const nextDiffers = !!nextChord && !sameChord(lastSeg.chord, nextChord);
   // bölümün son ölçüsü (ya da sabit öncül isteği) her zaman bir sonraki köke öncül ile biter
-  if ((lastBarOfSection && nextChord && !ped) || env.forcePickup) slots = withPickup(slots, steps).map((s) => (s.role === 'pickup' && !s.sr ? Object.assign(s, { sr: 'pickup' }) : s));
+  if ((lastBarOfSection && nextChord && !ped && !env.noPickup) || env.forcePickup) slots = withPickup(slots, steps).map((s) => (s.role === 'pickup' && !s.sr ? Object.assign(s, { sr: 'pickup' }) : s));
   const notes = [], warnings = [];
   let prev = env.prevMidi ?? null, prevRole = 'root';
   const nextRoot = nextChord ? homeRoot(chordInfo(nextChord).bassPc, center, range) : null;
@@ -5426,7 +5443,7 @@ function buildBarNotes(env) {
   // bölümün ilk ölçüsü: çapa bir adım uzun tutulur (sonraki onset izin veriyorsa)
   if (firstBarOfSection && notes.length) {
     const a = notes[0];
-    if (a.startBeat === 0 && (!notes[1] || notes[1].startBeat >= a.durationBeats + STEP_Q - 1e-9)) a.durationBeats += STEP_Q;
+    if (a.startBeat === 0 && (!notes[1] || notes[1].startBeat >= a.durationBeats + STEP_Q - 1e-9) && (!tpl.groove || a.durationBeats + STEP_Q <= ctx.barQ + 1e-9)) a.durationBeats += STEP_Q;
   }
   return { notes, warnings };
 }
@@ -5470,11 +5487,17 @@ function applyFill(env, res) {
 const noteKey = (n) => `${n.startBeat}|${n.durationBeats}|${n.midi}`;
 const barKey = (b) => b.notes.map(noteKey).join(';');
 // ölçü imzası: akorlar, bölüm anahtarı, ölçü ve bir sonraki ölçünün ilk akoru (öncül için) — değişirse "kirli"
+// groove: tür ve o ölçüdeki kick'ler imzaya girer; davul loop'u ya da tür değişince kilitsiz ölçüler yeniden hesaplanır
+function grooveSig(ctx, track, i) {
+  if (!grooveOn(track, ctx)) return '';
+  const k = ctx.kicks ? ctx.kicks(i) : null;
+  return 'G' + Bass.Groove.feelFor(track, ctx).id + ':' + (k ? k.join('.') : '-');
+}
 function barSig(ctx, track, i) {
   const segs = ctx.segs(i), sec = ctx.secOf(i);
   const nx = ctx.firstChord(i + 1), pv = ctx.lastChord(i - 1);
   const f = (c) => (c ? `${mod12(c.root)}${c.q}/${c.bass ?? ''}` : '-');
-  return [ctx.meter, sec ? `${sec.id}:${sec.tonic}:${sec.mode}:${i + 1 === sec.endBar ? 'E' : ''}${i + 1 === sec.startBar ? 'S' : ''}` : '-', segs ? segs.map((s) => `${s.s0}-${s.s1}:${f(s.chord)}`).join(',') : '-', f(nx), f(pv), track.instrumentType, track.range.low + ':' + track.range.high].join('|');
+  return [ctx.meter, sec ? `${sec.id}:${sec.tonic}:${sec.mode}:${i + 1 === sec.endBar ? 'E' : ''}${i + 1 === sec.startBar ? 'S' : ''}` : '-', segs ? segs.map((s) => `${s.s0}-${s.s1}:${f(s.chord)}`).join(',') : '-', f(nx), f(pv), track.instrumentType, track.range.low + ':' + track.range.high, grooveSig(ctx, track, i)].join('|');
 }
 
 // bir ölçüyü üretir (planlı); locked/loop ölçüler atlanır. opts.free: kendi akışından şablon + roller seç (yeniden zar)
@@ -5487,9 +5510,12 @@ function generateBar(track, ctx, i, motifs, opts = {}) {
   const hyp = secSet.hypnotic && bar.rerollCount === 0 && !opts.free && !opts.recipe; // hipnotik: her ölçüde aynı akış → birebir tekrar
   const rng = hyp ? rngFor(track.seed, 'hyp', sec ? sec.id : '_none', salt) : rngFor(track.seed, 'bar', i, bar.rerollCount, salt);
   const idx = tplIndex(track);
-  let tpl, prs, kind = 'free';
+  let tpl, prs, kind = 'free', groove = null;
   let plan = motifs && motifs[i];
-  if (bar.source === 'tapped' && bar.recipe && bar.recipe.templateId && idx.get(bar.recipe.templateId)) {
+  if (!opts.recipe && !(bar.source === 'tapped' && bar.recipe && bar.recipe.templateId && idx.get(bar.recipe.templateId)) && grooveOn(track, ctx)) {
+    groove = Bass.Groove.plan(track, ctx, i, { secSet, sec, bar, variant: bar.rerollCount + salt });
+    tpl = groove.tpl; prs = groove.prs; kind = 'groove'; plan = null;
+  } else if (bar.source === 'tapped' && bar.recipe && bar.recipe.templateId && idx.get(bar.recipe.templateId)) {
     tpl = idx.get(bar.recipe.templateId); prs = drawRoles(track, prof_, type, tpl, energy, rng); kind = 'tapped';
   } else if (opts.recipe) {
     tpl = null; kind = 'recipe';
@@ -5510,12 +5536,12 @@ function generateBar(track, ctx, i, motifs, opts = {}) {
   // A' çeşitlemesi: öncül eklenir
   const nextC = ctx.firstChord(i + 1), curLast = ctx.lastChord(i);
   let forcePickup = !!(plan && plan.pickup && kind !== 'free' && !opts.recipe && (!secSet.hypnotic || (nextC && curLast && !sameChord(nextC, curLast))));
-  const env = { track, ctx, i, rng, secSet, sec, tpl, slots, roles, energy, prevMidi: opts.prevMidi, nextFirst: opts.nextFirst, forcePickup };
+  const env = { track, ctx, i, rng, secSet, sec, tpl, slots, roles, energy, prevMidi: opts.prevMidi, nextFirst: opts.nextFirst, forcePickup, noPickup: !!(groove && groove.noPickup) };
   let res = buildBarNotes(env);
   // dolgu: cümle sonu (4. ölçü ya da bölümün son ölçüsü), bölüm izin veriyor, pedal yok
   const pos = sec ? (i + 1 - sec.startBar) % 4 : 0, phraseEnd = pos === 3 || (sec && i + 1 === sec.endBar);
   const ped = pedalFor(bar, secSet);
-  if (phraseEnd && secSet.fills && !ped && !opts.noFill && !opts.recipe && rng() < 0.15 + 0.5 * energy) applyFill(env, res);
+  if (!groove && phraseEnd && secSet.fills && !ped && !opts.noFill && !opts.recipe && rng() < 0.15 + 0.5 * energy) applyFill(env, res);
   bar.templateId = tpl.id; bar.energy = energy; bar.sectionId = sec ? sec.id : null; bar.warnings = res.warnings;
   bar.notes = res.notes;
   bar.recipe = { templateId: tpl.id, slots: slots.map((s) => ({ step: s.step, len: s.len, pr: s.pr, sr: s.sr, role: s.role, octave: s.octave, ghost: s.ghost, vel: s.vel, accent: s.accent, glide: s.glide, gate: s.gate, degree: s.degree })) };
@@ -5535,6 +5561,7 @@ function triple(track, i) { // i, i-1, i-2 aynı notalar mı (kilit / döngü / 
   return k === barKey(b[i - 1]) && k === barKey(b[i - 2]);
 }
 function noTriple(track, ctx, i, motifs, opts) {
+  if (grooveOn(track, ctx)) return; // groove: aynı akor + aynı bölüm = aynı hat (tekrar bilinçli)
   const sec = ctx.secOf(i), secSet = track.sections[sec ? sec.id : '_none'];
   if (secSet && secSet.hypnotic) return;
   const bad = () => [i, i + 1, i + 2].some((e) => track.bars[e] && !track.bars[e].locked && track.bars[e].source !== 'loop' && triple(track, e) && ![e, e - 1, e - 2].some((x) => isFixed(track.bars[x] || {}) && x !== i));
@@ -5684,6 +5711,12 @@ function bassReroll(track, ctx, i) {
 // yoğunlaştır / seyrekleştir: ailedeki komşu şablona geç
 function bassDensity(track, ctx, i, dir) {
   const b = track.bars[i]; if (!b || b.locked || b.source === 'loop') return false;
+  if (grooveOn(track, ctx) && String(b.templateId).startsWith('groove:')) { // groove: bir kova yukarı / aşağı
+    b.densityBias = clamp((b.densityBias || 0) + (dir > 0 ? 1 : -1), -2, 2);
+    generateBar(track, ctx, i, null, { prevMidi: prevNote(track, i), nextFirst: nextFixedFirst(track, i) });
+    applyTies(track, ctx, i - 1, i + 1); applyLoops(track, ctx);
+    return true;
+  }
   const idx = tplIndex(track), tpl = idx.get(b.templateId); if (!tpl) return false;
   const list = templatesFor(track, ctx.meter, track.instrumentType).concat(tpl.custom ? [tpl] : []);
   const nb = dir > 0 ? siblingUp(list, tpl) : siblingDown(list, tpl);
@@ -5934,6 +5967,198 @@ const Bass = {
   bassEvents, filterAutomation, cutoffHz, newHistory, historyPush, historyUndo, historyRedo, bassMidi, noteKey, barKey, nearestPc, foldInto, homeRoot,
 };
 Object.assign(C, { Bass });
+})(typeof window !== 'undefined' ? window : globalThis);
+
+// ---------------------------------------------------------------- BAS GROOVE: türe ve şarkıya bağlı, rastgelesiz bas hattı
+// DOM'suz; Core.Bass'e eklenir (build'de bass.js'in ardından). Zar yok: bir ölçünün ritmi ve perdeleri şunlardan çıkar:
+//   1) türün elle yazılmış desenleri (enerji kovasına göre: low / mid / high),
+//   2) o ölçüde çalan davul loop'unun kick konumları (desen kick'e en iyi uyana seçilir, kaçan kick'e vuruş eklenir),
+//   3) akor izi (kök, beşli, oktav; akor değişiminde öncül yalnızca cümle sonunda),
+//   4) vokal melodisi (çakışan perde → çakışmayan akor sesi).
+// Aynı bölümde aynı akor aynı çalınır; çeşitleme yalnızca "zar" (yeniden üret) ve yoğunluk düğmeleriyle gelir.
+(function (root) {
+const C = root.Core, B = C.Bass;
+const { clamp, mod12 } = C;
+const STEP_Q = B.STEP_Q;
+
+// ---------------------------------------------------------------- 1) DESENLER (1 karakter = 16'lık adım)
+// R kök · 5 beşli · 8 oktav · 3 üçlü · . önceki notayı uzat · _ sus. sus: sürekli (uzun nota) aile — kick'e vuruş eklenmez, öncül almaz.
+const BANK = {
+  '4/4': {
+    whole: { p: 'R...............', sus: true, label: 'uzun nota' },
+    halves: { p: 'R.......R.......', sus: true, label: 'yarımlar' },
+    halves5: { p: 'R.......5.......', sus: true, label: 'kök, beşli' },
+    dotted: { p: 'R.....R.....R...', label: 'noktalı çeyrekler' },
+    push: { p: 'R.....R.R.......', label: 'itme (1, 2\'nin ve\'si, 3)' },
+    q: { p: 'R...R...R...R...', label: 'çeyrekler' },
+    q5: { p: 'R...R...R...5...', label: 'çeyrekler, 4\'te beşli' },
+    k13: { p: 'R.......R.R.....', label: 'kick\'le: 1, 3, 3\'ün ve\'si' },
+    sync: { p: 'R..R....R..R....', label: 'senkop (1, 1a, 3, 3a)' },
+    sync332: { p: 'R..R....R..R..R.', label: '3+3+2 itme' },
+    e8: { p: 'R.R.R.R.R.R.R.R.', label: 'sekizlikler' },
+    'e8-5': { p: 'R.R.R.R.R.R.5.R.', label: 'sekizlikler, 4\'te beşli' },
+    'e8-oct': { p: 'R.8.R.8.R.8.R.8.', label: 'kök-oktav sekizlikler' },
+    pp1: { p: 'R..R..R.R..R..5.', label: 'hook (3-3-2)' },
+    off: { p: '__R.__R.__R.__R.', label: 'offbeat', dodge: true },
+    arp: { p: 'R.5.8.5.R.5.8.5.', label: 'arpej kök-beşli-oktav' },
+    s16: { p: 'RR8RRR8RRR8RRR8R', label: '16\'lık koşu', accent: true },
+    acid: { p: 'R.RR.R8.R.RR.R8.', label: 'acid', accent: true },
+  },
+  '3/4': {
+    W1: { p: 'R...........', sus: true, label: 'ölçüde bir nota' },
+    W13: { p: 'R.......5...', label: '1\'de kök, 3\'te beşli' },
+    W123: { p: 'R...R...R...', label: 'her vuruşta' },
+    W8: { p: 'R.R.R.R.R.R.', label: 'sekizlikler' },
+  },
+  '6/8': {
+    S1: { p: 'R...........', sus: true, label: 'ölçüde bir nota' },
+    Sdot: { p: 'R.....R.....', label: 'noktalı çeyrekler' },
+    Sdot5: { p: 'R.....5.....', label: 'kök, beşli' },
+    S8: { p: 'R.R.R.R.R.R.', label: 'sekizlikler' },
+  },
+};
+const parsed = new Map();
+function parsePattern(meter, name) {
+  const key = meter + '|' + name;
+  if (parsed.has(key)) return parsed.get(key);
+  const def = BANK[meter][name], pat = def.p, on = [];
+  for (let s = 0; s < pat.length; s++) {
+    const ch = pat[s];
+    if (ch === '.' || ch === '_') continue;
+    let len = 1; while (pat[s + len] === '.') len++;
+    on.push({ step: s, len, ch });
+  }
+  const out = Object.assign({ name, onsets: on }, def);
+  parsed.set(key, out);
+  return out;
+}
+
+// ---------------------------------------------------------------- 2) TÜRLER: enerji kovasına göre aday desenler (öncelik sırasıyla)
+// gate: çalan notaların kapısı (yoksa profil / synth varsayılanı); approach:false → sürekli türlerde öncül yok
+const FEELS = {
+  'dream-pop': { name: 'Dream pop', bands: { low: ['whole'], mid: ['whole', 'halves'], high: ['halves', 'q'] }, approach: false },
+  'indie-pop': { name: 'Indie pop', bands: { low: ['halves'], mid: ['k13', 'sync', 'dotted', 'q'], high: ['e8', 'k13', 'e8-5'] } },
+  'electro-pop': { name: 'Electro-pop', bands: { low: ['halves'], mid: ['push', 'sync', 'off'], high: ['off', 'e8-oct', 'k13'] }, gate: 0.75 },
+  'alt-rock': { name: 'Alt rock', bands: { low: ['halves'], mid: ['k13', 'e8'], high: ['e8', 'e8-5', 'sync332'] }, gate: 0.9 },
+  'indie-rock': { name: 'Indie rock', bands: { low: ['halves'], mid: ['q', 'e8'], high: ['e8-5', 'e8', 'pp1'] } },
+  'post-punk': { name: 'Post-punk', bands: { low: ['q'], mid: ['e8', 'pp1'], high: ['e8-oct', 'pp1', 'e8-5'] }, gate: 0.85 },
+  synthwave: { name: 'Synthwave', bands: { low: ['q'], mid: ['e8', 'e8-oct'], high: ['e8-oct', 'arp', 's16'] }, gate: 0.6 },
+  darkwave: { name: 'Darkwave', bands: { low: ['whole', 'halves'], mid: ['e8', 'halves'], high: ['e8', 's16'] }, gate: 0.65 },
+  'alternative-pop': { name: 'Alternative pop', bands: { low: ['whole', 'halves'], mid: ['k13', 'halves', 'dotted'], high: ['dotted', 'push', 'sync'] } },
+  'pop-rock': { name: 'Pop rock', bands: { low: ['halves'], mid: ['k13', 'sync', 'e8'], high: ['e8', 'sync332', 'e8-5'] } },
+  akustik: { name: 'Akustik', bands: { low: ['whole'], mid: ['halves', 'halves5'], high: ['q', 'halves5'] }, approach: false },
+  balad: { name: 'Balad', bands: { low: ['whole'], mid: ['halves'], high: ['halves', 'dotted'] }, approach: false },
+  synthpop: { name: 'Synthpop', bands: { low: ['q'], mid: ['off', 'e8'], high: ['off', 'e8-oct', 'arp'] }, gate: 0.7 },
+  'dans-elektronik': { name: 'Dans / Elektronik', bands: { low: ['q'], mid: ['off', 'arp'], high: ['s16', 'acid', 'off'] }, gate: 0.6 },
+  vals: { name: 'Vals', meter: '3/4', bands: { low: ['W1'], mid: ['W13', 'W1'], high: ['W123', 'W13'] } },
+  'balad-68': { name: '6/8 Balad', meter: '6/8', bands: { low: ['S1'], mid: ['Sdot', 'S1'], high: ['Sdot', 'S8'] } },
+};
+for (const f of Object.values(FEELS)) f.meter = f.meter || '4/4';
+const METER_DEFAULT = { '3/4': 'vals', '6/8': 'balad-68' };
+const PROFILE_FEEL = { 'post-punk-drive': 'post-punk', 'darkwave-pulse': 'darkwave', 'synthwave-roll': 'synthwave' };
+const BUILTIN_PROFILE = (id) => id == null || B.BUILTIN_PROFILES.some((p) => p.id === id);
+
+// Grup motoru bu iz için geçerli mi? (2/4 gibi deseni olmayan ölçüler, öğrenilmiş profiller ve karışımlar eski motorda kalır)
+function active(track, ctx) {
+  return track.engine !== 'legacy' && !!BANK[ctx.meter] && !track.styleMix && BUILTIN_PROFILE(track.styleProfileId);
+}
+function feelFor(track, ctx) {
+  if (ctx.meter !== '4/4') { const id = METER_DEFAULT[ctx.meter]; return { id, def: FEELS[id] }; }
+  let id = track.feelId && FEELS[track.feelId] && FEELS[track.feelId].meter === '4/4' ? track.feelId : null;
+  if (!id && track.styleProfileId && PROFILE_FEEL[track.styleProfileId]) id = PROFILE_FEEL[track.styleProfileId];
+  if (!id && ctx.proj && ctx.proj.pack && FEELS[ctx.proj.pack.id] && FEELS[ctx.proj.pack.id].meter === '4/4') id = ctx.proj.pack.id;
+  if (!id) id = track.instrumentType === 'synth' ? 'synthpop' : 'pop-rock';
+  return { id, def: FEELS[id] };
+}
+
+// ---------------------------------------------------------------- 3) KOVA VE DESEN SEÇİMİ
+const bandOf = (e) => (e < 0.34 ? 'low' : e < 0.7 ? 'mid' : 'high');
+const FAMILY_BAND = { drone: 'low', walk: 'mid', drive: 'high', roll: 'high' };
+// kovayı bölümün ortalama enerjisi belirler (faz biçimi hariç): bölüm içinde ölçüden ölçüye desen değişmez
+function bandFor(secSet, bias) {
+  if (secSet.templateFamily && FAMILY_BAND[secSet.templateFamily]) return FAMILY_BAND[secSet.templateFamily];
+  const mean = ((secSet.energyStart ?? 0.5) + (secSet.energyEnd ?? 0.5)) / 2;
+  return bandOf(clamp(mean + ((secSet.density ?? 0.5) - 0.5) * 0.6 + 0.25 * (bias || 0), 0, 1));
+}
+// desenin kick'e uyumu: kilitli desenler kick'lerin kaçını kapsadığına, offbeat desenler kick'ten ne kadar kaçındığına bakar
+function fit(pat, K, index) {
+  const O = pat.onsets.map((o) => o.step), bonus = -0.15 * index;
+  if (!K || !K.length) return bonus;
+  const hit = O.filter((s) => K.includes(s)).length;
+  if (pat.dodge) return 3 * (1 - hit / O.length) * Math.min(1, (K.length - 1) / 3) + bonus;
+  if (pat.sus) return 1.5 * hit - 0.3 * (O.length - hit) + bonus;
+  return 3 * (hit / K.length) - (O.length - hit) / O.length + bonus;
+}
+function choosePattern(feel, ctx, band, K, variant, busy) {
+  const meter = ctx.meter, names = feel.def.bands[band].filter((n) => BANK[meter][n]);
+  let cands = names.map((n, k) => ({ pat: parsePattern(meter, n), index: k }));
+  if (busy) { const calm = cands.filter((c) => c.pat.onsets.length <= 8); if (calm.length) cands = calm; }
+  const ranked = cands.map((c) => ({ pat: c.pat, score: fit(c.pat, K, c.index) })).sort((a, b) => b.score - a.score);
+  // 0: davula en iyi uyan; zar (variant ≥ 1): sıradaki adaylar — hepsi o türün o enerjideki desenleri, kick'e yine vuruş eklenir
+  return ranked[((variant % ranked.length) + ranked.length) % ranked.length].pat;
+}
+
+// ---------------------------------------------------------------- 4) ÖLÇÜ PLANI
+const PR = { R: 'root', 5: 'fifth', 8: 'octave', 3: 'third' };
+const clashes = (bassPc, melPc) => { const ic = mod12(bassPc - melPc); return ic === 1 || ic === 11; };
+// kick'e vuruş ekle: desende olmayan kick adımları (en çok 3); önceki nota o adımda biter, yeni nota sonraki vuruşa kadar sürer
+function withKicks(onsets, K, steps) {
+  const out = onsets.map((o) => Object.assign({}, o));
+  let added = 0;
+  for (const k of K) {
+    if (added >= 3 || k <= 0 || k >= steps || out.some((o) => o.step === k)) continue;
+    const prev = out.filter((o) => o.step < k).pop();
+    if (prev && prev.step + prev.len > k) prev.len = k - prev.step;
+    out.push({ step: k, len: 1, ch: 'R', kick: true });
+    added++;
+  }
+  out.sort((a, b) => a.step - b.step);
+  out.forEach((o, i) => { if (o.kick) o.len = Math.min(4, (out[i + 1] ? out[i + 1].step : steps) - o.step); });
+  return out;
+}
+function plan(track, ctx, i, o) {
+  const { secSet, sec, bar } = o, meter = ctx.meter, steps = ctx.steps;
+  const feel = feelFor(track, ctx);
+  const band = bandFor(secSet, bar ? bar.densityBias : 0);
+  const K = ctx.kicks ? ctx.kicks(i) : null;
+  const busy = ctx.melodyCount ? ctx.melodyCount(i) >= 10 : false;
+  const pat = choosePattern(feel, ctx, band, K, o.variant || 0, busy);
+  let onsets = pat.onsets;
+  if (K && K.length && !pat.sus && !pat.dodge && band !== 'low') onsets = withKicks(onsets, K, steps);
+  const segs = ctx.segs(i);
+  const segAt = (s) => (segs ? segs.find((x) => s >= x.s0 && s < x.s1) || segs[segs.length - 1] : null);
+  const nextChord = ctx.firstChord(i + 1), lastChord = segs ? segs[segs.length - 1].chord : null;
+  const pos = sec ? (i + 1 - sec.startBar) : 0;
+  const phraseEnd = !!sec && (pos % 4 === 3 || i + 1 === sec.endBar);
+  const approach = phraseEnd && feel.def.approach !== false && !pat.sus && !secSet.hypnotic && !!nextChord && !!lastChord && !B.sameChord(lastChord, nextChord);
+  const isSynth = track.instrumentType === 'synth';
+  const lastIdx = onsets.length - 1;
+  const slots = [], prs = [];
+  onsets.forEach((on, k) => {
+    const seg = segAt(on.step), ci = seg ? B.chordInfo(seg.chord) : null;
+    const segStart = !!seg && on.step === seg.s0;
+    let letter = on.ch;
+    // vokal melodisiyle yarım ton çakışan akor dışı olmayan sesler yerine çakışmayan akor sesi
+    if (ci && ctx.melodyPc && !segStart && on.step !== 0) {
+      const mel = ctx.melodyPc(i * ctx.barQ + on.step * STEP_Q);
+      const pcOf = { R: ci.bassPc, 5: ci.fifthPc, 8: ci.bassPc, 3: ci.thirdOk ? ci.thirdPc : ci.fifthPc };
+      if (mel != null && clashes(pcOf[letter], mel)) letter = ['R', '5', '8'].find((l) => !clashes(pcOf[l], mel)) || letter;
+    }
+    const kickHere = !!K && K.includes(on.step);
+    const pick = approach && k === lastIdx && on.step >= steps - 4;
+    const slot = { step: on.step, len: on.len, sr: pick ? 'pickup' : on.step === 0 ? 'anchor' : kickHere || on.step % 4 === 0 ? 'strong' : 'weak' };
+    const gate = pat.sus ? 0.98 : feel.def.gate;
+    if (gate != null && isSynth) slot.gate = gate; else if (gate != null && !pat.sus) slot.gate = Math.min(1, gate + 0.05);
+    if (pat.sus && !isSynth) slot.gate = 1;
+    if (isSynth && pat.accent && on.step % 4 === 0) slot.accent = true;
+    slots.push(slot);
+    prs.push(pick ? 'approach-d' : PR[letter] || 'root');
+  });
+  const tpl = { id: `groove:${feel.id}:${pat.name}`, name: `${feel.def.name} · ${pat.label}`, family: band === 'low' ? 'drone' : band === 'mid' ? 'walk' : 'drive', meter, steps, window: [0, 1], suits: ['bass-guitar', 'synth'], slots, groove: true };
+  return { tpl, prs, noPickup: !!pat.sus || feel.def.approach === false || !!secSet.hypnotic, band, pattern: pat.name };
+}
+
+Object.assign(B, { Groove: { BANK, FEELS, METER_DEFAULT, PROFILE_FEEL, active, feelFor, bandFor, choosePattern, plan, parsePattern } });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // ---------------------------------------------------------------- BAS SES MOTORU: Web Audio sentezleyici (BassInstrument arayüzü) + örnekleyici
@@ -6662,6 +6887,21 @@ function gateEvents(events, proj, d, layer) {
   if (events.fxTable) gated.fxTable = events.fxTable;
   return gated;
 }
+// Bir ölçüde gerçekten çalan davul loop'u (bas bunun kick'ine kilitlenir); davul kapalıysa, ölçüde susuyorsa ya da loop bilinmiyorsa null.
+// "auto" loop'u uygulama çözer (C.autoDrumLoop); çekirdek tek başına çalışırken bilinmez.
+function drumLoopForBar(proj, d, bar) {
+  const ds = proj.drums || {};
+  if (!ds.on || bar < (ds.startBar || 1) || !d || !d.sections) return null;
+  const sections = proj.sections || [];
+  const gateSection = d.sections.find((s) => bar >= s.startBar && bar <= s.endBar);
+  if (!effectiveCell(proj, d, gateSection?.id, 'drums')) return null;
+  const section = d.sections.find((s) => !s.implicit && bar >= s.startBar && bar <= s.endBar);
+  const rootId = section ? (C.linkedRoot ? C.linkedRoot(proj, d, section.id) : section.id) : null;
+  const a = rootId ? sections.find((s) => s.id === rootId)?.arr?.drums : undefined;
+  if (a === 'off') return null;
+  const byId = (id) => C.DRUM_LOOPS.find((l) => l.id === id && l.meter === proj.settings.meter) || null;
+  return (a && byId(a)) || (isLastChorus(proj, d, section?.id) ? byId(activePack(proj).drums.alt) : byId(ds.loop) || (C.autoDrumLoop ? C.autoDrumLoop(proj) : null));
+}
 function guitarGroupKey(proj, d, id, part) {
   const links = C.resolveLinks?.(proj, d) || {}, sourceId = links[id]?.rootId || id;
   const group = proj.guitar.voiceGroups?.[sourceId];
@@ -6711,7 +6951,7 @@ function arrangedEvents(d, proj, opts = {}) {
   if (proj.matrix && proj.matrix.enabled !== false) for (const layer of layers) out[layer] = gateEvents(out[layer], proj, d, layer);
   return out;
 }
-Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers, guitarGroupKey });
+Object.assign(C, { arrangedEvents, matrixTemplate, setMatrixEnabled, migrateMatrix, effectiveCell, effectiveLayers, guitarGroupKey, drumLoopForBar });
 })(typeof window !== 'undefined' ? window : globalThis);
 
 // Tür paketleri: yalnızca mevcut motor ayarları; tempo ve ölçü projeye aittir.
@@ -6814,24 +7054,25 @@ function applyPack(proj, d, packId, opts = {}) {
     if (q.guitar.parts._all?.locked) warnings.push('Kilitli gitar partisi korundu');
     else q.guitar.parts._all = { ...C.defaultGuitarPart(q.settings.meter), ...clone(p.guitar), pattern: clone(C.GUITAR_PATTERNS.find((g) => g.id === p.guitar.pattern)) };
   }
-  if (!locks.bass) {
-    const t = q.bass ||= B.defaultBassTrack(), b = p.bass;
-    Object.assign(t, { enabled: true, instrumentType: b.instrumentType === 'guitar' ? 'bass-guitar' : 'synth', instrumentPreset: b.preset, styleProfileId: b.profile, styleMix: null, pump: b.pump, useSampler: false });
-    const ctx = B.bassContext(d, q);
-    B.ensureBars(t, ctx);
-    const retained = t.bars.filter((bar) => bar.locked || t.sections[bar.sectionId]?.locked).map(clone);
-    for (const s of d.sections) if (!t.sections[s.id].locked) t.sections[s.id] = { ...B.defaultBassSection(s.typeNorm, t.instrumentType), templateFamily: b.templateFamily, density: b.density };
-    if (retained.length || Object.values(t.sections).some((s) => s.locked)) warnings.push('Kilitli bas ölçüleri ve bölüm ayarları korundu');
-    for (const bar of retained) t.bars[bar.index].locked = true;
-    B.bassGenerateAll(t, ctx);
-    for (const bar of retained) t.bars[bar.index] = bar;
-  }
+  // matris ve paket kimliği önce: bas, hangi bölümde hangi davul loop'unun çaldığını (kick'leri) buna göre görür
   q.matrix ||= { rows: {} }; q.matrix.rows ||= {}; q.matrix.enabled = true; q.pack.id = p.id;
   for (const s of d.sections) {
     const r = q.matrix.rows[s.id] ||= {};
     for (const l of layers) r[l] = locks[l] ? prior[s.id][l] : null;
   }
   for (const r of Object.values(q.matrix.rows)) for (const l of layers) if (!locks[l]) r[l] = null;
+  if (!locks.bass) {
+    const t = q.bass ||= B.defaultBassTrack(), b = p.bass;
+    Object.assign(t, { enabled: true, instrumentType: b.instrumentType === 'guitar' ? 'bass-guitar' : 'synth', instrumentPreset: b.preset, styleProfileId: b.profile, styleMix: null, pump: b.pump, useSampler: false, engine: 'groove', feelId: p.id }); // groove: ritim ve perde türün desenlerinden, davulun kick'inden ve akorlardan gelir
+    const ctx = B.bassContext(d, q);
+    B.ensureBars(t, ctx);
+    const retained = t.bars.filter((bar) => bar.locked || t.sections[bar.sectionId]?.locked).map(clone);
+    for (const s of d.sections) if (!t.sections[s.id].locked) t.sections[s.id] = { ...B.defaultBassSection(s.typeNorm, t.instrumentType), templateFamily: B.Groove.active(t, ctx) ? 'auto' : b.templateFamily, density: b.density };
+    if (retained.length || Object.values(t.sections).some((s) => s.locked)) warnings.push('Kilitli bas ölçüleri ve bölüm ayarları korundu');
+    for (const bar of retained) t.bars[bar.index].locked = true;
+    B.bassGenerateAll(t, ctx);
+    for (const bar of retained) t.bars[bar.index] = bar;
+  }
   Object.assign(proj, q);
   return { warnings, changed: layers.filter((l) => !locks[l]), kept: layers.filter((l) => locks[l]), ...(opts.keepManual ? { manual } : {}) };
 }
@@ -10024,7 +10265,7 @@ function renderChips() {
   const ins = p.guitar && p.guitar.instrument;
   set('#chipS8c', ins === 'guitar' ? 'gitar' : ins === 'both' ? 'piyano + gitar' : 'kapalı');
   const bt = p.bass;
-  set('#chipS8d', bt && bt.enabled ? (bt.generated ? `${bt.instrumentType === 'synth' ? 'synth bas' : 'bas gitar'} · ${(Bs.profileById(bt, bt.styleProfileId) || {}).name || ''}` : 'üretilmedi') : 'kapalı');
+  set('#chipS8d', bt && bt.enabled ? (bt.generated ? `${bt.instrumentType === 'synth' ? 'synth bas' : 'bas gitar'} · ${bassStyleLabel(bt)}` : 'üretilmedi') : 'kapalı');
 }
 // ---------------------------------------------------------------- GENEL GERİ ALMA / YİNELEME (Ctrl+Z, Ctrl+Shift+Z)
 // Proje durumunun anlık görüntüleri: her değişiklikten (refresh) sonra önceki durum geri alma yığınına girer.
@@ -10475,6 +10716,12 @@ function currentLoop() {
   const L = id && id !== 'auto' ? C.DRUM_LOOPS.find((l) => l.id === id && l.meter === S.proj.settings.meter) : null;
   return L || (S.drumSug && S.drumSug.best ? S.drumSug.best.loop : C.loopsFor(S.proj.settings.meter)[0] || null);
 }
+// bas etiketi: groove motorunda türün adı (Pop rock, Synthwave…), eski motorda stil profilinin adı
+function bassStyleLabel(bt) {
+  const G = Bs.Groove, ctx = { meter: S.proj.settings.meter, proj: S.proj };
+  return G && G.active(bt, ctx) ? G.feelFor(bt, ctx).def.name : (Bs.profileById(bt, bt.styleProfileId) || {}).name || '';
+}
+C.autoDrumLoop = (proj) => (proj === S.proj ? currentLoop() : null); // bas groove'u "auto" loop'un kick'ine de uysun
 function renderDrums() {
   analyzeDrums();
   const est = S.meterEst, sug = S.drumSug, set = S.proj.settings;
@@ -10569,8 +10816,10 @@ $('#drumInfo').addEventListener('click', async (e) => {
   if (!e.target.closest('#btnDrumCopy')) return;
   try { await navigator.clipboard.writeText($('#drumRequest').value); status('Tarif kopyalandı — Claude\'a yapıştır.'); } catch (err) { $('#drumRequest').select(); status('Kopyalanamadı; metin seçildi, Ctrl+C ile kopyala.', 'err'); }
 });
-$('#inDrumsOn').addEventListener('change', (e) => { S.proj.drums.on = e.target.checked; renderMatrix(); if (Player.playing) Player.play(); });
-$('#inDrumLoop').addEventListener('change', (e) => { S.proj.drums.loop = e.target.value; renderDrums(); if (Player.playing) Player.play(); });
+// bas groove'u davulun kick'ine kilitlidir: davul değişince kilitsiz bas ölçüleri yeni kick'lere göre yenilenir
+function bassFollowDrums() { if (!S.d) return; bassSyncUI(); renderBass(); drawBass(); }
+$('#inDrumsOn').addEventListener('change', (e) => { S.proj.drums.on = e.target.checked; renderMatrix(); bassFollowDrums(); if (Player.playing) Player.play(); });
+$('#inDrumLoop').addEventListener('change', (e) => { S.proj.drums.loop = e.target.value; renderDrums(); bassFollowDrums(); if (Player.playing) Player.play(); });
 $('#btnDrumPreview').onclick = () => Player.previewDrums(currentLoop());
 $('#btnDrumStop').onclick = () => Player.stop();
 // ---------------------------------------------------------------- DÖNGÜ + "BAŞKA DENE" (alternatifi hemen dinle)
@@ -10734,7 +10983,7 @@ function makeDemo() {
   histCommit(); HIST.t = -Infinity;
   clearTimeout(BS.timer);
   const L = currentLoop(), bt = S.proj.bass;
-  did.push(`davul: ${L ? C.loopLabel(L) : '—'}`, `bas: ${bt.generated ? (Bs.profileById(bt, bt.styleProfileId) || {}).name : '—'}`, `akor sesi: ${C.PIANO_STYLES[S.proj.piano.style].name}`);
+  did.push(`davul: ${L ? C.loopLabel(L) : '—'}`, `bas: ${bt.generated ? bassStyleLabel(bt) : '—'}`, `akor sesi: ${C.PIANO_STYLES[S.proj.piano.style].name}`);
   S.pos = 0; $('#tlScroll').scrollLeft = 0;
   const msg = () => `✨ Demo hazır: ${pack ? pack.name : 'eski düzenleme'}${C.chordsAreFrozen(project) ? ' · akorlar korundu' : ''} → ` + did.join(' · ') + '. Çalıyor; beğenmediğini ⟳ ile değiştir, Ctrl+Z ile geri al.';
   status(msg());
@@ -14434,7 +14683,7 @@ function bsSelectChange(el) {
   if (k === 'sec') { BS.sec = v; renderBass(); return; }
   if (k === 'preset') bsDo((t) => { t.instrumentPreset = v; });
   else if (k === 'layerPreset') bsDo((t) => { t.layer = Object.assign({ octaveOffset: 0 }, t.layer, { preset: v }); });
-  else if (k === 'prof') bsDo((t, ctx) => { t.styleProfileId = v; if (t.styleMix && t.styleMix.profileB === v) t.styleMix = null; Bs.bassGenerateAll(t, ctx); }, 'Stil profili uygulandı; kilitsiz ölçüler yeniden üretildi.');
+  else if (k === 'prof') bsDo((t, ctx) => { t.styleProfileId = v; t.feelId = null; if (t.styleMix && t.styleMix.profileB === v) t.styleMix = null; Bs.bassGenerateAll(t, ctx); }, 'Stil profili uygulandı; kilitsiz ölçüler yeniden üretildi.');
   else if (k === 'profB') bsDo((t, ctx) => { t.styleMix = v ? { profileB: v, amount: (t.styleMix && t.styleMix.amount) || 0.5 } : null; Bs.bassGenerateAll(t, ctx); });
   else if (k === 'seed') bsDo((t, ctx) => { t.seed = (parseInt(el.value, 10) || 1) | 0; Bs.bassGenerateAll(t, ctx); }, 'Tohum değişti; kilitsiz ölçüler yeniden üretildi.');
   else if (k === 'rlo' || k === 'rhi') bsDo((t, ctx) => { const lo = k === 'rlo' ? +v : t.range.low, hi = k === 'rhi' ? +v : t.range.high; t.range = { low: Math.min(lo, hi - 12), high: Math.max(hi, lo + 12) }; Bs.bassGenerateAll(t, ctx); });

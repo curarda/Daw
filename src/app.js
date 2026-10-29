@@ -541,7 +541,7 @@ function renderChips() {
   const ins = p.guitar && p.guitar.instrument;
   set('#chipS8c', ins === 'guitar' ? 'gitar' : ins === 'both' ? 'piyano + gitar' : 'kapalı');
   const bt = p.bass;
-  set('#chipS8d', bt && bt.enabled ? (bt.generated ? `${bt.instrumentType === 'synth' ? 'synth bas' : 'bas gitar'} · ${(Bs.profileById(bt, bt.styleProfileId) || {}).name || ''}` : 'üretilmedi') : 'kapalı');
+  set('#chipS8d', bt && bt.enabled ? (bt.generated ? `${bt.instrumentType === 'synth' ? 'synth bas' : 'bas gitar'} · ${bassStyleLabel(bt)}` : 'üretilmedi') : 'kapalı');
 }
 // ---------------------------------------------------------------- GENEL GERİ ALMA / YİNELEME (Ctrl+Z, Ctrl+Shift+Z)
 // Proje durumunun anlık görüntüleri: her değişiklikten (refresh) sonra önceki durum geri alma yığınına girer.
@@ -992,6 +992,12 @@ function currentLoop() {
   const L = id && id !== 'auto' ? C.DRUM_LOOPS.find((l) => l.id === id && l.meter === S.proj.settings.meter) : null;
   return L || (S.drumSug && S.drumSug.best ? S.drumSug.best.loop : C.loopsFor(S.proj.settings.meter)[0] || null);
 }
+// bas etiketi: groove motorunda türün adı (Pop rock, Synthwave…), eski motorda stil profilinin adı
+function bassStyleLabel(bt) {
+  const G = Bs.Groove, ctx = { meter: S.proj.settings.meter, proj: S.proj };
+  return G && G.active(bt, ctx) ? G.feelFor(bt, ctx).def.name : (Bs.profileById(bt, bt.styleProfileId) || {}).name || '';
+}
+C.autoDrumLoop = (proj) => (proj === S.proj ? currentLoop() : null); // bas groove'u "auto" loop'un kick'ine de uysun
 function renderDrums() {
   analyzeDrums();
   const est = S.meterEst, sug = S.drumSug, set = S.proj.settings;
@@ -1086,8 +1092,10 @@ $('#drumInfo').addEventListener('click', async (e) => {
   if (!e.target.closest('#btnDrumCopy')) return;
   try { await navigator.clipboard.writeText($('#drumRequest').value); status('Tarif kopyalandı — Claude\'a yapıştır.'); } catch (err) { $('#drumRequest').select(); status('Kopyalanamadı; metin seçildi, Ctrl+C ile kopyala.', 'err'); }
 });
-$('#inDrumsOn').addEventListener('change', (e) => { S.proj.drums.on = e.target.checked; renderMatrix(); if (Player.playing) Player.play(); });
-$('#inDrumLoop').addEventListener('change', (e) => { S.proj.drums.loop = e.target.value; renderDrums(); if (Player.playing) Player.play(); });
+// bas groove'u davulun kick'ine kilitlidir: davul değişince kilitsiz bas ölçüleri yeni kick'lere göre yenilenir
+function bassFollowDrums() { if (!S.d) return; bassSyncUI(); renderBass(); drawBass(); }
+$('#inDrumsOn').addEventListener('change', (e) => { S.proj.drums.on = e.target.checked; renderMatrix(); bassFollowDrums(); if (Player.playing) Player.play(); });
+$('#inDrumLoop').addEventListener('change', (e) => { S.proj.drums.loop = e.target.value; renderDrums(); bassFollowDrums(); if (Player.playing) Player.play(); });
 $('#btnDrumPreview').onclick = () => Player.previewDrums(currentLoop());
 $('#btnDrumStop').onclick = () => Player.stop();
 // ---------------------------------------------------------------- DÖNGÜ + "BAŞKA DENE" (alternatifi hemen dinle)
@@ -1251,7 +1259,7 @@ function makeDemo() {
   histCommit(); HIST.t = -Infinity;
   clearTimeout(BS.timer);
   const L = currentLoop(), bt = S.proj.bass;
-  did.push(`davul: ${L ? C.loopLabel(L) : '—'}`, `bas: ${bt.generated ? (Bs.profileById(bt, bt.styleProfileId) || {}).name : '—'}`, `akor sesi: ${C.PIANO_STYLES[S.proj.piano.style].name}`);
+  did.push(`davul: ${L ? C.loopLabel(L) : '—'}`, `bas: ${bt.generated ? bassStyleLabel(bt) : '—'}`, `akor sesi: ${C.PIANO_STYLES[S.proj.piano.style].name}`);
   S.pos = 0; $('#tlScroll').scrollLeft = 0;
   const msg = () => `✨ Demo hazır: ${pack ? pack.name : 'eski düzenleme'}${C.chordsAreFrozen(project) ? ' · akorlar korundu' : ''} → ` + did.join(' · ') + '. Çalıyor; beğenmediğini ⟳ ile değiştir, Ctrl+Z ile geri al.';
   status(msg());

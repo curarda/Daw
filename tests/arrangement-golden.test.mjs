@@ -14,7 +14,7 @@ for (const meter of ['4/4', '6/8']) {
   p.drums = { on: true, loop: loops[0].id, startBar: 2, fills: true };
   p.sections = ['a', 'b', 'c'].map((id, i) => ({ id, name: i === 1 ? 'Nakarat' : 'Verse', startBar: i * 2 + 1, endBar: i * 2 + 2, tonic: 9, mode: 'minor', arr: { piano: i === 1 ? 'synth-arp' : null, drums: i === 2 ? 'off' : loops[i % loops.length].id } }));
   const d = C.derive(p, { duration: 6 * C.makeGrid(p.settings).barSec, rawNotes: [] });
-  p.bass.enabled = true;
+  p.bass.enabled = true; p.bass.engine = 'legacy'; // fixture eski şablon motoruyla kaydedildi: bu test arrangement hattını sınar, bas üretimini değil
   C.Bass.bassGenerateAll(p.bass, C.Bass.bassContext(d, p));
   const sec = (b) => d.sections.find((s) => !s.implicit && b >= s.startBar && b <= s.endBar);
   const plan = (b) => { const a = sec(b)?.arr || p.sections.find((s) => s.id === sec(b)?.id)?.arr; return a?.drums === 'off' ? null : loops.find((l) => l.id === a?.drums) || loops[0]; };

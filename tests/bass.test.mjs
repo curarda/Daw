@@ -36,7 +36,7 @@ function mkSong({ bars = 16, meter = '4/4', bpm = 100, chords, sections }) {
 }
 const PROG = [[9, 'm'], [5, ''], [0, ''], [7, '']];
 const prog = (b) => PROG[(b - 1) % 4];
-const newTrack = (over) => Object.assign(B.defaultBassTrack(), over || {});
+const newTrack = (over) => Object.assign(B.defaultBassTrack(), { engine: 'legacy' }, over || {}); // bu dosyadaki kurallar eski şablon motorunun; groove motoru tests/bassgroove.test.mjs'te
 const barsJson = (t) => t.bars.map((b) => JSON.stringify(b.notes));
 const lcg = (seed) => { let r = seed; return () => ((r = (r * 1664525 + 1013904223) >>> 0) / 4294967296); };
 
