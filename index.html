@@ -783,7 +783,7 @@ details.sub.marks, div.sub.marks { border: 1px solid #ff9f4355; border-radius: 6
       <label>Freesound API anahtarı <input id="inFreesoundKey" type="password" autocomplete="off"></label>
       <label>Gemini API anahtarı <input id="inGeminiKey" type="password" autocomplete="off"></label>
       <label>Gemini modeli <input id="inGeminiModel" type="text" list="geminiModels" autocomplete="off"></label>
-      <datalist id="geminiModels"><option value="gemini-2.5-flash"><option value="gemini-2.5-pro"></datalist>
+      <datalist id="geminiModels"><option value="gemini-3.6-flash"><option value="gemini-2.5-flash"><option value="gemini-2.5-pro"></datalist>
       <div class="grid2"><button id="btnSoundSave">Kaydet</button><button id="btnSoundClear">Anahtarları sil</button><button id="btnSoundProbe">Bağlantıyı dene</button></div>
       <button id="btnSoundSelect">Davul setini seç</button>
       <button id="btnSoundReroll">Sesleri yeniden seç</button>
@@ -7515,7 +7515,7 @@ Object.assign(C, { migrateVersions, versionSignature, captureVersionState, apply
 
 // Anahtarlar proje verisinden ayrı, yalnızca tarayıcıda tutulur.
 (function (root) {
-const DEFAULT_MODEL = 'gemini-2.5-flash', STORAGE_KEY = 'miniDaw.soundSettings.v1';
+const DEFAULT_MODEL = 'gemini-3.6-flash', OLD_DEFAULT_MODEL = 'gemini-2.5-flash', STORAGE_KEY = 'miniDaw.soundSettings.v1';
 function maskKey(key) { return key ? (key.length > 4 ? key.slice(0, 2) + '••••' + key.slice(-2) : '••••') : ''; }
 function createSoundSettings(storage) {
   let value = { freesoundKey: '', geminiKey: '', geminiModel: DEFAULT_MODEL }, storageFailed = false, message = '';
@@ -7524,7 +7524,7 @@ function createSoundSettings(storage) {
     message = model || !v?.geminiModel ? '' : 'Model adı geçersiz; varsayılan model kullanılıyor.';
     return { freesoundKey: typeof v?.freesoundKey === 'string' ? v.freesoundKey : '', geminiKey: typeof v?.geminiKey === 'string' ? v.geminiKey : '', geminiModel: model ? v.geminiModel : DEFAULT_MODEL };
   };
-  try { storage = storage === undefined ? root.localStorage : storage; value = clean(JSON.parse(storage.getItem(STORAGE_KEY)) || value); } catch (_) { storageFailed = true; }
+  try { storage = storage === undefined ? root.localStorage : storage; value = clean(JSON.parse(storage.getItem(STORAGE_KEY)) || value); if (value.geminiModel === OLD_DEFAULT_MODEL) value.geminiModel = DEFAULT_MODEL; /* eski varsayılan kayıtlıysa yeni varsayılana geçer */ } catch (_) { storageFailed = true; }
   return {
     get: () => ({ ...value }),
     set(v) { value = clean(v); try { storage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch (_) { storageFailed = true; } return this.get(); },

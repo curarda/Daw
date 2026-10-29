@@ -156,7 +156,7 @@ Each populated `drums` key is one of the drum lane kinds the engine defines (K,S
 
 Values above illustrate schema, not production defaults. `bass` remains empty until Rock 8. Missing/invalid fields normalize to disabled/empty; reject non-CC0 records. Persist IDs and credits, never audio or credentials.
 
-Browser-only `miniDaw.soundSettings.v1` stores both credentials and `geminiModel`, defaulting to `gemini-2.5-flash`; missing values are empty. Storage exceptions retain settings in memory with status.
+Browser-only `miniDaw.soundSettings.v1` stores both credentials and `geminiModel`, defaulting to `gemini-3.6-flash`; missing values are empty. Storage exceptions retain settings in memory with status.
 
 IndexedDB `miniDaw.sounds.v1` stores validated metadata, bounded search results and preview bytes keyed by sound ID plus preview URL; decoded buffers remain memory-only. Include `realSounds` in version snapshots, with legacy disabled defaults.
 
