@@ -25,6 +25,29 @@ try {
 
 const settingsFile = () => ({ schema: 'mini-daw-style-settings', version: 1, settings: SS.settings });
 function persist() { lsSet(LS.dataset, SS.dataset); lsSet(LS.settings, settingsFile()); lsSet(LS.feedback, SS.feedback); lsSet(LS.evalSet, SS.evalSet); }
+// ---------------------------------------------------------------- hazır şarkılar (data/*.json, derlemede gömülür)
+// Her şarkı bir kez, onaysız olarak eklenir; kullanıcı sildiyse geri gelmez. 'off' değeri otomatik eklemeyi kapatır.
+const SEED = /*__SEED_SONGS__*/null;
+const LS_SEED = 'miniDaw.style.seed';
+function seedBundled(force) {
+  if (!SEED) return 0;
+  let seen = [];
+  try { const raw = localStorage.getItem(LS_SEED); if (raw === 'off' && !force) return 0; seen = raw && raw !== 'off' ? JSON.parse(raw) : []; } catch (e) { seen = []; }
+  const r = St.parseImportJson(JSON.stringify(SEED));
+  if (r.errors.length) { console.warn('hazır şarkılar okunamadı:', r.errors[0]); return 0; }
+  let added = 0;
+  for (const song of r.songs) {
+    const key = St.songKey(song);
+    if (!force && seen.includes(key)) continue;
+    if (!seen.includes(key)) seen.push(key);
+    if (St.findDuplicate(SS.dataset, song)) continue;
+    SS.dataset.songs.push(song); added++;
+  }
+  try { localStorage.setItem(LS_SEED, JSON.stringify(seen)); } catch (e) { /* depolama kapalı olabilir */ }
+  return added;
+}
+SS.seedAdded = seedBundled(false);
+if (SS.seedAdded) { SS.tab = 'songs'; persist(); }
 function model() { if (!SS.model) SS.model = St.buildModel(SS.dataset, SS.settings, SS.feedback); return SS.model; }
 const confirmedSongs = () => model().stats.byMode.get(St.ALL).songs.size;
 // veri / ayar / geri bildirim değişti → istatistik + model + DAW akorları anında güncellenir
@@ -94,7 +117,7 @@ function tabImport() {
       </div>
       <textarea id="stText" rows="14" spellcheck="false" placeholder='{"schema_version": 1, "artist": "...", ...}'>${esc(SS.lastText || '')}</textarea>
       <div class="grid2"><label>Sanatçı (düz metin için)<input type="text" id="stArtist"></label><label>Şarkı (düz metin için)<input type="text" id="stTitle"></label></div>
-      <div class="row"><button class="accent" data-act="doImport">Çözümle ve ekle</button> <button data-act="loadExample">Örnek JSON'u doldur</button></div>
+      <div class="row"><button class="accent" data-act="doImport">Çözümle ve ekle</button> <button data-act="loadExample">Örnek JSON'u doldur</button>${SEED ? ` <button data-act="seedAll">Hazır şarkıları ekle (${SEED.songs.length})</button>` : ''}</div>
       ${errs}${pend}
     </div>
     <div>
@@ -139,6 +162,7 @@ function doImport(text, fmt) {
 }
 const ACTIONS = {
   doImport: () => doImport($('#stText').value, $('#stFmt').value),
+  seedAll: () => { const n = seedBundled(true); SS.seedAdded = n; if (n) SS.tab = 'songs'; A.status(n ? `${n} hazır şarkı eklendi — bölümleri onaylayın (onaysız bölüm istatistiğe girmez).` : 'Hazır şarkıların hepsi zaten veri setinde.', n ? '' : 'err'); changed(); },
   loadExample: () => { SS.lastText = JSON.stringify(EXAMPLE, null, 2); render(); },
   copyPrompt: () => { try { navigator.clipboard.writeText(PROMPT); A.status('İstem panoya kopyalandı.'); } catch (e) { A.status('Kopyalanamadı; metni elle seçin.', 'err'); } },
   dupOverwrite: (b) => {
@@ -346,10 +370,11 @@ function tabSongs() {
     const info = stats.songInfo.get(s.id) || { confirmed: 0 };
     const unk = St.unknownSymbols(s).length;
     return `<li class="${SS.editing === s.id ? 'on' : ''}"><a href="#" data-act="editSong" data-id="${s.id}">${esc(songName(s))}</a>
-      <span class="hint">${info.confirmed}/${s.sections.length} onaylı${unk ? ` · <b class="bad">${unk} tanınmayan akor</b>` : ''}</span></li>`;
+      <span class="hint">${info.confirmed ? '' : '<span class="tag warn">onay bekliyor</span> '}${info.confirmed}/${s.sections.length} onaylı${unk ? ` · <b class="bad">${unk} tanınmayan akor</b>` : ''}</span></li>`;
   }).join('');
   const song = songById(SS.editing) || null;
-  return `<div class="st-split"><div><h3>Şarkılar</h3>${list ? `<ul class="st-list">${list}</ul>` : '<p class="hint">Henüz şarkı yok.</p>'}</div>
+  const note = SS.seedAdded ? `<p class="st-warn" role="status">${SS.seedAdded} hazır şarkı veri setine eklendi — hepsi <b>onay bekliyor</b>: şarkıyı açıp bölümlerin tonunu onaylayın (onaysız bölüm istatistiğe girmez).</p>` : '';
+  return `${note}<div class="st-split"><div><h3>Şarkılar</h3>${list ? `<ul class="st-list">${list}</ul>` : '<p class="hint">Henüz şarkı yok.</p>'}</div>
     <div>${song ? songEditor(song, stats) : '<p class="hint">Düzenlemek için soldan bir şarkı seçin.</p>'}</div></div>`;
 }
 function songEditor(s, stats) {

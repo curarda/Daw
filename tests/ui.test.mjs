@@ -33,6 +33,7 @@ const browser = await chromium.launch({
   args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--autoplay-policy=no-user-gesture-required', `--use-file-for-fake-audio-capture=${clapPath}`],
 });
 const context = await browser.newContext({ viewport: { width: 1500, height: 950 }, acceptDownloads: true, permissions: ['microphone'] });
+await context.addInitScript(() => { try { localStorage.setItem('miniDaw.style.seed', 'off'); } catch (e) { /* depolama kapalı */ } }); // hazır şarkılar bu testin boş veri seti varsayımını bozmasın
 const page = await context.newPage();
 const errors = [];
 let curStep = '';
